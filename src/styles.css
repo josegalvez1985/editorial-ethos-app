@@ -5,11 +5,12 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 8px);
+  --radius-md: calc(var(--radius) - 4px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
 
   --font-display: "Playfair Display", ui-serif, Georgia, serif;
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -23,6 +24,7 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-soft: var(--primary-soft);
+  --color-brand-navy: var(--brand-navy);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -42,119 +44,214 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Curva con rebote corto, para que lo que aparece se sienta físico. */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
+/*
+ * Paleta = colores exactos del logo (rojo #e31e24, navy #0f2a3d), en hex y
+ * espejo de `mobile/src/theme/colors.ts`. Los dos frontends tienen que verse
+ * igual: si tocas un valor acá, tócalo allá.
+ */
 :root {
-  --radius: 0.75rem;
+  --radius: 1rem;
 
-  /* Editorial Ethos — Warm paper + rich red */
-  --background: oklch(0.985 0.006 60);
-  --foreground: oklch(0.18 0.02 25);
+  --background: #fbf9f7;
+  --foreground: #12293a;
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.02 25);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.02 25);
+  --card: #ffffff;
+  --card-foreground: #12293a;
+  --popover: #ffffff;
+  --popover-foreground: #12293a;
 
-  --primary: oklch(0.52 0.19 25);          /* rojo editorial */
-  --primary-foreground: oklch(0.99 0.005 60);
-  --primary-soft: oklch(0.94 0.05 25);
+  --primary: #e31e24;
+  --primary-foreground: #ffffff;
+  --primary-soft: #fdeaea;
+  --brand-navy: #0f2a3d;
 
-  --secondary: oklch(0.95 0.015 60);
-  --secondary-foreground: oklch(0.22 0.03 25);
+  --secondary: #f4efeb;
+  --secondary-foreground: #12293a;
 
-  --muted: oklch(0.94 0.01 60);
-  --muted-foreground: oklch(0.48 0.02 30);
+  --muted: #f1ede9;
+  --muted-foreground: #6b7480;
 
-  --accent: oklch(0.93 0.07 30);
-  --accent-foreground: oklch(0.25 0.06 25);
+  --accent: #f4efeb;
+  --accent-foreground: #12293a;
 
-  --destructive: oklch(0.58 0.24 27);
-  --destructive-foreground: oklch(0.99 0.005 60);
+  --destructive: #c8181d;
+  --destructive-foreground: #ffffff;
 
-  --border: oklch(0.9 0.015 40);
-  --input: oklch(0.9 0.015 40);
-  --ring: oklch(0.52 0.19 25);
+  --border: #e5e0db;
+  --input: #e5e0db;
+  --ring: #e31e24;
 
-  --sidebar: oklch(0.985 0.006 60);
-  --sidebar-foreground: oklch(0.18 0.02 25);
-  --sidebar-primary: oklch(0.52 0.19 25);
-  --sidebar-primary-foreground: oklch(0.99 0.005 60);
-  --sidebar-accent: oklch(0.94 0.01 60);
-  --sidebar-accent-foreground: oklch(0.22 0.03 25);
-  --sidebar-border: oklch(0.9 0.015 40);
-  --sidebar-ring: oklch(0.52 0.19 25);
+  --sidebar: #fbf9f7;
+  --sidebar-foreground: #12293a;
+  --sidebar-primary: #e31e24;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1ede9;
+  --sidebar-accent-foreground: #12293a;
+  --sidebar-border: #e5e0db;
+  --sidebar-ring: #e31e24;
 
-  --gradient-hero: linear-gradient(135deg, oklch(0.52 0.19 25) 0%, oklch(0.42 0.16 20) 100%);
-  --shadow-elegant: 0 20px 50px -20px oklch(0.52 0.19 25 / 0.35);
-  --shadow-soft: 0 4px 24px -8px oklch(0.2 0.05 25 / 0.12);
+  --gradient-hero: linear-gradient(135deg, #e31e24 0%, #14314a 100%);
+  --gradient-navy: linear-gradient(150deg, #14314a 0%, #0b1e2c 100%);
+
+  /* Sombras cortas: en una pantalla de teléfono las difusas se ven sucias. */
+  --shadow-soft: 0 1px 2px rgb(18 41 58 / 0.06), 0 8px 20px -14px rgb(18 41 58 / 0.18);
+  --shadow-card: 0 1px 3px rgb(18 41 58 / 0.05), 0 12px 28px -20px rgb(18 41 58 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(227 30 36 / 0.45);
+  --surface-glass: rgb(251 249 247 / 0.72);
 }
 
 .dark {
-  --background: oklch(0.16 0.015 25);
-  --foreground: oklch(0.96 0.008 60);
+  --background: #0c1620;
+  --foreground: #eef3f7;
 
-  --card: oklch(0.21 0.02 25);
-  --card-foreground: oklch(0.96 0.008 60);
-  --popover: oklch(0.21 0.02 25);
-  --popover-foreground: oklch(0.96 0.008 60);
+  --card: #14212c;
+  --card-foreground: #eef3f7;
+  --popover: #14212c;
+  --popover-foreground: #eef3f7;
 
-  --primary: oklch(0.68 0.2 25);
-  --primary-foreground: oklch(0.15 0.02 25);
-  --primary-soft: oklch(0.3 0.09 25);
+  --primary: #ff6b6b;
+  --primary-foreground: #1a0708;
+  --primary-soft: #3a1c20;
+  --brand-navy: #0f2a3d;
 
-  --secondary: oklch(0.25 0.02 25);
-  --secondary-foreground: oklch(0.96 0.008 60);
+  --secondary: #1a2733;
+  --secondary-foreground: #eef3f7;
 
-  --muted: oklch(0.24 0.015 25);
-  --muted-foreground: oklch(0.7 0.02 40);
+  --muted: #1a2733;
+  --muted-foreground: #9aa8b4;
 
-  --accent: oklch(0.34 0.1 25);
-  --accent-foreground: oklch(0.96 0.008 60);
+  --accent: #1f2e3b;
+  --accent-foreground: #eef3f7;
 
-  --destructive: oklch(0.65 0.22 25);
-  --destructive-foreground: oklch(0.98 0.005 60);
+  --destructive: #f94144;
+  --destructive-foreground: #ffffff;
 
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.68 0.2 25);
+  --border: #26333f;
+  --input: #2c3a47;
+  --ring: #ff6b6b;
 
-  --sidebar: oklch(0.19 0.02 25);
-  --sidebar-foreground: oklch(0.96 0.008 60);
-  --sidebar-primary: oklch(0.68 0.2 25);
-  --sidebar-primary-foreground: oklch(0.15 0.02 25);
-  --sidebar-accent: oklch(0.25 0.02 25);
-  --sidebar-accent-foreground: oklch(0.96 0.008 60);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.68 0.2 25);
+  --sidebar: #0f1c26;
+  --sidebar-foreground: #eef3f7;
+  --sidebar-primary: #ff6b6b;
+  --sidebar-primary-foreground: #1a0708;
+  --sidebar-accent: #1a2733;
+  --sidebar-accent-foreground: #eef3f7;
+  --sidebar-border: #26333f;
+  --sidebar-ring: #ff6b6b;
 
-  --gradient-hero: linear-gradient(135deg, oklch(0.4 0.17 25) 0%, oklch(0.25 0.09 20) 100%);
-  --shadow-elegant: 0 20px 50px -20px oklch(0 0 0 / 0.6);
-  --shadow-soft: 0 4px 24px -8px oklch(0 0 0 / 0.5);
+  --gradient-hero: linear-gradient(135deg, #a3141a 0%, #0c1620 100%);
+  --gradient-navy: linear-gradient(150deg, #16283a 0%, #0a141d 100%);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
+  --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
+  --surface-glass: rgb(12 22 32 / 0.72);
 }
 
 @layer base {
   * {
     border-color: var(--color-border);
   }
-  html, body {
+
+  html {
+    /* App instalada: sin rebote elástico ni pull-to-refresh del navegador. */
+    overscroll-behavior-y: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    /* Sin esto Android pinta un flash gris en cada toque. */
+    -webkit-tap-highlight-color: transparent;
   }
-  h1, h2, h3, .font-display {
+
+  /* Mata el retardo de 300 ms al tocar en móvil. */
+  button,
+  a,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
     font-family: var(--font-display);
     letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
 @utility bg-hero-gradient {
   background-image: var(--gradient-hero);
 }
-@utility shadow-elegant {
-  box-shadow: var(--shadow-elegant);
+@utility bg-navy-gradient {
+  background-image: var(--gradient-navy);
 }
 @utility shadow-soft {
   box-shadow: var(--shadow-soft);
+}
+@utility shadow-card {
+  box-shadow: var(--shadow-card);
+}
+@utility shadow-elegant {
+  box-shadow: var(--shadow-elegant);
+}
+
+/** Barra translúcida al estilo de una app nativa. */
+@utility glass {
+  background-color: var(--surface-glass);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/** Feedback al toque: lo que se puede tocar se hunde. */
+@utility tap {
+  transition:
+    transform 140ms var(--ease-spring),
+    background-color 140ms ease,
+    color 140ms ease;
+  &:active {
+    transform: scale(0.96);
+  }
+}
+
+/** Carruseles horizontales sin la barra de scroll a la vista. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/** Recortes de pantalla (notch, barra de gestos) en PWA instalada. */
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/** Texto sobre imagen/gradiente: nunca se selecciona al arrastrar. */
+@utility select-none-touch {
+  user-select: none;
+  -webkit-user-select: none;
 }

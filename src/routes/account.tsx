@@ -1,14 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Fingerprint, Moon, Sun, Monitor, LogOut, ShieldCheck, Mail, User as UserIcon } from "lucide-react";
-import { AppHeader } from "@/components/app-header";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { useTheme } from "@/lib/theme";
-import { useSession } from "@/lib/session";
+import { Fingerprint, LogOut, Mail, Moon, Smartphone, Sun } from "lucide-react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
+
+import { AppShell } from "@/components/app-shell";
+import { Switch } from "@/components/ui/switch";
+import { useSession } from "@/lib/session";
+import { useTheme } from "@/lib/theme";
 
 export const Route = createFileRoute("/account")({
   head: () => ({
@@ -21,6 +19,47 @@ export const Route = createFileRoute("/account")({
   }),
   component: AccountPage,
 });
+
+/** Bloque de ajustes al estilo de la app de Ajustes: título chico + tarjeta con filas. */
+function Group({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <section className="mt-7">
+      <h2 className="mb-2 px-1 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+        {label}
+      </h2>
+      <div className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/60 bg-card shadow-soft">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function Row({
+  icon,
+  title,
+  hint,
+  trailing,
+}: {
+  icon: ReactNode;
+  title: string;
+  hint?: string;
+  trailing?: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3.5 p-4">
+      <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-soft text-primary">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] font-semibold">{title}</p>
+        {hint ? (
+          <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">{hint}</p>
+        ) : null}
+      </div>
+      {trailing}
+    </div>
+  );
+}
 
 function AccountPage() {
   const { theme, setTheme } = useTheme();
@@ -36,15 +75,19 @@ function AccountPage() {
     .slice(0, 2)
     .toUpperCase();
 
+  // En el navegador esto es solo la preferencia; quien la aplica de verdad es la
+  // app de mobile/ (expo-local-authentication + credenciales en el keystore).
   const onBiometry = (v: boolean) => {
     setBiometry(v);
-    toast.success(v ? "Biometría activada" : "Biometría desactivada");
+    toast.info(
+      v ? "Preferencia guardada. Actívala en la app móvil para usarla." : "Biometría desactivada",
+    );
   };
 
-  const onLogout = () => {
-    logout();
+  const onLogout = async () => {
+    await logout();
     toast.success("Sesión cerrada");
-    navigate({ to: "/" });
+    navigate({ to: "/", replace: true });
   };
 
   const themeOptions = [
@@ -53,124 +96,97 @@ function AccountPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
+    <AppShell>
+      <div className="px-5 pt-5">
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          Configuración
+        </p>
+        <h1 className="font-display mt-1 text-[2rem] leading-none font-bold">Mi cuenta</h1>
 
-      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
-        <div className="mb-8">
-          <p className="text-sm text-muted-foreground">Configuración</p>
-          <h1 className="mt-1 font-display text-3xl font-bold sm:text-4xl">Mi cuenta</h1>
-        </div>
-
-        {/* Profile card */}
-        <Card className="mb-6 overflow-hidden border-none bg-hero-gradient text-primary-foreground shadow-elegant">
-          <CardContent className="flex flex-wrap items-center gap-4 p-6">
-            <Avatar className="h-16 w-16 border-2 border-primary-foreground/30 bg-primary-foreground/15 text-lg font-semibold text-primary-foreground">
-              <AvatarFallback className="bg-transparent text-primary-foreground">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
+        {/* Perfil */}
+        <div className="relative mt-5 overflow-hidden rounded-3xl bg-hero-gradient p-5 text-primary-foreground shadow-elegant">
+          <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_20%_20%,white_1px,transparent_1px)] [background-size:20px_20px]" />
+          <div className="relative flex items-center gap-4">
+            <div className="grid size-15 shrink-0 place-items-center rounded-full border-2 border-white/30 bg-white/15 text-lg font-bold">
+              {initials}
+            </div>
             <div className="min-w-0 flex-1">
-              <h2 className="font-display truncate text-2xl font-bold">{displayName}</h2>
-              <p className="flex items-center gap-1.5 text-sm text-primary-foreground/80">
-                <Mail className="h-3.5 w-3.5" />
+              <p className="font-display truncate text-[1.35rem] leading-tight font-bold">
+                {displayName}
+              </p>
+              <p className="mt-1 flex items-center gap-1.5 text-[13px] text-primary-foreground/80">
+                <Mail className="size-3.5 shrink-0" />
                 <span className="truncate">{displayEmail}</span>
               </p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* Security */}
-        <Card className="mb-6">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              <CardTitle className="font-display text-xl">Seguridad</CardTitle>
-            </div>
-            <CardDescription>Controla cómo accedes a tu cuenta.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
-              <div className="flex min-w-0 items-start gap-3">
-                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary-soft text-primary">
-                  <Fingerprint className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <Label htmlFor="bio" className="text-base font-semibold">
-                    Acceso biométrico
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Usa tu huella o rostro para iniciar sesión más rápido.
-                  </p>
-                </div>
-              </div>
-              <Switch id="bio" checked={biometry} onCheckedChange={onBiometry} />
-            </div>
-          </CardContent>
-        </Card>
+        <Group label="Seguridad">
+          <Row
+            icon={<Fingerprint className="size-5" />}
+            title="Acceso biométrico"
+            hint="Usa tu huella o rostro para entrar más rápido. Se activa desde la app móvil."
+            trailing={<Switch checked={biometry} onCheckedChange={onBiometry} />}
+          />
+        </Group>
 
-        {/* Appearance */}
-        <Card className="mb-6">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Monitor className="h-5 w-5 text-primary" />
-              <CardTitle className="font-display text-xl">Apariencia</CardTitle>
-            </div>
-            <CardDescription>Elige cómo se ve Editorial Ethos.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-3">
+        <Group label="Apariencia">
+          <div className="p-4">
+            <p className="text-[15px] font-semibold">Tema</p>
+            {/* Control segmentado: la opción activa se desliza sobre el riel */}
+            <div
+              role="radiogroup"
+              aria-label="Tema"
+              className="mt-3 flex gap-1 rounded-full bg-muted p-1"
+            >
               {themeOptions.map((opt) => {
                 const active = theme === opt.value;
                 const Icon = opt.icon;
                 return (
                   <button
                     key={opt.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
                     onClick={() => setTheme(opt.value)}
-                    className={`flex flex-col items-start gap-3 rounded-xl border-2 p-4 text-left transition-all ${
+                    className={`flex h-10 flex-1 items-center justify-center gap-2 rounded-full text-sm font-semibold transition-all duration-200 ease-out ${
                       active
-                        ? "border-primary bg-primary-soft shadow-soft"
-                        : "border-border hover:border-primary/40 hover:bg-muted"
+                        ? "bg-card text-foreground shadow-soft"
+                        : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    <div
-                      className={`grid h-9 w-9 place-items-center rounded-lg ${
-                        active
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="font-semibold">{opt.label}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Tema {opt.label.toLowerCase()}
-                      </p>
-                    </div>
+                    <Icon className="size-4" />
+                    {opt.label}
                   </button>
                 );
               })}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          <Row
+            icon={<Smartphone className="size-5" />}
+            title="App instalable"
+            hint="Agrega Ethos a tu pantalla de inicio desde el menú del navegador."
+          />
+        </Group>
 
-        {/* Account */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <UserIcon className="h-5 w-5 text-primary" />
-              <CardTitle className="font-display text-xl">Cuenta</CardTitle>
+        <Group label="Cuenta">
+          <button
+            type="button"
+            onClick={onLogout}
+            className="tap flex w-full items-center gap-3.5 p-4 text-left hover:bg-accent"
+          >
+            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-destructive/10 text-destructive">
+              <LogOut className="size-5" />
             </div>
-          </CardHeader>
-          <CardContent>
-            <Button variant="outline" className="w-full sm:w-auto" onClick={onLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Cerrar sesión
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
-    </div>
+            <p className="flex-1 text-[15px] font-semibold text-destructive">Cerrar sesión</p>
+          </button>
+        </Group>
+
+        <p className="mt-8 text-center text-xs text-muted-foreground">
+          Editorial Ethos · versión web
+        </p>
+      </div>
+    </AppShell>
   );
 }

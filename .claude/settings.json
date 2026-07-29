@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun --version)",
+      "Bash(git rm *)",
+      "Bash(node -e ' *)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(npm -v)",
+      "Bash(npx --version)",
+      "Bash(npx --yes create-expo-app@latest mobile --template blank-typescript --no-install)",
+      "Bash(rm -rf .claude AGENTS.md CLAUDE.md LICENSE)",
+      "Bash(npm install *)",
+      "Bash(npx expo *)",
+      "Bash(npm init *)",
+      "Bash(rm -f App.tsx index.ts)",
+      "Bash(mkdir -p app/\\\\\\(tabs\\\\\\) src/lib src/components/ui src/theme)",
+      "Bash(node -e \"const p=require\\('./package.json'\\);console.log\\(JSON.stringify\\(p.dependencies,null,2\\)\\)\")",
+      "Bash(npx tsc *)",
+      "Bash(grep -vE \"^\\\\s*[█▄▀ ]+\\\\s*$\")",
+      "Bash(grep -vE \"^[█▄▀ ]+$\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" -H \"expo-platform: android\" \"http://192.168.100.16:8081\" --max-time 20)",
+      "Bash(curl -s -o /dev/null -w \"dev server: %{http_code}\\\\n\" -H \"expo-platform: android\" \"http://192.168.100.16:8081\" --max-time 15)",
+      "Edit(/.claude/skills/build-apk/**)",
+      "Bash(echo \"=== MOBILE exit=$? ===\")",
+      "Bash(echo \"=== WEB exit=$? ===\")",
+      "Bash(cd \"c:/Users/josej/OneDrive/Desktop/Proyectos/editorial-ethos-app.git\" && rm -rf src public .tanstack .output node_modules vite.config.ts components.json eslint.config.js .prettierrc .prettierignore bunfig.toml bun.lock package.json package-lock.json tsconfig.json .env .env.example .gitignore README.md && ls -a)",
+      "Bash(mv mobile/app .)",
+      "Bash(mv mobile/src .)",
+      "PowerShell(Set-Location \"c:\\\\Users\\\\josej\\\\OneDrive\\\\Desktop\\\\Proyectos\\\\editorial-ethos-app.git\"; try { Move-Item -Path \"mobile\\\\app\" -Destination \"app\" -ErrorAction Stop; Write-Output \"app moved\" } catch { Write-Output \"APP FAIL: $\\($_.Exception.Message\\)\" }; try { Move-Item -Path \"mobile\\\\src\" -Destination \"src\" -ErrorAction Stop; Write-Output \"src moved\" } catch { Write-Output \"SRC FAIL: $\\($_.Exception.Message\\)\" })",
+      "Bash(echo \"=== TSC exit=$? ===\")",
+      "Bash(python -c ' *)",
+      "Edit(/.claude/skills/deploy-web/**)",
+      "Bash(git checkout *)",
+      "Bash(cp .env.example .env)",
+      "Bash(rm -rf .expo)",
+      "Bash(echo \"=== MOBILE TSC exit=$? ===\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\josej\\OneDrive\\Desktop\\Proyectos\\editorial-ethos-app.git"
+    ]
+  }
+}

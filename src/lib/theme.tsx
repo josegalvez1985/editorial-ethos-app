@@ -11,18 +11,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // hydrate from localStorage on the client
   useEffect(() => {
-    const saved = (typeof window !== "undefined"
-      ? (localStorage.getItem(STORAGE_KEY) as Theme | null)
-      : null);
+    const saved =
+      typeof window !== "undefined" ? (localStorage.getItem(STORAGE_KEY) as Theme | null) : null;
     const prefersDark =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+      typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches;
     setThemeState(saved ?? (prefersDark ? "dark" : "light"));
   }, []);
 
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("dark", theme === "dark");
+    // La barra de estado del sistema sigue al tema elegido, no al del SO: si no,
+    // en PWA instalada queda una franja blanca sobre una app oscura.
+    root.style.colorScheme = theme;
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", theme === "dark" ? "#0c1620" : "#fbf9f7");
     try {
       localStorage.setItem(STORAGE_KEY, theme);
     } catch {

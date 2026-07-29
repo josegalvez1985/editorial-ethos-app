@@ -1,10 +1,12 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
-import { BookOpen, Fingerprint, Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { Fingerprint, Loader2, UserRound, Lock, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
+import { getCredenciales } from "@/lib/api";
 import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/")({
@@ -21,65 +23,63 @@ export const Route = createFileRoute("/")({
 
 function LoginPage() {
   const navigate = useNavigate();
-  const { user, login, biometry } = useSession();
-  const [email, setEmail] = useState("");
+  const { sesion, login } = useSession();
+  const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
+  const [recordar, setRecordar] = useState(true);
   const [showPass, setShowPass] = useState(false);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // `replace`: el login no debe quedar en el historial, si no el botón de atrás
+  // de la cabecera rebota entre esta pantalla y /home.
   useEffect(() => {
-    if (user) navigate({ to: "/home" });
-  }, [user, navigate]);
+    if (sesion) navigate({ to: "/home", replace: true });
+  }, [sesion, navigate]);
 
-  const onSubmit = (e: FormEvent) => {
+  // Si llegó acá con credenciales guardadas es que el login automático falló
+  // (contraseña cambiada, backend caído). Dejamos el usuario puesto para que solo
+  // tenga que escribir la contraseña. En un efecto, no en el estado inicial: en
+  // SSR no hay storage y el HTML del servidor no coincidiría con el del cliente.
+  useEffect(() => {
+    const c = getCredenciales();
+    if (c) setUsuario((u) => u || c.usuario);
+  }, []);
+
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
-      toast.error("Ingresa tu correo y contraseña");
+    setError("");
+    if (!usuario || !password) {
+      setError("Ingresa tu usuario y contraseña");
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      login(email);
+    try {
+      await login(usuario, password, recordar);
       toast.success("Bienvenido a Editorial Ethos");
-      navigate({ to: "/home" });
-    }, 700);
-  };
-
-  const onBiometric = () => {
-    if (!biometry) {
-      toast.info("Activa la biometría en tu cuenta primero");
-      return;
+      navigate({ to: "/home", replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
+    } finally {
+      // Sin este finally, un error deja el botón deshabilitado para siempre.
+      setLoading(false);
     }
-    setLoading(true);
-    setTimeout(() => {
-      login("lector@ethos.mx");
-      toast.success("Acceso biométrico verificado");
-      navigate({ to: "/home" });
-    }, 800);
   };
 
   return (
-    <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
-      {/* Brand panel */}
-      <aside className="relative hidden overflow-hidden bg-hero-gradient lg:block">
+    <div className="min-h-dvh bg-background lg:grid lg:min-h-screen lg:grid-cols-2">
+      {/*
+        Un solo panel de marca para los dos tamaños: en el celular es una banda
+        superior con las esquinas redondeadas; en escritorio, la columna completa.
+      */}
+      <aside className="relative overflow-hidden bg-hero-gradient px-6 pt-safe pb-9 lg:flex lg:flex-col lg:justify-between lg:rounded-none lg:p-12">
         <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_20%_20%,white_1px,transparent_1px)] [background-size:24px_24px]" />
-        <div className="relative z-10 flex h-full flex-col justify-between p-12 text-primary-foreground">
-          <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-xl bg-primary-foreground/15 backdrop-blur">
-              <BookOpen className="h-5 w-5" />
-            </div>
-            <span className="font-display text-xl font-bold">Editorial Ethos</span>
-          </div>
-          <div>
-            <p className="font-display text-5xl leading-tight font-bold">
-              Ideas con
-              <br /> carácter.
-            </p>
-            <p className="mt-4 max-w-md text-sm text-primary-foreground/80">
-              Reportajes, ensayos y voces cuidadosamente editadas. Una publicación
-              hecha para lectores que buscan más.
-            </p>
-          </div>
+        <div className="relative z-10 flex items-center justify-between pt-8 text-primary-foreground lg:contents">
+          <img
+            src="/logo.png"
+            alt="Editorial Ethos"
+            className="size-16 rounded-2xl bg-white p-1.5 shadow-soft lg:size-20 lg:self-start lg:rounded-xl lg:p-2"
+          />
           <p className="text-xs text-primary-foreground/60">
             © {new Date().getFullYear()} Editorial Ethos
           </p>
@@ -87,69 +87,91 @@ function LoginPage() {
       </aside>
 
       {/* Form */}
-      <main className="flex items-center justify-center bg-background px-6 py-12">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-2 lg:hidden">
-            <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary text-primary-foreground">
-              <BookOpen className="h-4 w-4" />
-            </div>
-            <span className="font-display text-lg font-bold">Editorial Ethos</span>
-          </div>
+      <main className="flex items-start justify-center bg-background px-6 pt-7 pb-safe lg:items-center lg:py-12">
+        <div className="w-full max-w-sm pb-10">
+          <h1 className="font-display text-[1.75rem] font-bold text-foreground lg:text-3xl">
+            Bienvenido
+          </h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">Inicia sesión</p>
 
-          <h1 className="font-display text-3xl font-bold text-foreground">Bienvenido</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Inicia sesión para continuar leyendo.
-          </p>
-
-          <form onSubmit={onSubmit} className="mt-8 space-y-4">
+          <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="email">Correo</Label>
+              <Label htmlFor="usuario">Usuario</Label>
               <div className="relative">
-                <Mail className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <UserRound className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tucorreo@ethos.mx"
-                  className="pl-9"
+                  id="usuario"
+                  type="text"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  required
+                  value={usuario}
+                  onChange={(e) => setUsuario(e.target.value)}
+                  placeholder="tu usuario"
+                  // text-base = 16px: con menos, iOS hace zoom al enfocar el campo.
+                  className="h-12 rounded-xl pl-10 text-base"
                 />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Contraseña</Label>
-                <button type="button" className="text-xs text-primary hover:underline">
-                  ¿Olvidaste tu clave?
-                </button>
-              </div>
+              <Label htmlFor="password">Contraseña</Label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="password"
                   type={showPass ? "text" : "password"}
                   autoComplete="current-password"
+                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="px-9"
+                  className="h-12 rounded-xl px-10 text-base"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPass((s) => !s)}
-                  className="absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  aria-label="Mostrar contraseña"
+                  className="tap absolute top-1/2 right-1 grid size-10 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:text-foreground"
+                  aria-label={showPass ? "Ocultar contraseña" : "Mostrar contraseña"}
                 >
-                  {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
             </div>
 
-            <Button type="submit" disabled={loading} className="w-full">
+            <div className="flex items-start gap-2.5">
+              <Checkbox
+                id="recordar"
+                checked={recordar}
+                onCheckedChange={(v) => setRecordar(v === true)}
+                className="mt-0.5"
+              />
+              <div>
+                <Label htmlFor="recordar" className="text-sm font-normal">
+                  Mantener sesión iniciada
+                </Label>
+                {/* Que el usuario sepa qué se guarda: la contraseña queda en este
+                    dispositivo para poder entrar solo cuando el token expira. */}
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Guarda tu acceso en este dispositivo para entrar sin escribirlo.
+                </p>
+              </div>
+            </div>
+
+            {error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
+
+            <Button
+              type="submit"
+              disabled={loading}
+              className="tap h-12 w-full rounded-xl text-base"
+            >
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Entrar
+              {loading ? "Iniciando..." : "Entrar"}
             </Button>
 
             <div className="relative py-2">
@@ -161,23 +183,19 @@ function LoginPage() {
               </div>
             </div>
 
+            {/* La biometría real vive en la app de mobile/ (expo-local-authentication).
+                En el navegador no hay equivalente sin WebAuthn, así que lo decimos
+                en vez de simular un acceso. */}
             <Button
               type="button"
               variant="outline"
-              onClick={onBiometric}
-              className="w-full"
+              onClick={() => toast.info("El acceso biométrico está disponible en la app móvil")}
+              className="tap h-12 w-full rounded-xl text-base"
               disabled={loading}
             >
               <Fingerprint className="mr-2 h-4 w-4" />
               Acceder con biometría
             </Button>
-
-            <p className="pt-4 text-center text-sm text-muted-foreground">
-              ¿Sin cuenta?{" "}
-              <Link to="/home" className="font-medium text-primary hover:underline">
-                Explorar como invitado
-              </Link>
-            </p>
           </form>
         </div>
       </main>

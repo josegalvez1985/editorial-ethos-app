@@ -1,132 +1,81 @@
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { BookOpen, Home, User, LogOut, Moon, Sun, Menu, X } from "lucide-react";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { useTheme } from "@/lib/theme";
+import { Link, useRouter, useRouterState } from "@tanstack/react-router";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import { ArrowLeft, Moon, Sun } from "lucide-react";
 import { useSession } from "@/lib/session";
-import { toast } from "sonner";
+import { useTheme } from "@/lib/theme";
 
-const nav = [
-  { to: "/home", label: "Inicio", icon: Home },
-  { to: "/account", label: "Cuenta", icon: User },
-] as const;
-
+/**
+ * Cabecera translúcida al estilo de una app nativa: atrás + logo + saludo + tema.
+ *
+ * La navegación vive en `BottomNav` (barra inferior), que también incluye el
+ * acceso para cerrar sesión.
+ */
 export function AppHeader() {
   const { theme, toggle } = useTheme();
-  const { user, logout } = useSession();
-  const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const [open, setOpen] = useState(false);
+  const { user, ready } = useSession();
+  const router = useRouter();
+  // `canGoBack()` no es reactivo por sí solo: lo recalculamos con cada cambio
+  // de ruta para que el botón aparezca/desaparezca al navegar.
+  // En /home no se muestra: es la pantalla raíz de la sesión.
+  const showBack = useRouterState({
+    select: (s) => s.location.pathname !== "/home" && router.history.canGoBack(),
+  });
 
-  const onLogout = () => {
-    logout();
-    toast.success("Sesión cerrada");
-    navigate({ to: "/" });
-  };
+  const fecha = format(new Date(), "EEEE d 'de' MMMM", { locale: es });
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
-        <Link to="/home" className="flex items-center gap-2">
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-soft">
-            <BookOpen className="h-4 w-4" />
-          </div>
-          <span className="font-display text-lg font-bold tracking-tight">
-            Editorial <span className="text-primary">Ethos</span>
-          </span>
+    <header className="glass sticky top-0 z-40 border-b border-border/60 pt-safe">
+      {/* h-16 + botones de 44px: el mínimo táctil de iOS/Android */}
+      <div className="flex h-16 items-center gap-2.5 px-3">
+        {showBack ? (
+          <button
+            type="button"
+            onClick={() => router.history.back()}
+            aria-label="Volver a la página anterior"
+            className="tap grid size-11 shrink-0 place-items-center rounded-full text-foreground hover:bg-accent"
+          >
+            <ArrowLeft className="size-5" />
+          </button>
+        ) : null}
+
+        <Link
+          to="/home"
+          aria-label="Editorial Ethos"
+          className="tap shrink-0 rounded-xl bg-white p-1 shadow-soft"
+        >
+          <img src="/logo.png" alt="Editorial Ethos" className="size-8 rounded-lg" />
         </Link>
 
-        {/* Desktop nav */}
-        <nav className="ml-6 hidden items-center gap-1 md:flex">
-          {nav.map((item) => {
-            const active = pathname === item.to;
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`relative rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                  active
-                    ? "bg-primary-soft text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        {/* Mientras revalidamos el token no sabemos el nombre: barra en gris en vez
+            de un salto de "Hola," a "Hola, Jose Galvez". */}
+        {!ready ? (
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="h-3.5 w-32 animate-pulse rounded-full bg-muted" />
+            <div className="h-2.5 w-24 animate-pulse rounded-full bg-muted" />
+          </div>
+        ) : user ? (
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[15px] leading-tight">
+              Hola, <span className="font-semibold">{user.name}</span>
+            </p>
+            <p className="mt-0.5 truncate text-[11.5px] leading-tight text-muted-foreground">
+              {fecha}
+            </p>
+          </div>
+        ) : (
+          <span className="flex-1" />
+        )}
 
-        <div className="ml-auto flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggle}
-            aria-label="Cambiar tema"
-            className="rounded-full"
-          >
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </Button>
-          {user ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onLogout}
-              aria-label="Cerrar sesión"
-              className="hidden rounded-full md:inline-flex"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setOpen((v) => !v)}
-            aria-label="Menú"
-            className="rounded-full md:hidden"
-          >
-            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
-        </div>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={theme === "dark" ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
+          className="tap grid size-11 shrink-0 place-items-center rounded-full text-foreground hover:bg-accent"
+        >
+          {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
+        </button>
       </div>
-
-      {/* Mobile nav */}
-      {open ? (
-        <div className="border-t bg-background md:hidden">
-          <nav className="mx-auto flex max-w-6xl flex-col gap-1 px-3 py-3">
-            {nav.map((item) => {
-              const active = pathname === item.to;
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => setOpen(false)}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium ${
-                    active
-                      ? "bg-primary-soft text-primary"
-                      : "text-foreground hover:bg-muted"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-            {user ? (
-              <button
-                onClick={() => {
-                  setOpen(false);
-                  onLogout();
-                }}
-                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-foreground hover:bg-muted"
-              >
-                <LogOut className="h-4 w-4" />
-                Cerrar sesión
-              </button>
-            ) : null}
-          </nav>
-        </div>
-      ) : null}
     </header>
   );
 }

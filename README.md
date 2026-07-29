@@ -1,24 +1,78 @@
-# Editorial Ethos App
+# Editorial Ethos
 
-vamos a crear un app, para react native, con login desde un base de datos oracle, que sea generado con formato de apk, la apk se va a llamar, Editorial Ethos, tematica de color rojo agradable, crea un login, responsivo para web y celulares, crea un home con un menu interactivo y moderno, tambien un pagina de cuenta donde el usuario va a configurar la biometria, el modo oscuro y claro
+Login real contra Oracle APEX/ORDS, con **dos frontends** que comparten el backend:
 
-This project was built with [Lovable](https://lovable.dev).
+| Carpeta | Qué es | Salida |
+| --- | --- | --- |
+| [`backend/`](backend/) | Oracle: tabla de tokens, `PKG_AUTH_ETHOS` y endpoints ORDS | — |
+| raíz (`src/`) | Sitio web — TanStack Start + Vite | dominio, con servidor Node |
+| [`mobile/`](mobile/) | App Android — Expo / React Native | APK instalable |
 
-## Build with Lovable
+Los dos frontends **no comparten código**: son dos implementaciones del mismo diseño y del
+mismo contrato de API. Un cambio de UI hay que hacerlo en ambos.
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/636ae91e-d9d7-4370-9bea-8245933e0c72).
+## 1. Backend (obligatorio, primero)
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+Nada funciona sin esto. Ver [`backend/README.md`](backend/README.md).
 
-## Development
+1. APEX → SQL Workshop → SQL Scripts → sube y corre
+   [`backend/ethos_auth.sql`](backend/ethos_auth.sql).
+2. Copia la **URL base** que imprime al final.
+3. Ponla en `.env` (web) y en `mobile/app.json` → `expo.extra.apiUrl` (móvil).
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Endpoints: `POST auth/login`, `POST auth/logout`, `GET auth/me`.
+Token opaco de **6 horas** que viaja en `Authorization: Bearer`.
 
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
+## 2. Sitio web
+
+```bash
+cp .env.example .env
+npm install
 npm run dev
 ```
+
+| Comando | Qué hace |
+| --- | --- |
+| `npm run dev` | Servidor de desarrollo |
+| `npm run build` | Build de producción |
+| `npm run preview` | Sirve el build |
+| `npm run lint` | ESLint |
+
+**El navegador nunca llama a ORDS directo.** Va a `/api/ords/...` y el proxy server-side
+[`src/routes/api/ords.$.ts`](src/routes/api/ords.$.ts) reenvía a Oracle: mismo origen, sin
+CORS, y el token no queda en la URL.
+
+Eso implica un **deploy con servidor Node** (el proxy es código de servidor). Si se sirviera
+como sitio estático, el proxy no correría y habría que apuntar `VITE_API_URL` directo a ORDS
+y depender de los headers CORS.
+
+## 3. App Android
+
+Ver [`mobile/README.md`](mobile/README.md).
+
+```bash
+cd mobile
+npm install
+npm start          # QR para Expo Go
+npm run build:apk  # APK vía EAS
+```
+
+La app **sí** pega directo a ORDS, lo cual es válido porque el `fetch` de React Native no
+aplica CORS. No usa el proxy.
+
+## Diferencias entre los dos frontends
+
+No son bugs:
+
+- **Biometría solo en la app.** `mobile/` usa `expo-local-authentication` + keystore del
+  sistema. En el navegador no hay equivalente sin WebAuthn, así que el botón lo dice en vez
+  de simular un acceso, y el switch de la pantalla de cuenta guarda solo la preferencia.
+- **La web tiene "Mantener sesión iniciada"** (localStorage vs. sessionStorage); la app
+  siempre persiste.
+- La web pasa por proxy; la app va directo.
+
+## Pendientes conocidos
+
+- El contenido de `home` es **mockup embebido** en ambos frontends, no viene de una API.
+- Sin rate limiting en el login (ver `backend/README.md`).
+- El token no se renueva: a las 6 h, de vuelta al login.

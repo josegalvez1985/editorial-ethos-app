@@ -1,66 +1,109 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
-type User = { name: string; email: string };
+import {
+  getSesion,
+  login as apiLogin,
+  loginAutomatico,
+  logout as apiLogout,
+  revalidar,
+  setOnUnauthorized,
+  type Sesion,
+} from "@/lib/api";
+
 type Ctx = {
-  user: User | null;
+  sesion: Sesion | null;
+  /** Datos para pintar. `null` = sin sesión. */
+  user: { name: string; email: string } | null;
   biometry: boolean;
-  login: (email: string) => void;
-  logout: () => void;
+  /** false hasta que terminamos de revalidar la sesión guardada. */
+  ready: boolean;
+  login: (usuario: string, password: string, recordar?: boolean) => Promise<void>;
+  logout: () => Promise<void>;
   setBiometry: (v: boolean) => void;
 };
 
 const SessionContext = createContext<Ctx | null>(null);
-const USER_KEY = "ethos-user";
 const BIO_KEY = "ethos-biometry";
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [sesion, setSesion] = useState<Sesion | null>(null);
   const [biometry, setBiometryState] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    // El backend es la autoridad: la sesión de storage puede tener el token
+    // vencido (6 h) aunque el JSON siga ahí.
+    let active = true;
+    const guardada = getSesion();
+    if (guardada) setSesion(guardada);
+
     try {
-      const u = localStorage.getItem(USER_KEY);
-      if (u) setUser(JSON.parse(u));
       setBiometryState(localStorage.getItem(BIO_KEY) === "1");
     } catch {
       /* ignore */
     }
+
+    // Si el token murió (6 h) pero el usuario marcó "Mantener sesión iniciada",
+    // rehacemos el login con las credenciales guardadas antes de mandarlo al
+    // formulario.
+    revalidar()
+      .then((s) => s ?? loginAutomatico())
+      .then((s) => {
+        if (active) setSesion(s);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setReady(true);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const login = (email: string) => {
-    const name = email.split("@")[0] || "Lector";
-    const u = { email, name: name.charAt(0).toUpperCase() + name.slice(1) };
-    setUser(u);
-    try {
-      localStorage.setItem(USER_KEY, JSON.stringify(u));
-    } catch {
-      /* ignore */
-    }
-  };
+  // Cualquier 401 del backend tira la sesión del contexto, no solo del storage.
+  useEffect(() => {
+    setOnUnauthorized(() => setSesion(null));
+    return () => setOnUnauthorized(() => {});
+  }, []);
 
-  const logout = () => {
-    setUser(null);
-    try {
-      localStorage.removeItem(USER_KEY);
-    } catch {
-      /* ignore */
-    }
-  };
+  const login = useCallback(async (usuario: string, password: string, recordar = false) => {
+    setSesion(await apiLogin(usuario, password, recordar));
+  }, []);
 
-  const setBiometry = (v: boolean) => {
+  const logout = useCallback(async () => {
+    await apiLogout();
+    setSesion(null);
+  }, []);
+
+  const setBiometry = useCallback((v: boolean) => {
     setBiometryState(v);
     try {
       localStorage.setItem(BIO_KEY, v ? "1" : "0");
     } catch {
       /* ignore */
     }
-  };
+  }, []);
 
-  return (
-    <SessionContext.Provider value={{ user, biometry, login, logout, setBiometry }}>
-      {children}
-    </SessionContext.Provider>
+  const user = useMemo(
+    () => (sesion ? { name: sesion.nombre, email: sesion.email || sesion.usuario } : null),
+    [sesion],
   );
+
+  const value = useMemo<Ctx>(
+    () => ({ sesion, user, biometry, ready, login, logout, setBiometry }),
+    [sesion, user, biometry, ready, login, logout, setBiometry],
+  );
+
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
 export function useSession() {
