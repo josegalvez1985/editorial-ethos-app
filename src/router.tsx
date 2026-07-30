@@ -37,6 +37,12 @@ export const getRouter = () => {
   const router = createRouter({
     routeTree,
     context: { queryClient },
+    // El sitio no siempre cuelga de la raíz: en el Pages de proyecto vive en
+    // /<repo>/. Sin esto el router compara las rutas contra la URL completa, no
+    // encuentra ninguna y toda la app muestra el 404. Es la `base` de
+    // vite.config.ts; el router le saca las barras sobrantes, así que "/" (dev,
+    // APK, dominio propio) equivale a no configurar nada.
+    basepath: import.meta.env.BASE_URL,
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
   });

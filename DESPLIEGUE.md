@@ -1,7 +1,11 @@
-# Despliegue del sitio — GitHub Pages / www.ethospy.online
+# Despliegue del sitio — GitHub Pages
 
-El sitio se publica en **<https://www.ethospy.online>** desde GitHub Pages, con el workflow
+El sitio se publica desde GitHub Pages con el workflow
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), en cada push a `main`.
+
+**Hoy vive en <https://josegalvez1985.github.io/editorial-ethos-app/>**, sin dominio propio. Para
+volver a `www.ethospy.online` hay que arreglar el DNS y prender la variable `CUSTOM_DOMAIN`: está
+todo en [Dominio propio](#2-dominio-propio-opcional-hoy-apagado).
 
 ---
 
@@ -37,36 +41,57 @@ build SSR por defecto. Ahí el proxy vuelve a correr y no hace falta nada de est
 
 No elijas "Deploy from a branch": el workflow publica un artefacto, no una rama `gh-pages`.
 
-### 2. Dominio propio
+### 2. Dominio propio (opcional, hoy apagado)
 
-**Settings → Pages → Custom domain:** `www.ethospy.online` → Save.
-Después marcá **Enforce HTTPS** (puede tardar unos minutos en habilitarse mientras GitHub emite el
-certificado).
+Sin dominio propio, Pages publica en `https://<usuario>.github.io/<repo>/` y **todo el sitio
+cuelga de `/editorial-ethos-app/`**. Eso lo resuelve solo el workflow (ver
+[La base del sitio](#la-base-del-sitio)); no hay nada que configurar.
 
-El archivo [`public/CNAME`](public/CNAME) ya tiene el dominio y viaja en cada build, así que el
-dominio no se pierde al republicar.
+#### Por qué se apagó
 
-### 3. DNS del dominio
+`www.ethospy.online` quedó en un **bucle de redirecciones** y el sitio entero dejó de responder:
 
-En el panel de tu proveedor de `ethospy.online`:
+```
+www.ethospy.online/loquesea
+  → 301 (Server: hcdn — Hostinger)  →  https://josegalvez1985.github.io/editorial-ethos-app
+  → 301 (Server: GitHub.com)        →  http://www.ethospy.online     ← por el CNAME de Pages
+  → 301 → ... sin fin
+```
 
-| Tipo | Nombre | Valor |
-| --- | --- | --- |
-| `CNAME` | `www` | `josegalvez1985.github.io` |
+El DNS apunta a Hostinger (`ethospy.online` → `A 2.57.91.91`, `www` → `CNAME ethospy.online`), que
+tiene un **redirect** hacia la URL de `github.io` —y de paso se come el path—, y Pages rebota de
+vuelta al dominio propio porque el artefacto traía un `CNAME`. Uno solo de los dos lados no alcanza
+para romperlo: hacen falta los dos.
 
-Y si querés que `ethospy.online` sin `www` también funcione, los cuatro `A` del apex a las IP de
-GitHub Pages:
+Por eso el `CNAME` **ya no vive en `public/`**. Lo escribe el workflow únicamente si existe la
+variable `CUSTOM_DOMAIN`, así que un DNS mal apuntado no puede volver a dejar el sitio en bucle.
 
-| Tipo | Nombre | Valor |
-| --- | --- | --- |
-| `A` | `@` | `185.199.108.153` |
-| `A` | `@` | `185.199.109.153` |
-| `A` | `@` | `185.199.110.153` |
-| `A` | `@` | `185.199.111.153` |
+#### Para volver a prenderlo
 
-GitHub redirige del apex al `www` (o al revés) según lo que pongas en *Custom domain*.
+1. **DNS**, en el panel de Hostinger: borrar el redirect / parking de `ethospy.online` y dejar
+   registros que apunten a GitHub Pages, no a Hostinger:
 
-### 4. Opcional: apuntar a otro ORDS
+   | Tipo | Nombre | Valor |
+   | --- | --- | --- |
+   | `CNAME` | `www` | `josegalvez1985.github.io` |
+   | `A` | `@` | `185.199.108.153` |
+   | `A` | `@` | `185.199.109.153` |
+   | `A` | `@` | `185.199.110.153` |
+   | `A` | `@` | `185.199.111.153` |
+
+   Comprobalo antes de seguir: `curl -sI https://www.ethospy.online/` tiene que responder
+   `Server: GitHub.com`. Si dice `hcdn`, el redirect de Hostinger sigue puesto.
+
+2. **Variable**: Settings → Secrets and variables → Actions → Variables → `CUSTOM_DOMAIN` =
+   `www.ethospy.online`. Con eso el workflow vuelve a escribir el `CNAME` y compila con la base en
+   `/` en vez de `/editorial-ethos-app/`.
+
+3. **Settings → Pages → Custom domain**: `www.ethospy.online` → Save, y después **Enforce HTTPS**
+   (tarda unos minutos mientras GitHub emite el certificado).
+
+Para volver atrás, borrar la variable y volver a pushear.
+
+### 3. Opcional: apuntar a otro ORDS
 
 Si el backend se muda, **Settings → Secrets and variables → Actions → Variables → New variable**:
 
@@ -92,6 +117,25 @@ TanStack Start. Después el workflow hace tres cosas sobre `dist/client`:
 Los tres están también en [`public/`](public/) o en el script local, así que el resultado es el
 mismo se compile donde se compile.
 
+### La base del sitio
+
+Sin dominio propio el sitio no está en la raíz sino en `/editorial-ethos-app/`, y un build hecho
+para la raíz ahí **no carga nada**: los chunks, el CSS, el favicon y el manifest se piden a
+`https://josegalvez1985.github.io/...` y devuelven 404 en bloque.
+
+El workflow calcula el prefijo (`/` con `CUSTOM_DOMAIN`, `/<repo>/` sin él) y lo pasa como
+`BASE_PATH`. De ahí salen tres cosas:
+
+| Quién | Qué hace con la base |
+| --- | --- |
+| [`vite.config.ts`](vite.config.ts) → `base` | Prefija los assets que emite el bundler (chunks, CSS) y define `import.meta.env.BASE_URL`. |
+| [`src/router.tsx`](src/router.tsx) → `basepath` | Sin esto el router no reconoce ninguna URL y toda la app muestra el 404 propio. |
+| [`src/lib/asset.ts`](src/lib/asset.ts) → `asset()` | Para los archivos de `public/` escritos a mano en el JSX (`logo.png`, `favicon.png`, `app.apk`…): vite **no** reescribe esas rutas. |
+
+Si agregás un archivo de `public/` referenciado desde el código, pasalo por `asset()`. Y en el
+manifest ([`public/site.webmanifest`](public/site.webmanifest)) las rutas son **relativas** a
+propósito: ahí no hay forma de inyectar la base, y así funciona en los dos escenarios.
+
 ## Probarlo en local antes de pushear
 
 ```powershell
@@ -99,8 +143,19 @@ npm run build:static
 npx serve dist\client
 ```
 
-Hace exactamente lo mismo que el workflow ([`scripts/build-static.ps1`](scripts/build-static.ps1))
-y verifica que estén `index.html`, `404.html`, `.nojekyll` y `CNAME` antes de darse por bueno.
+Hace lo mismo que el workflow ([`scripts/build-static.ps1`](scripts/build-static.ps1)) y verifica
+que estén `index.html`, `404.html` y `.nojekyll` antes de darse por bueno. Compila con la base en
+`/`, que es lo que sirve `npx serve`.
+
+Para reproducir el build real de Pages —el que cuelga de `/editorial-ethos-app/`— hay que servirlo
+desde una carpeta con ese nombre, o si no todo da 404:
+
+```powershell
+powershell -File scripts\build-static.ps1 -basePath "/editorial-ethos-app/"
+New-Item -ItemType Directory -Force dist\preview | Out-Null
+Copy-Item dist\client dist\preview\editorial-ethos-app -Recurse -Force
+npx serve dist\preview      # abrir /editorial-ethos-app/
+```
 
 Para apuntar a otro backend sin tocar nada:
 

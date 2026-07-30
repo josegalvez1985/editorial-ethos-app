@@ -41,8 +41,23 @@ jobs:
 
       - run: npm ci
 
+      # Dónde cuelga el sitio. Sin dominio propio Pages publica en
+      # https://<usuario>.github.io/<repo>/, así que TODO (chunks, css, íconos,
+      # rutas del router) tiene que colgar de /<repo>/ o se pide a la raíz del
+      # dominio y devuelve 404. Con dominio propio el sitio está en la raíz.
+      # El interruptor es la repository variable CUSTOM_DOMAIN: ver DESPLIEGUE.md.
+      - name: Calcular la base del sitio
+        id: base
+        run: |
+          if [ -n "${{ vars.CUSTOM_DOMAIN }}" ]; then
+            echo "path=/" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=/${GITHUB_REPOSITORY#*/}/" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build estático
         env:
+          BASE_PATH: ${{ steps.base.outputs.path }}
           # Sin servidor Node no corre el proxy src/routes/api/ords.$.ts, así que
           # el navegador le pega directo a ORDS. Requiere el CORS abierto que ya
           # tiene el backend. Se puede pisar con una repository variable.
@@ -61,7 +76,14 @@ jobs:
           cp dist/client/index.html dist/client/404.html
           # Sin esto Jekyll ignora todo lo que empieza con "_" y se come el shell.
           touch dist/client/.nojekyll
-          test -f dist/client/CNAME || echo "www.ethospy.online" > dist/client/CNAME
+          # El CNAME se escribe SOLO si hay dominio propio configurado. Si el
+          # archivo viaja igual en el artefacto, Pages activa ese dominio y
+          # redirige todo hacia él; con el DNS apuntando a otro lado (Hostinger
+          # devolvía un 301 de vuelta al github.io) queda un bucle de
+          # redirecciones y no responde ninguna URL del sitio.
+          if [ -n "${{ vars.CUSTOM_DOMAIN }}" ]; then
+            echo "${{ vars.CUSTOM_DOMAIN }}" > dist/client/CNAME
+          fi
           ls -la dist/client
 
       - uses: actions/upload-pages-artifact@v3

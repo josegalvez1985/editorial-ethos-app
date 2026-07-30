@@ -29,7 +29,20 @@ import tsConfigPaths from "vite-tsconfig-paths";
  */
 const staticBuild = process.env.STATIC_BUILD === "1" || process.env.APK_BUILD === "1";
 
+/**
+ * Prefijo del que cuelga todo el sitio. Por defecto la raíz, que es lo correcto
+ * en dev, con dominio propio y dentro del APK (la WebView sirve desde la raíz).
+ *
+ * GitHub Pages sin dominio propio publica en `https://<usuario>.github.io/<repo>/`,
+ * y ahí hay que pasar `BASE_PATH=/<repo>/` o todos los assets y los chunks se
+ * piden a la raíz del dominio y devuelven 404. Lo calcula
+ * `.github/workflows/deploy.yml`. Con la barra final: `import.meta.env.BASE_URL`
+ * la conserva y de eso dependen `src/lib/asset.ts` y el `basepath` del router.
+ */
+const base = process.env.BASE_PATH || "/";
+
 export default defineConfig({
+  base,
   plugins: [
     tsConfigPaths(),
     tailwindcss(),

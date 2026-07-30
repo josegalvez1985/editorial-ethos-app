@@ -11,6 +11,7 @@ import {
 import { type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
+import { asset } from "../lib/asset";
 import { ThemeProvider } from "../lib/theme";
 import { SessionProvider } from "../lib/session";
 import { CACHE_BUSTER, CACHE_MAX_AGE, persister } from "../lib/query-persist";
@@ -62,7 +63,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
             Reintentar
           </button>
           <a
-            href="/"
+            href={asset("")}
             className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
             Ir al inicio
@@ -99,9 +100,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/favicon.png", type: "image/png" },
-      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
-      { rel: "manifest", href: "/site.webmanifest" },
+      // asset(): estos archivos son de public/ y el sitio puede colgar de un
+      // subdirectorio (Pages de proyecto). Ver src/lib/asset.ts.
+      { rel: "icon", href: asset("favicon.png"), type: "image/png" },
+      { rel: "apple-touch-icon", href: asset("apple-touch-icon.png") },
+      { rel: "manifest", href: asset("site.webmanifest") },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {

@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { ArrowLeft, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
+import { asset } from "@/lib/asset";
 import { useSession } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 
@@ -62,7 +63,7 @@ export function AppHeader() {
           aria-label="Editorial Ethos"
           className="tap shrink-0 rounded-xl bg-white p-1 shadow-soft"
         >
-          <img src="/logo.png" alt="Editorial Ethos" className="size-8 rounded-lg" />
+          <img src={asset("logo.png")} alt="Editorial Ethos" className="size-8 rounded-lg" />
         </Link>
 
         {/* Mientras revalidamos el token no sabemos el nombre: barra en gris en vez

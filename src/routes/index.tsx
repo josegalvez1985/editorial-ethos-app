@@ -1,12 +1,22 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
-import { Fingerprint, Loader2, UserRound, Lock, Eye, EyeOff } from "lucide-react";
+import {
+  Download,
+  Fingerprint,
+  Loader2,
+  UserRound,
+  Lock,
+  Eye,
+  EyeOff,
+  Smartphone,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { getCredenciales } from "@/lib/api";
+import { asset } from "@/lib/asset";
 import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/")({
@@ -30,6 +40,7 @@ function LoginPage() {
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [enApp, setEnApp] = useState(false);
 
   // `replace`: el login no debe quedar en el historial, si no el botón de atrás
   // de la cabecera rebota entre esta pantalla y /home.
@@ -44,6 +55,16 @@ function LoginPage() {
   useEffect(() => {
     const c = getCredenciales();
     if (c) setUsuario((u) => u || c.usuario);
+  }, []);
+
+  // Adentro del APK no se ofrece descargar el APK: no tiene sentido y además
+  // `scripts/build-apk.ps1` borra `app.apk` del bundle (si no, cada APK
+  // empaquetaría al anterior adentro), así que el link daría 404.
+  // `window.Capacitor` lo inyecta el puente nativo y solo existe en la WebView.
+  // En un efecto y no en el estado inicial: en SSR/prerender no hay `window` y
+  // el HTML del servidor no coincidiría con el del cliente.
+  useEffect(() => {
+    setEnApp(Boolean((window as unknown as { Capacitor?: unknown }).Capacitor));
   }, []);
 
   const onSubmit = async (e: FormEvent) => {
@@ -76,7 +97,7 @@ function LoginPage() {
         <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_20%_20%,white_1px,transparent_1px)] [background-size:24px_24px]" />
         <div className="relative z-10 flex items-center justify-between pt-8 text-primary-foreground lg:contents">
           <img
-            src="/logo.png"
+            src={asset("logo.png")}
             alt="Editorial Ethos"
             className="size-16 rounded-2xl bg-white p-1.5 shadow-soft lg:size-20 lg:self-start lg:rounded-xl lg:p-2"
           />
@@ -197,6 +218,28 @@ function LoginPage() {
               Acceder con biometría
             </Button>
           </form>
+
+          {/* Descarga del APK. El archivo es `public/app.apk` —lo deja ahí
+              `npm run apk`— y se publica junto con el sitio, así que sale del
+              mismo origen. Ver APK.md y DESPLIEGUE.md. */}
+          {enApp ? null : (
+            <a
+              href={asset("app.apk")}
+              download="editorial-ethos.apk"
+              className="tap mt-6 flex items-center gap-3.5 rounded-2xl border border-border/60 bg-card p-4 shadow-soft hover:bg-accent"
+            >
+              <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-soft text-primary">
+                <Smartphone className="size-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-semibold">Descargar app para Android</p>
+                <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">
+                  Instala el APK y entra desde el celular sin pasar por el navegador.
+                </p>
+              </div>
+              <Download className="size-5 shrink-0 text-muted-foreground" />
+            </a>
+          )}
         </div>
       </main>
     </div>
