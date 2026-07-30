@@ -160,6 +160,26 @@ El workflow calcula el prefijo (`/` con `CUSTOM_DOMAIN`, `/<repo>/` sin él) y l
 | [`src/router.tsx`](src/router.tsx) → `basepath` | Sin esto el router no reconoce ninguna URL y toda la app muestra el 404 propio. |
 | [`src/lib/asset.ts`](src/lib/asset.ts) → `asset()` | Para los archivos de `public/` escritos a mano en el JSX (`logo.png`, `favicon.png`, `app.apk`…): vite **no** reescribe esas rutas. |
 
+### La vista previa al compartir el link
+
+Cuando se pega `www.ethospy.online` en WhatsApp, Telegram o X, el logo que aparece sale del
+`og:image` de [`src/routes/__root.tsx`](src/routes/__root.tsx). Dos cosas lo hacen funcionar y las
+dos se rompen fácil:
+
+1. **La URL tiene que ser absoluta.** El crawler lee el HTML sin una página desde la cual resolver
+   `/logo.png`. Por eso el workflow calcula el origen (`https://www.ethospy.online`) y lo pasa como
+   `VITE_SITE_URL`, que consume [`assetAbsoluto()`](src/lib/asset.ts). Sale del mismo
+   `CUSTOM_DOMAIN` que la base, así que no hay nada extra que configurar.
+2. **Las tags viven solo en `__root.tsx`, no por ruta.** Todas las URLs sirven el mismo
+   `_shell.html`, así que el crawler ve siempre las mismas tags. Cuando `index.tsx` tenía las
+   suyas, compartir el sitio mostraba **"Iniciar sesión — Editorial Ethos"**.
+
+Se usa `logo.png` y no los `icon-*.png` porque esos son RGBA: la transparencia se renderiza
+**negra** en la vista previa de WhatsApp y X.
+
+Si cambiás la imagen, acordate de que los scrapers **cachean**: hay que forzar el refresco desde el
+[Sharing Debugger de Facebook](https://developers.facebook.com/tools/debug/) para ver el cambio.
+
 Si agregás un archivo de `public/` referenciado desde el código, pasalo por `asset()`. Y en el
 manifest ([`public/site.webmanifest`](public/site.webmanifest)) las rutas son **relativas** a
 propósito: ahí no hay forma de inyectar la base, y así funciona en los dos escenarios.

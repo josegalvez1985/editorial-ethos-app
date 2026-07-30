@@ -49,7 +49,7 @@ jobs:
       # rutas del router) tiene que colgar de /<repo>/ o se pide a la raíz del
       # dominio y devuelve 404. Con dominio propio el sitio está en la raíz.
       # El interruptor es la repository variable CUSTOM_DOMAIN: ver DESPLIEGUE.md.
-      - name: Calcular la base del sitio
+      - name: Calcular la base y el origen del sitio
         id: base
         # La variable entra por `env` y no interpolada en el script: un ${{ }}
         # dentro de `run` se pega como texto ANTES de que bash lea la línea, así
@@ -57,15 +57,25 @@ jobs:
         env:
           CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
         run: |
+          # `site` es el ORIGEN (esquema + host, sin barra final). Va aparte de la
+          # base porque las meta tags de Open Graph necesitan URLs absolutas: una
+          # ruta como /logo.png no le sirve a WhatsApp ni a Facebook, que leen el
+          # HTML sin una página desde la cual resolverla. Ver src/lib/asset.ts.
           if [ -n "$CUSTOM_DOMAIN" ]; then
             echo "path=/" >> "$GITHUB_OUTPUT"
+            echo "site=https://$CUSTOM_DOMAIN" >> "$GITHUB_OUTPUT"
           else
             echo "path=/${GITHUB_REPOSITORY#*/}/" >> "$GITHUB_OUTPUT"
+            # El host de Pages es siempre en minúsculas, el nombre de usuario no
+            # necesariamente.
+            echo "site=https://$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]').github.io" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build estático
         env:
           BASE_PATH: ${{ steps.base.outputs.path }}
+          # Origen absoluto para el og:image de la vista previa al compartir.
+          VITE_SITE_URL: ${{ steps.base.outputs.site }}
           # Sin servidor Node no corre el proxy src/routes/api/ords.$.ts, así que
           # el navegador le pega directo a ORDS. Requiere el CORS abierto que ya
           # tiene el backend. Se puede pisar con una repository variable.

@@ -11,7 +11,7 @@ import {
 import { type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { asset } from "../lib/asset";
+import { asset, assetAbsoluto } from "../lib/asset";
 import { ThemeProvider } from "../lib/theme";
 import { SessionProvider } from "../lib/session";
 import { CACHE_BUSTER, CACHE_MAX_AGE, persister } from "../lib/query-persist";
@@ -93,10 +93,35 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Editorial Ethos" },
       { name: "description", content: "Editorial Ethos — ideas, cultura y opinión con carácter." },
       { name: "author", content: "Editorial Ethos" },
+
+      // ── Vista previa al compartir el link (Open Graph) ──────────────────────
+      // Viven SOLO acá y no en cada ruta a propósito: el sitio es estático y
+      // todas las URLs sirven el mismo `_shell.html` (ver DESPLIEGUE.md), así que
+      // un crawler ve estas tags sin importar qué link se compartió. Ponerlas por
+      // ruta daría la ilusión de que cambian, y lo único que lograría es que la
+      // ruta que sembró el shell le imponga su título a todo el sitio.
+      //
+      // Las URLs son ABSOLUTAS por obligación: ver assetAbsoluto() en lib/asset.ts.
       { property: "og:title", content: "Editorial Ethos" },
       { property: "og:description", content: "Ideas, cultura y opinión con carácter." },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
+      { property: "og:site_name", content: "Editorial Ethos" },
+      { property: "og:locale", content: "es_ES" },
+      { property: "og:url", content: assetAbsoluto("") },
+      { property: "og:image", content: assetAbsoluto("logo.png") },
+      // logo.png y no los icon-*.png: esos son RGBA y la transparencia sale NEGRA
+      // en la vista previa de WhatsApp y X. logo.png es RGB opaco.
+      { property: "og:image:type", content: "image/png" },
+      // Declarar el tamaño evita que la primera vez que se comparte el link salga
+      // sin imagen: sin esto el scraper tiene que bajar el PNG para medirlo, y si
+      // no llega a tiempo cachea la vista previa sin nada.
+      { property: "og:image:width", content: "2000" },
+      { property: "og:image:height", content: "2000" },
+      { property: "og:image:alt", content: "Logo de Editorial Ethos" },
+      // "summary" y no "summary_large_image": el large recorta a 1.91:1 y a un
+      // logo cuadrado le come la mitad. X lo muestra como miniatura sin recortar.
+      { name: "twitter:card", content: "summary" },
+      { name: "twitter:image", content: assetAbsoluto("logo.png") },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

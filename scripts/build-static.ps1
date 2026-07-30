@@ -14,7 +14,13 @@ param(
     # `npx serve dist\client`. GitHub Pages sin dominio propio publica en
     # /editorial-ethos-app/: para reproducir ESE build, pasá ese valor (y ojo,
     # después hay que servirlo desde una carpeta con ese nombre o todo da 404).
-    [string]$basePath = "/"
+    [string]$basePath = "/",
+
+    # Origen absoluto (esquema + host) para el og:image de la vista previa al
+    # compartir el link. Tiene que ser absoluto o WhatsApp/Facebook no muestran
+    # imagen: ver `assetAbsoluto()` en src/lib/asset.ts. En producción lo calcula
+    # el workflow; acá se pasa a mano solo para revisar las meta tags.
+    [string]$siteUrl = "https://www.ethospy.online"
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,15 +32,18 @@ Set-Location $raiz
 Write-Host "=== Build estático de Editorial Ethos ===" -ForegroundColor $Info
 Write-Host "API embebida: $apiUrl" -ForegroundColor $Info
 Write-Host "Base del sitio: $basePath" -ForegroundColor $Info
+Write-Host "Origen (og:image): $siteUrl" -ForegroundColor $Info
 
 $env:STATIC_BUILD = "1"
 $env:VITE_API_URL = $apiUrl
 $env:BASE_PATH = $basePath
+$env:VITE_SITE_URL = $siteUrl
 npm run build
 $exit = $LASTEXITCODE
 $env:STATIC_BUILD = ""
 $env:VITE_API_URL = ""
 $env:BASE_PATH = ""
+$env:VITE_SITE_URL = ""
 if ($exit -ne 0) {
     Write-Host "ERROR: el build falló" -ForegroundColor $Bad
     exit 1

@@ -24,8 +24,9 @@ export const Route = createFileRoute("/")({
     meta: [
       { title: "Iniciar sesión — Editorial Ethos" },
       { name: "description", content: "Accede a tu cuenta de Editorial Ethos." },
-      { property: "og:title", content: "Iniciar sesión — Editorial Ethos" },
-      { property: "og:description", content: "Accede a tu cuenta de Editorial Ethos." },
+      // Sin og:* acá: esta ruta es la que siembra el _shell.html estático, así que
+      // su Open Graph terminaba siendo el de TODO el sitio y compartir
+      // www.ethospy.online mostraba "Iniciar sesión". Las tags viven en __root.
     ],
   }),
   component: LoginPage,

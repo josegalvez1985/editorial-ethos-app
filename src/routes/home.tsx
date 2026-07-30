@@ -13,7 +13,6 @@ export const Route = createFileRoute("/home")({
     meta: [
       { title: "Inicio — Editorial Ethos" },
       { name: "description", content: "Resumen de evaluaciones de facilitadores." },
-      { property: "og:title", content: "Inicio — Editorial Ethos" },
     ],
   }),
   component: HomePage,

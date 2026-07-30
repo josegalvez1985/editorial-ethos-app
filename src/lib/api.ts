@@ -7,7 +7,8 @@
  */
 
 const BASE = import.meta.env.VITE_API_URL ?? "/api/ords/";
-const SESSION_KEY = "ethos-sesion";
+/** Exportada para que `lib/session.tsx` sepa filtrar el evento `storage`. */
+export const SESSION_KEY = "ethos-sesion";
 const CRED_KEY = "ethos-credenciales";
 
 function url(path: string) {
@@ -164,6 +165,23 @@ function esTokenInvalido(res: Response, data: { success?: boolean; message?: str
       typeof data?.message === "string" &&
       /token\s+inv[aá]lido|token\s+expirado|expirad/i.test(data.message))
   );
+}
+
+/**
+ * Milisegundos que le quedan al token según el `expira` que emitió el backend.
+ * `null` si no hay dato o no se puede parsear.
+ *
+ * OJO CON EL FORMATO: el backend manda ISO **sin zona** (`2026-07-30T15:04:05`), y
+ * `new Date()` interpreta eso en la hora LOCAL del navegador. Si el server está en
+ * otro huso, esta cuenta se corre esas horas enteras.
+ *
+ * Por eso el resultado sirve para decidir **cuándo preguntar**, nunca para dar la
+ * sesión por muerta: quien dictamina es el backend. Ver `lib/session.tsx`.
+ */
+export function msHastaExpirar(expira: string | undefined): number | null {
+  if (!expira) return null;
+  const t = new Date(expira).getTime();
+  return Number.isNaN(t) ? null : t - Date.now();
 }
 
 /** Se dispara cuando el backend rechaza el token: limpiar y volver al login. */

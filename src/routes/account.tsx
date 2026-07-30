@@ -13,8 +13,6 @@ export const Route = createFileRoute("/account")({
     meta: [
       { title: "Mi cuenta — Editorial Ethos" },
       { name: "description", content: "Configura biometría, tema y preferencias." },
-      { property: "og:title", content: "Mi cuenta — Editorial Ethos" },
-      { property: "og:description", content: "Configura biometría, tema y preferencias." },
     ],
   }),
   component: AccountPage,
