@@ -1,0 +1,72 @@
+name: Desplegar a GitHub Pages
+
+# El sitio se publica en https://www.ethospy.online (ver public/CNAME).
+# Detalle de por qué el build es estático y qué implica: DESPLIEGUE.md
+
+on:
+  push:
+    branches: [main]
+  # Permite lanzarlo a mano desde la pestaña Actions.
+  workflow_dispatch:
+
+# Lo que necesita actions/deploy-pages para publicar.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Un despliegue a la vez. `cancel-in-progress: false` porque cancelar a mitad de
+# camino puede dejar el sitio a medio publicar.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build estático
+        env:
+          # Sin servidor Node no corre el proxy src/routes/api/ords.$.ts, así que
+          # el navegador le pega directo a ORDS. Requiere el CORS abierto que ya
+          # tiene el backend. Se puede pisar con una repository variable.
+          STATIC_BUILD: "1"
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://oracleapex.com/ords/fundcarac/ethos/' }}
+        run: npm run build
+
+      - name: Preparar la salida para Pages
+        run: |
+          # El prerender del modo SPA deja el shell como _shell.html; Pages sirve
+          # index.html en la raíz.
+          cp dist/client/_shell.html dist/client/index.html
+          # Pages devuelve 404.html en cualquier ruta que no exista como archivo.
+          # Siendo el mismo shell, el router resuelve /evaluaciones, /account, etc.
+          # del lado del cliente en vez de mostrar el 404 de GitHub.
+          cp dist/client/index.html dist/client/404.html
+          # Sin esto Jekyll ignora todo lo que empieza con "_" y se come el shell.
+          touch dist/client/.nojekyll
+          test -f dist/client/CNAME || echo "www.ethospy.online" > dist/client/CNAME
+          ls -la dist/client
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/client
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

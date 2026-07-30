@@ -11,7 +11,8 @@
     "apk": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\build-apk.ps1 -config release",
     "apk:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\build-apk.ps1 -config debug",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "build:static": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\build-static.ps1"
   },
   "dependencies": {
     "@capacitor/android": "8.4.1",

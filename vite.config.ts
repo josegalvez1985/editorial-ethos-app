@@ -33,12 +33,12 @@ export default defineConfig({
   plugins: [
     tsConfigPaths(),
     tailwindcss(),
-    ...(apkBuild ? [] : [nitro()]),
+    ...(staticBuild ? [] : [nitro()]),
     tanstackStart({
       // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
       // nitro/vite builds from this
       server: { entry: "server" },
-      ...(apkBuild && { spa: { enabled: true } }),
+      ...(staticBuild && { spa: { enabled: true } }),
     }),
     viteReact(),
   ],
