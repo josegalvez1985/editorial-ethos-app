@@ -8,7 +8,8 @@ import tsConfigPaths from "vite-tsconfig-paths";
 /**
  * STATIC_BUILD=1 → build estático, sin servidor Node. Dos destinos lo usan:
  *
- * - **GitHub Pages** (`www.ethospy.online`) — ver `.github/workflows/deploy.yml`
+ * - **GitHub Pages** (`josegalvez1985.github.io/editorial-ethos-app/`) — ver
+ *   `.github/workflows/deploy.yml`
  *   y `DESPLIEGUE.md`.
  * - **El APK de Capacitor** — ver `APK.md` y `scripts/build-apk.ps1`.
  *

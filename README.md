@@ -40,9 +40,9 @@ npm run dev
 | `npm run lint` | ESLint |
 | `npm run apk` | APK de Android con esta misma web dentro — ver [`APK.md`](APK.md) |
 
-**En producción el sitio se publica en <https://www.ethospy.online> desde GitHub Pages**, que es
-hosting estático: ahí el proxy **no** corre y el navegador le pega directo a ORDS. Ver
-[`DESPLIEGUE.md`](DESPLIEGUE.md).
+**En producción el sitio se publica en <https://josegalvez1985.github.io/editorial-ethos-app/>
+desde GitHub Pages** (`ethospy.online` redirige ahí), que es hosting estático: el proxy **no**
+corre y el navegador le pega directo a ORDS. Ver [`DESPLIEGUE.md`](DESPLIEGUE.md).
 
 **El navegador nunca llama a ORDS directo.** Va a `/api/ords/...` y el proxy server-side
 [`src/routes/api/ords.$.ts`](src/routes/api/ords.$.ts) reenvía a Oracle: mismo origen, sin

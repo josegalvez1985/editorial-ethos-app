@@ -3,9 +3,9 @@
 El sitio se publica desde GitHub Pages con el workflow
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), en cada push a `main`.
 
-**Hoy vive en <https://josegalvez1985.github.io/editorial-ethos-app/>**, sin dominio propio. Para
-volver a `www.ethospy.online` hay que arreglar el DNS y prender la variable `CUSTOM_DOMAIN`: está
-todo en [Dominio propio](#2-dominio-propio-opcional-hoy-apagado).
+**El sitio vive en <https://josegalvez1985.github.io/editorial-ethos-app/>**, y `ethospy.online`
+es una **redirección** hacia ahí: se entra por el dominio, pero la URL que queda a la vista es la
+de `github.io`. Ver [El dominio ethospy.online](#2-el-dominio-ethospyonline-redirección).
 
 ---
 
@@ -41,35 +41,51 @@ build SSR por defecto. Ahí el proxy vuelve a correr y no hace falta nada de est
 
 No elijas "Deploy from a branch": el workflow publica un artefacto, no una rama `gh-pages`.
 
-### 2. Dominio propio (opcional, hoy apagado)
+### 2. El dominio ethospy.online (redirección)
 
-Sin dominio propio, Pages publica en `https://<usuario>.github.io/<repo>/` y **todo el sitio
-cuelga de `/editorial-ethos-app/`**. Eso lo resuelve solo el workflow (ver
-[La base del sitio](#la-base-del-sitio)); no hay nada que configurar.
+El sitio **no se sirve en el dominio**: `ethospy.online` está en Hostinger y lo único que hace es
+un `301` hacia `https://josegalvez1985.github.io/editorial-ethos-app/`. El dominio es la puerta de
+entrada; la URL final es la de `github.io`.
 
-#### Por qué se apagó
+Son dos ajustes, y **los dos son necesarios**:
 
-`www.ethospy.online` quedó en un **bucle de redirecciones** y el sitio entero dejó de responder:
+| Dónde | Qué |
+| --- | --- |
+| Hostinger (hPanel del dominio) | Redirección de `ethospy.online` y `www` → `https://josegalvez1985.github.io/editorial-ethos-app/` |
+| GitHub → Settings → Pages | **Custom domain VACÍO** |
+
+#### Por qué el "Custom domain" tiene que quedar vacío
+
+Con un dominio propio configurado, Pages responde `301` en `github.io` mandando al dominio. Sumado
+al redirect de Hostinger que va en la dirección contraria, queda un **bucle** y no responde
+ninguna de las dos URLs:
 
 ```
 www.ethospy.online/loquesea
-  → 301 (Server: hcdn — Hostinger)  →  https://josegalvez1985.github.io/editorial-ethos-app
-  → 301 (Server: GitHub.com)        →  http://www.ethospy.online     ← por el CNAME de Pages
+  → 301 (Server: hcdn — Hostinger)  →  https://josegalvez1985.github.io/editorial-ethos-app/…
+  → 301 (Server: GitHub.com)        →  http://www.ethospy.online/…    ← porque Pages tiene dominio propio
   → 301 → ... sin fin
 ```
 
-El DNS apunta a Hostinger (`ethospy.online` → `A 2.57.91.91`, `www` → `CNAME ethospy.online`), que
-tiene un **redirect** hacia la URL de `github.io` —y de paso se come el path—, y Pages rebota de
-vuelta al dominio propio porque el artefacto traía un `CNAME`. Uno solo de los dos lados no alcanza
-para romperlo: hacen falta los dos.
+Ninguno de los dos lados solo alcanza para romperlo: hacen falta los dos apuntándose entre sí. Por
+eso el `CNAME` **ya no vive en `public/`** —lo escribe el workflow solo si existe la variable
+`CUSTOM_DOMAIN`—, pero ojo: **borrar el archivo no borra el dominio ya guardado** en Settings →
+Pages. Eso hay que sacarlo a mano una vez.
 
-Por eso el `CNAME` **ya no vive en `public/`**. Lo escribe el workflow únicamente si existe la
-variable `CUSTOM_DOMAIN`, así que un DNS mal apuntado no puede volver a dejar el sitio en bucle.
+Para comprobar que quedó bien:
 
-#### Para volver a prenderlo
+```powershell
+curl.exe -s -o NUL -D - https://josegalvez1985.github.io/editorial-ethos-app/home
+#  200  → listo. Si aparece "301 → www.ethospy.online", el Custom domain sigue puesto.
+```
 
-1. **DNS**, en el panel de Hostinger: borrar el redirect / parking de `ethospy.online` y dejar
-   registros que apunten a GitHub Pages, no a Hostinger:
+#### Si algún día querés servir el sitio EN el dominio
+
+Es la alternativa: la URL se queda en `www.ethospy.online` y el sitio vuelve a colgar de la raíz.
+Cuesta tres pasos:
+
+1. **DNS**, en Hostinger: borrar la redirección y apuntar el dominio a GitHub Pages —hoy apunta a
+   Hostinger (`ethospy.online` → `A 2.57.91.91`, `www` → `CNAME ethospy.online`):
 
    | Tipo | Nombre | Valor |
    | --- | --- | --- |
@@ -79,12 +95,12 @@ variable `CUSTOM_DOMAIN`, así que un DNS mal apuntado no puede volver a dejar e
    | `A` | `@` | `185.199.110.153` |
    | `A` | `@` | `185.199.111.153` |
 
-   Comprobalo antes de seguir: `curl -sI https://www.ethospy.online/` tiene que responder
-   `Server: GitHub.com`. Si dice `hcdn`, el redirect de Hostinger sigue puesto.
+   Verificalo antes de seguir: `curl -sI https://www.ethospy.online/` tiene que responder
+   `Server: GitHub.com`. Si dice `hcdn`, la redirección sigue puesta.
 
 2. **Variable**: Settings → Secrets and variables → Actions → Variables → `CUSTOM_DOMAIN` =
-   `www.ethospy.online`. Con eso el workflow vuelve a escribir el `CNAME` y compila con la base en
-   `/` en vez de `/editorial-ethos-app/`.
+   `www.ethospy.online`. El workflow vuelve a escribir el `CNAME` y compila con la base en `/` en
+   vez de `/editorial-ethos-app/`.
 
 3. **Settings → Pages → Custom domain**: `www.ethospy.online` → Save, y después **Enforce HTTPS**
    (tarda unos minutos mientras GitHub emite el certificado).
@@ -168,8 +184,13 @@ powershell -File scripts\build-static.ps1 -apiUrl "https://oracleapex.com/ords/o
 ## El APK viaja dentro del sitio
 
 `public/app.apk` se publica junto con el resto, así que queda descargable en
-`https://www.ethospy.online/app.apk`. Lo genera `npm run apk`
+<https://josegalvez1985.github.io/editorial-ethos-app/app.apk>. Lo genera `npm run apk`
 (ver [`APK.md`](APK.md)), que lo copia ahí automáticamente.
+
+La pantalla de login lo ofrece con un ítem "Descargar app para Android"
+([`src/routes/index.tsx`](src/routes/index.tsx)), que arma la URL con `asset()` para que siga
+funcionando cambie o no la base. Ese ítem **no** se muestra dentro del propio APK: el build de
+Capacitor saca `app.apk` del bundle para que cada APK no empaquete al anterior adentro.
 
 **Costo a tener en cuenta:** son ~4 MB y el `.gitignore` no excluye `*.apk`, así que **cada APK
 que commitees suma 4 MB al historial de git para siempre**. Si se vuelve pesado, las salidas son
