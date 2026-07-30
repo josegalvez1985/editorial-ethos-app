@@ -156,16 +156,23 @@ instalar encima un `versionCode` menor o igual.
 
 ## Ícono de la app
 
-Hoy el APK usa el ícono por defecto de Capacitor. Para poner el de la marca:
+Ya está el de la marca: los `mipmap-*`, el adaptive icon y el splash se generaron desde
+[`assets/icon.png`](assets/) (1024×1024, el mismo que usa la app Expo) y **están commiteados** en
+`android/app/src/main/res/`. No hay que hacer nada en cada build.
+
+Para volver a generarlos —si cambia el logo— reemplazá `assets/icon.png` y corré:
 
 ```powershell
-npm install --save-dev @capacitor/assets
-# necesita assets\logo.png (1024x1024); hay un logo en public\logo.png
-npx @capacitor/assets generate --android --iconBackgroundColor "#ffffff"
+npx @capacitor/assets generate --android --iconBackgroundColor "#ffffff" --splashBackgroundColor "#ffffff"
 ```
 
-Eso genera los `mipmap-*` y el adaptive icon en `android/app/src/main/res/`. Después, regenerar el
-APK. La app Expo tiene sus propios íconos ya hechos en `mobile/assets/`, que sirven de base.
+**Con `npx`, no como dependencia del proyecto.** `@capacitor/assets` estuvo un rato en
+`devDependencies` y hubo que sacarlo: arrastra un `@capacitor/cli@5.7.8` viejo además del 8.4.1
+real —lo que rompía `npm ci` en GitHub Actions con `Missing: lru-cache@11.5.2 from lock file`— y
+un `sharp@0.32.6` nativo que el runner tenía que compilar con `node-gyp` para nada, porque los
+íconos ya están generados. Es una herramienta de un solo uso, no una dependencia de build.
+
+Después de regenerarlos, hay que recompilar el APK.
 
 ## Firmar el APK release
 

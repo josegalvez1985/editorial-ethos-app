@@ -32,6 +32,13 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Node 22 trae npm 10, pero el package-lock.json lo escribe npm 11 en la
+      # máquina de desarrollo. Las dos versiones arman el árbol distinto y npm 10
+      # rechazaba el lock con "Missing: lru-cache@11.5.2 from lock file".
+      # Fijar la versión hace que el CI use el mismo npm que generó el lock.
+      - name: Fijar npm 11 (la versión que escribe el lock)
+        run: npm i -g npm@11
+
       - run: npm ci
 
       - name: Build estático
