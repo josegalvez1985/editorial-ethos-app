@@ -1,8 +1,10 @@
 name: Desplegar a GitHub Pages
 
-# El sitio se publica en https://josegalvez1985.github.io/editorial-ethos-app/
-# (ethospy.online solo redirige ahí; el dominio propio está apagado a propósito).
-# Detalle de por qué el build es estático y qué implica: DESPLIEGUE.md
+# El sitio se sirve EN https://www.ethospy.online/ — la URL del dominio es la que
+# queda a la vista, y Pages redirige el github.io hacia ella. El interruptor es la
+# repository variable CUSTOM_DOMAIN: sin ella el build cae al Pages de proyecto
+# (https://josegalvez1985.github.io/editorial-ethos-app/) y todo cuelga de /<repo>/.
+# El DNS tiene que apuntar a GitHub, no redirigir: DESPLIEGUE.md
 
 on:
   push:
@@ -49,8 +51,13 @@ jobs:
       # El interruptor es la repository variable CUSTOM_DOMAIN: ver DESPLIEGUE.md.
       - name: Calcular la base del sitio
         id: base
+        # La variable entra por `env` y no interpolada en el script: un ${{ }}
+        # dentro de `run` se pega como texto ANTES de que bash lea la línea, así
+        # que el valor podría cerrar la comilla y ejecutar lo que quiera.
+        env:
+          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
         run: |
-          if [ -n "${{ vars.CUSTOM_DOMAIN }}" ]; then
+          if [ -n "$CUSTOM_DOMAIN" ]; then
             echo "path=/" >> "$GITHUB_OUTPUT"
           else
             echo "path=/${GITHUB_REPOSITORY#*/}/" >> "$GITHUB_OUTPUT"
@@ -67,7 +74,15 @@ jobs:
         run: npm run build
 
       - name: Preparar la salida para Pages
+        env:
+          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
         run: |
+          # Sin el shell no hay sitio: mejor cortar acá con un mensaje que
+          # dejar que `cp` falle con un "No such file" sin contexto.
+          if [ ! -f dist/client/_shell.html ]; then
+            echo "ERROR: no se generó dist/client/_shell.html. ¿Se apagó el modo SPA?" >&2
+            exit 1
+          fi
           # El prerender del modo SPA deja el shell como _shell.html; Pages sirve
           # index.html en la raíz.
           cp dist/client/_shell.html dist/client/index.html
@@ -77,13 +92,16 @@ jobs:
           cp dist/client/index.html dist/client/404.html
           # Sin esto Jekyll ignora todo lo que empieza con "_" y se come el shell.
           touch dist/client/.nojekyll
-          # El CNAME se escribe SOLO si hay dominio propio configurado. Si el
-          # archivo viaja igual en el artefacto, Pages activa ese dominio y
-          # redirige todo hacia él; con el DNS apuntando a otro lado (Hostinger
-          # devolvía un 301 de vuelta al github.io) queda un bucle de
-          # redirecciones y no responde ninguna URL del sitio.
-          if [ -n "${{ vars.CUSTOM_DOMAIN }}" ]; then
-            echo "${{ vars.CUSTOM_DOMAIN }}" > dist/client/CNAME
+          # El CNAME es lo que hace que la URL del dominio sea la que queda a la
+          # vista: con él, Pages sirve el sitio en ese dominio y manda un 301
+          # desde el github.io hacia allá. Sin él pasa lo contrario.
+          #
+          # OJO con el DNS: esto exige que el dominio APUNTE a GitHub. Si además
+          # hay un redirect del lado del registrador apuntando de vuelta al
+          # github.io (lo que hacía Hostinger), los dos 301 se apuntan entre sí y
+          # queda un bucle en el que no responde ninguna de las dos URLs.
+          if [ -n "$CUSTOM_DOMAIN" ]; then
+            echo "$CUSTOM_DOMAIN" > dist/client/CNAME
           fi
           ls -la dist/client
 

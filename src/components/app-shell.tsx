@@ -41,8 +41,8 @@ export function AppShell({
   }, [ready, sesion, navigate]);
 
   // Sin sesión no se pinta nada del contenido. Antes se veía la pantalla entera
-  // con el usuario en "Invitado": se llega escribiendo la URL a mano o cayendo
-  // desde una redirección externa (ethospy.online apunta a /home).
+  // con el usuario en "Invitado": se llega escribiendo la URL a mano, desde un
+  // favorito o compartiendo un link a una pantalla interna.
   if (!sesion) {
     return (
       <div className="grid min-h-dvh place-items-center bg-muted/40">
