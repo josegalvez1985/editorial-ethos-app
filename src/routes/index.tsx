@@ -19,6 +19,16 @@ import { getCredenciales } from "@/lib/api";
 import { asset } from "@/lib/asset";
 import { useSession } from "@/lib/session";
 
+/**
+ * URL de descarga del APK, o `""` para no ofrecerlo.
+ *
+ * Vacía a propósito: el binario ya no se commitea (ver `*.apk` en .gitignore), así
+ * que no hay archivo que servir desde el sitio y el link daría 404. Para volver a
+ * ofrecerlo, poner acá la URL del GitHub Release —o de donde se aloje— y listo; el
+ * ítem del login reaparece solo.
+ */
+const DESCARGA_APK_URL = "";
+
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
@@ -220,12 +230,23 @@ function LoginPage() {
             </Button>
           </form>
 
-          {/* Descarga del APK. El archivo es `public/app.apk` —lo deja ahí
-              `npm run apk`— y se publica junto con el sitio, así que sale del
-              mismo origen. Ver APK.md y DESPLIEGUE.md. */}
-          {enApp ? null : (
+          {/*
+            La descarga del APK está APAGADA a propósito.
+
+            El binario ya no viaja en el repo (`*.apk` en .gitignore): son ~4 MB por
+            build y git guarda cada versión para siempre. Como el sitio servía el
+            archivo desde `public/`, sacarlo del repo dejaba este link en un 404.
+
+            El APK se reparte a mano. Para volver a ofrecerlo desde acá hay que
+            darle una URL estable —un GitHub Release es lo natural— y poner esa URL
+            en el `href`. Ver APK.md y DESPLIEGUE.md.
+
+            `enApp` distingue la web de la WebView del APK: adentro del propio APK
+            este ítem nunca se mostró, para que cada APK no empaquete al anterior.
+          */}
+          {DESCARGA_APK_URL && !enApp && (
             <a
-              href={asset("app.apk")}
+              href={DESCARGA_APK_URL}
               download="editorial-ethos.apk"
               className="tap mt-6 flex items-center gap-3.5 rounded-2xl border border-border/60 bg-card p-4 shadow-soft hover:bg-accent"
             >

@@ -29,6 +29,12 @@ dist-ssr
 *.keystore
 android/keystore.properties
 
+# El APK compilado. Son ~4 MB por build y git guarda cada versión para siempre:
+# commitearlo en cada release engorda el historial sin vuelta atrás (un binario
+# no se comprime entre versiones como el texto). Se reparte a mano, fuera del
+# repo. Lo genera `npm run apk` en public/app.apk — ver APK.md.
+*.apk
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
