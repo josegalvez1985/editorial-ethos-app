@@ -77,10 +77,17 @@ Son tres ajustes y **el orden importa** (ver el bucle más abajo):
    #  Server: hcdn        → sigue contestando Hostinger; la redirección no se borró o falta propagar.
    ```
 
-2. **Variable**: Settings → Secrets and variables → Actions → Variables → New variable →
-   `CUSTOM_DOMAIN` = `www.ethospy.online`. Después, Actions → *Desplegar a GitHub Pages* → **Run
-   workflow** (o un push a `main`). Eso hace dos cosas en el mismo build: compila con la base en
+2. **Build**: nada que configurar. El dominio es el valor por defecto en
+   [`deploy.yml`](.github/workflows/deploy.yml), así que alcanza con un push a `main` (o Actions →
+   *Desplegar a GitHub Pages* → **Run workflow**). Ese build hace dos cosas: compila con la base en
    `/` en vez de `/editorial-ethos-app/`, y escribe el `CNAME` en el artefacto.
+
+   **Por qué el build necesita saber el dominio, si el `CNAME` ya se lo dice a Pages:** son dos
+   cosas distintas. El `CNAME` define *dónde se sirve* el sitio; la base define con qué prefijo se
+   **hornean** las rutas de los assets dentro del HTML y el JS, y eso pasa en tiempo de
+   compilación. Un build hecho para `/editorial-ethos-app/` y servido en la raíz del dominio pide
+   `https://www.ethospy.online/editorial-ethos-app/assets/…` y devuelve 404 en bloque: página en
+   blanco.
 
 3. **Settings → Pages**: el `CNAME` del artefacto deja el *Custom domain* puesto solo. Comprobá
    que diga `www.ethospy.online` y marcá **Enforce HTTPS** cuando se habilite (tarda unos minutos
@@ -114,8 +121,15 @@ eso primero se saca el redirect de Hostinger y recién después se prende `CUSTO
 
 #### Para volver al github.io
 
-Borrar la variable `CUSTOM_DOMAIN`, volver a pushear, y **vaciar a mano el Custom domain** en
-Settings → Pages: que el artefacto deje de traer el `CNAME` no borra el dominio ya guardado.
+Tres cosas, y las tres hacen falta:
+
+1. Vaciar el valor por defecto de `CUSTOM_DOMAIN` en [`deploy.yml`](.github/workflows/deploy.yml)
+   (las dos apariciones). No alcanza con dejar la repository variable vacía: en las expresiones de
+   Actions, `vars.X || 'default'` toma el default también cuando la variable existe pero está en
+   blanco.
+2. Borrar el `CNAME` de la raíz del repo y volver a pushear.
+3. **Vaciar a mano el Custom domain** en Settings → Pages: que el artefacto deje de traer el
+   `CNAME` no borra el dominio ya guardado.
 
 ### 3. Opcional: apuntar a otro ORDS
 

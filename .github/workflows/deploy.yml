@@ -1,9 +1,13 @@
 name: Desplegar a GitHub Pages
 
 # El sitio se sirve EN https://www.ethospy.online/ — la URL del dominio es la que
-# queda a la vista, y Pages redirige el github.io hacia ella. El interruptor es la
-# repository variable CUSTOM_DOMAIN: sin ella el build cae al Pages de proyecto
-# (https://josegalvez1985.github.io/editorial-ethos-app/) y todo cuelga de /<repo>/.
+# queda a la vista, y Pages redirige el github.io hacia ella.
+#
+# El dominio está PUESTO ACÁ ABAJO como valor por defecto, no en una repository
+# variable, para que el repo se despliegue solo: si dependiera de configuración
+# invisible en Settings, un clon nuevo compilaría un sitio roto sin avisar.
+# `vars.CUSTOM_DOMAIN` sigue funcionando como override.
+#
 # El DNS tiene que apuntar a GitHub, no redirigir: DESPLIEGUE.md
 
 on:
@@ -55,7 +59,7 @@ jobs:
         # dentro de `run` se pega como texto ANTES de que bash lea la línea, así
         # que el valor podría cerrar la comilla y ejecutar lo que quiera.
         env:
-          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN || 'www.ethospy.online' }}
         run: |
           # `site` es el ORIGEN (esquema + host, sin barra final). Va aparte de la
           # base porque las meta tags de Open Graph necesitan URLs absolutas: una
@@ -85,7 +89,7 @@ jobs:
 
       - name: Preparar la salida para Pages
         env:
-          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN || 'www.ethospy.online' }}
         run: |
           # Sin el shell no hay sitio: mejor cortar acá con un mensaje que
           # dejar que `cp` falle con un "No such file" sin contexto.
