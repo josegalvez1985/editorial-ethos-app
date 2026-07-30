@@ -16,8 +16,10 @@ android {
         applicationId "com.editorialethos.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Subir en CADA versión que se reparta: Android se niega a instalar
+        // encima un versionCode menor o igual al ya instalado.
+        versionCode 4
+        versionName "1.3"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -33,6 +35,17 @@ android {
                 storePassword keystoreProps['storePassword']
                 keyAlias keystoreProps['keyAlias']
                 keyPassword keystoreProps['keyPassword']
+
+                // Los cuatro esquemas, no solo el v2 que AGP firma por defecto.
+                // v1 (JAR): lo exigen los Android viejos, anteriores a 7.0.
+                // v3: es el que le permite a Android verificar la IDENTIDAD de la
+                //     clave y su cadena de rotación. Sin v3, un APK de fuera de
+                //     Play queda como firma no verificable y es una de las señales
+                //     que llevan a Play Protect a bloquear la instalación.
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+                enableV4Signing false
             }
         }
     }

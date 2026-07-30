@@ -19,9 +19,13 @@ pide explícitamente el de Expo, eso es `cd mobile && npx eas-cli build --platfo
 Desde la raíz del proyecto:
 
 ```powershell
-npm run apk          # debug: instalable directo
-npm run apk:release  # release: sale SIN firmar, no se instala así
+npm run apk          # release firmado con la clave propia  <- el que se reparte
+npm run apk:debug    # debug: más rápido, pero Play Protect lo bloquea al instalar
 ```
+
+**Mostrá cada paso que ejecutás.** Jose lo pidió explícitamente: nada de `run_in_background` ni de
+salidas recortadas que escondan el log. Y antes de decir "listo", verificá que el `.apk` exista en
+disco — una fecha de archivo no es prueba de nada.
 
 Eso corre `scripts/build-apk.ps1`, que hace los cinco pasos en orden (Java 21 → build web SPA →
 `cap sync` → Gradle → reporte) y **corta en el primero que falla**. No repitas los pasos a mano
@@ -57,10 +61,10 @@ Lo más probable es que sea un `sdk.dir` mal apuntado, no un SDK ausente — se 
 que de verdad no está, pedile permiso al usuario antes de instalar y seguí *Si hay que instalarlo
 en otra máquina* de `APK.md`.
 
-**Nota histórica, para no repetir el error:** el doc del proyecto de origen (balance-mensual) dice
-que el SDK va en `C:\Program Files\Android\cmdline-tools`. Esa ruta **nunca existió** en esta
-máquina; el `local.properties` real de ese proyecto apuntaba a `C:\Users\josej\Android\Sdk`. No te
-guíes por el doc viejo: mirá el disco.
+**Nota histórica, para no repetir el error:** hay docs de otros proyectos de Jose que dicen que el
+SDK va en `C:\Program Files\Android\cmdline-tools`. Esa ruta **nunca existió** en esta máquina: el
+SDK real está en `C:\Users\josej\Android\Sdk`, que es a donde apunta
+`android/local.properties`. No te guíes por un doc de otro proyecto: mirá el disco.
 
 ## 3. Qué revisar antes de dar el APK por bueno
 
@@ -95,6 +99,7 @@ build en rojo.
 
 - Subir `versionCode` / `versionName` en `android/app/build.gradle`. Android no instala encima un
   `versionCode` menor o igual.
-- El release sale **sin firmar**: hay que firmarlo con `apksigner` (ver `APK.md`).
+- El release se firma **solo**, con `ethos-release.jks` vía `android/keystore.properties`. Si el
+  archivo de salida se llama `app-release-unsigned.apk`, falta ese `keystore.properties`.
 - El ícono actual es el de Capacitor por defecto, no el de la marca (`APK.md` → *Ícono de la app*).
 - El backend `backend/ethos_auth.sql` tiene que estar corrido o el login no entra.

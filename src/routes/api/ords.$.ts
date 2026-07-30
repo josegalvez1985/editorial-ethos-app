@@ -17,9 +17,51 @@ import { createFileRoute } from "@tanstack/react-router";
 const ORDS_TARGET = process.env.ORDS_TARGET ?? "https://oracleapex.com";
 const ORDS_PREFIX = process.env.ORDS_PREFIX ?? "/ords/fundcarac/ethos/";
 
+/**
+ * Resuelve el destino y comprueba que siga colgando de ORDS_PREFIX. `null` si se
+ * sale, y ahí el handler corta con 404.
+ *
+ * POR QUÉ: antes el splat se concatenaba crudo a la URL. `fetch` resuelve los
+ * `../`, así que un pedido a `/api/ords/../../_/db-api/stable/` no llegaba a
+ * `/ords/fundcarac/ethos/...` sino a `/ords/_/db-api/` —la API de administración
+ * SQL de ORDS— usando este proxy como pivote. El host nunca fue controlable
+ * (no es SSRF), pero el prefijo es la ÚNICA frontera de autorización que tiene
+ * este archivo, porque el `Authorization` se reenvía sin validarse.
+ *
+ * La normalización la hace `new URL()`, el mismo algoritmo que después aplica
+ * `fetch`: comparar sobre el `pathname` ya resuelto evita que una codificación
+ * rara pase el chequeo y después signifique otra cosa.
+ */
+function resolverDestino(splat: string, search: string): URL | null {
+  // %2f y %5c son barras codificadas: ORDS las decodifica y volverían a abrir el
+  // escape que este chequeo cierra. Se rechazan antes de resolver.
+  if (/%2f|%5c/i.test(splat)) return null;
+
+  const base = new URL(ORDS_PREFIX, ORDS_TARGET);
+  let destino: URL;
+  try {
+    destino = new URL(splat + search, base);
+  } catch {
+    return null;
+  }
+
+  // El origin tiene que seguir siendo el mismo: `new URL("//evil.com/x", base)`
+  // es una URL protocol-relative y cambia de host sin usar un solo `../`.
+  if (destino.origin !== base.origin) return null;
+  if (!destino.pathname.startsWith(ORDS_PREFIX)) return null;
+  return destino;
+}
+
 async function forward(request: Request, splat: string): Promise<Response> {
   const incoming = new URL(request.url);
-  const target = `${ORDS_TARGET}${ORDS_PREFIX}${splat}${incoming.search}`;
+  const destino = resolverDestino(splat, incoming.search);
+  if (!destino) {
+    return new Response(JSON.stringify({ success: false, message: "Ruta no válida" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  const target = destino.href;
 
   const headers = new Headers();
   const auth = request.headers.get("authorization");

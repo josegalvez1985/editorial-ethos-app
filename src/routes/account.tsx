@@ -1,10 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Fingerprint, LogOut, Mail, Moon, Smartphone, Sun } from "lucide-react";
+import { LogOut, Mail, Moon, Smartphone, Sun } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
-import { Switch } from "@/components/ui/switch";
 import { useSession } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 
@@ -12,7 +11,7 @@ export const Route = createFileRoute("/account")({
   head: () => ({
     meta: [
       { title: "Mi cuenta — Editorial Ethos" },
-      { name: "description", content: "Configura biometría, tema y preferencias." },
+      { name: "description", content: "Configura el tema y tus preferencias." },
     ],
   }),
   component: AccountPage,
@@ -61,7 +60,7 @@ function Row({
 
 function AccountPage() {
   const { theme, setTheme } = useTheme();
-  const { user, biometry, setBiometry, logout } = useSession();
+  const { user, logout } = useSession();
   const navigate = useNavigate();
 
   const displayName = user?.name ?? "Invitado";
@@ -72,15 +71,6 @@ function AccountPage() {
     .join("")
     .slice(0, 2)
     .toUpperCase();
-
-  // En el navegador esto es solo la preferencia; quien la aplica de verdad es la
-  // app de mobile/ (expo-local-authentication + credenciales en el keystore).
-  const onBiometry = (v: boolean) => {
-    setBiometry(v);
-    toast.info(
-      v ? "Preferencia guardada. Actívala en la app móvil para usarla." : "Biometría desactivada",
-    );
-  };
 
   const onLogout = async () => {
     await logout();
@@ -120,14 +110,9 @@ function AccountPage() {
           </div>
         </div>
 
-        <Group label="Seguridad">
-          <Row
-            icon={<Fingerprint className="size-5" />}
-            title="Acceso biométrico"
-            hint="Usa tu huella o rostro para entrar más rápido. Se activa desde la app móvil."
-            trailing={<Switch checked={biometry} onCheckedChange={onBiometry} />}
-          />
-        </Group>
+        {/* Acá estaba el grupo "Seguridad" con el switch de acceso biométrico. Se
+            quitó junto con la sesión persistente: sin contraseña guardada no hay
+            nada que la huella pueda recuperar. Ver lib/api.ts. */}
 
         <Group label="Apariencia">
           <div className="p-4">

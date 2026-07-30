@@ -1,21 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
-import {
-  Download,
-  Fingerprint,
-  Loader2,
-  UserRound,
-  Lock,
-  Eye,
-  EyeOff,
-  Smartphone,
-} from "lucide-react";
+import { Download, Loader2, UserRound, Lock, Eye, EyeOff, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { getCredenciales } from "@/lib/api";
 import { asset } from "@/lib/asset";
 import { useSession } from "@/lib/session";
 
@@ -47,7 +36,6 @@ function LoginPage() {
   const { sesion, login } = useSession();
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
-  const [recordar, setRecordar] = useState(true);
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -58,15 +46,6 @@ function LoginPage() {
   useEffect(() => {
     if (sesion) navigate({ to: "/home", replace: true });
   }, [sesion, navigate]);
-
-  // Si llegó acá con credenciales guardadas es que el login automático falló
-  // (contraseña cambiada, backend caído). Dejamos el usuario puesto para que solo
-  // tenga que escribir la contraseña. En un efecto, no en el estado inicial: en
-  // SSR no hay storage y el HTML del servidor no coincidiría con el del cliente.
-  useEffect(() => {
-    const c = getCredenciales();
-    if (c) setUsuario((u) => u || c.usuario);
-  }, []);
 
   // Adentro del APK no se ofrece descargar el APK: no tiene sentido y además
   // `scripts/build-apk.ps1` borra `app.apk` del bundle (si no, cada APK
@@ -87,7 +66,7 @@ function LoginPage() {
     }
     setLoading(true);
     try {
-      await login(usuario, password, recordar);
+      await login(usuario, password);
       toast.success("Bienvenido a Editorial Ethos");
       navigate({ to: "/home", replace: true });
     } catch (err) {
@@ -172,25 +151,6 @@ function LoginPage() {
               </div>
             </div>
 
-            <div className="flex items-start gap-2.5">
-              <Checkbox
-                id="recordar"
-                checked={recordar}
-                onCheckedChange={(v) => setRecordar(v === true)}
-                className="mt-0.5"
-              />
-              <div>
-                <Label htmlFor="recordar" className="text-sm font-normal">
-                  Mantener sesión iniciada
-                </Label>
-                {/* Que el usuario sepa qué se guarda: la contraseña queda en este
-                    dispositivo para poder entrar solo cuando el token expira. */}
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Guarda tu acceso en este dispositivo para entrar sin escribirlo.
-                </p>
-              </div>
-            </div>
-
             {error ? (
               <p role="alert" className="text-sm text-destructive">
                 {error}
@@ -206,28 +166,9 @@ function LoginPage() {
               {loading ? "Iniciando..." : "Entrar"}
             </Button>
 
-            <div className="relative py-2">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center">
-                <span className="bg-background px-2 text-xs text-muted-foreground">o</span>
-              </div>
-            </div>
-
-            {/* La biometría real vive en la app de mobile/ (expo-local-authentication).
-                En el navegador no hay equivalente sin WebAuthn, así que lo decimos
-                en vez de simular un acceso. */}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => toast.info("El acceso biométrico está disponible en la app móvil")}
-              className="tap h-12 w-full rounded-xl text-base"
-              disabled={loading}
-            >
-              <Fingerprint className="mr-2 h-4 w-4" />
-              Acceder con biometría
-            </Button>
+            {/* Acá vivían "Mantener sesión iniciada" y el botón de biometría. Se
+                sacaron: la sesión ya no se guarda en el disco y hay que escribir
+                usuario y contraseña en cada arranque. Ver lib/api.ts. */}
           </form>
 
           {/*

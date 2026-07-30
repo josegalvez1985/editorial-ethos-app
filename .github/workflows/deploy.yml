@@ -3,10 +3,10 @@ name: Desplegar a GitHub Pages
 # El sitio se sirve EN https://www.ethospy.online/ — la URL del dominio es la que
 # queda a la vista, y Pages redirige el github.io hacia ella.
 #
-# El dominio está PUESTO ACÁ ABAJO como valor por defecto, no en una repository
-# variable, para que el repo se despliegue solo: si dependiera de configuración
+# El dominio y la URL del backend están PUESTOS EN ESTE ARCHIVO, no en repository
+# variables, para que el repo se despliegue solo: si dependieran de configuración
 # invisible en Settings, un clon nuevo compilaría un sitio roto sin avisar.
-# `vars.CUSTOM_DOMAIN` sigue funcionando como override.
+# Ninguno de los dos es secreto —los dos terminan a la vista en el sitio.
 #
 # El DNS tiene que apuntar a GitHub, no redirigir: DESPLIEGUE.md
 
@@ -31,6 +31,16 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Declarado UNA sola vez para todo el job: lo usan el paso que calcula la base
+    # y el que prepara la salida. Estaba repetido en los dos, y cambiar el dominio
+    # obligaba a acordarse de editar los dos lugares.
+    #
+    # El valor está acá y no en una repository variable a propósito: el repo se
+    # despliega solo, sin depender de configuración invisible en Settings que un
+    # clon nuevo no tendría. Para cambiar de dominio se edita esta línea; para
+    # apagarlo y volver al github.io, se deja en "".
+    env:
+      CUSTOM_DOMAIN: "www.ethospy.online"
     steps:
       - uses: actions/checkout@v4
 
@@ -52,14 +62,13 @@ jobs:
       # https://<usuario>.github.io/<repo>/, así que TODO (chunks, css, íconos,
       # rutas del router) tiene que colgar de /<repo>/ o se pide a la raíz del
       # dominio y devuelve 404. Con dominio propio el sitio está en la raíz.
-      # El interruptor es la repository variable CUSTOM_DOMAIN: ver DESPLIEGUE.md.
+      # Lo decide `CUSTOM_DOMAIN`, en el `env` del job: ver DESPLIEGUE.md.
+      # `CUSTOM_DOMAIN` viene del `env` del job. Se usa como variable de shell y
+      # NO interpolada en el script: un ${{ }} dentro de `run` se pega como texto
+      # ANTES de que bash lea la línea, así que el valor podría cerrar la comilla
+      # y ejecutar lo que quiera.
       - name: Calcular la base y el origen del sitio
         id: base
-        # La variable entra por `env` y no interpolada en el script: un ${{ }}
-        # dentro de `run` se pega como texto ANTES de que bash lea la línea, así
-        # que el valor podría cerrar la comilla y ejecutar lo que quiera.
-        env:
-          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN || 'www.ethospy.online' }}
         run: |
           # `site` es el ORIGEN (esquema + host, sin barra final). Va aparte de la
           # base porque las meta tags de Open Graph necesitan URLs absolutas: una
@@ -80,16 +89,19 @@ jobs:
           BASE_PATH: ${{ steps.base.outputs.path }}
           # Origen absoluto para el og:image de la vista previa al compartir.
           VITE_SITE_URL: ${{ steps.base.outputs.site }}
+          # Apaga nitro y prende el modo SPA, que deja el shell estático que Pages
+          # sirve como archivo. Ver vite.config.ts.
+          STATIC_BUILD: "1"
           # Sin servidor Node no corre el proxy src/routes/api/ords.$.ts, así que
           # el navegador le pega directo a ORDS. Requiere el CORS abierto que ya
-          # tiene el backend. Se puede pisar con una repository variable.
-          STATIC_BUILD: "1"
-          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://oracleapex.com/ords/fundcarac/ethos/' }}
+          # tiene el backend.
+          #
+          # No es un secreto: termina embebida en el JS público, así que ocultarla
+          # en Settings no protegería nada. Si el backend se muda, se edita acá.
+          VITE_API_URL: "https://oracleapex.com/ords/fundcarac/ethos/"
         run: npm run build
 
       - name: Preparar la salida para Pages
-        env:
-          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN || 'www.ethospy.online' }}
         run: |
           # Sin el shell no hay sitio: mejor cortar acá con un mensaje que
           # dejar que `cp` falle con un "No such file" sin contexto.
@@ -106,16 +118,33 @@ jobs:
           cp dist/client/index.html dist/client/404.html
           # Sin esto Jekyll ignora todo lo que empieza con "_" y se come el shell.
           touch dist/client/.nojekyll
+
           # El CNAME es lo que hace que la URL del dominio sea la que queda a la
           # vista: con él, Pages sirve el sitio en ese dominio y manda un 301
           # desde el github.io hacia allá. Sin él pasa lo contrario.
           #
-          # OJO con el DNS: esto exige que el dominio APUNTE a GitHub. Si además
-          # hay un redirect del lado del registrador apuntando de vuelta al
-          # github.io (lo que hacía Hostinger), los dos 301 se apuntan entre sí y
-          # queda un bucle en el que no responde ninguna de las dos URLs.
-          if [ -n "$CUSTOM_DOMAIN" ]; then
-            echo "$CUSTOM_DOMAIN" > dist/client/CNAME
+          # Vive en `public/CNAME` y de ahí lo copia vite, así que acá NO se
+          # escribe: una sola fuente. Antes estaba en la raíz del repo —donde
+          # vite no lo mira— y el workflow lo generaba aparte; eran dos sitios
+          # para el mismo dato y era fácil cambiar uno y olvidar el otro.
+          #
+          # Solo se borra si se apagó el dominio propio, para que el artefacto no
+          # lo lleve: si viaja igual, Pages reactiva el dominio.
+          #
+          # OJO con el DNS: el dominio tiene que APUNTAR a GitHub. Si además hay
+          # un redirect del lado del registrador apuntando de vuelta al github.io
+          # (lo que hacía Hostinger), los dos 301 se apuntan entre sí y queda un
+          # bucle en el que no responde ninguna de las dos URLs.
+          if [ -z "$CUSTOM_DOMAIN" ]; then
+            rm -f dist/client/CNAME
+          fi
+
+          # El CNAME tiene que estar SÍ o SÍ en el artefacto: sin él Pages sirve
+          # en github.io y el dominio queda muerto. Es el error más difícil de
+          # notar, porque el build sale verde igual.
+          if [ -n "$CUSTOM_DOMAIN" ] && [ ! -f dist/client/CNAME ]; then
+            echo "ERROR: falta dist/client/CNAME. ¿Se borró public/CNAME?" >&2
+            exit 1
           fi
           ls -la dist/client
 

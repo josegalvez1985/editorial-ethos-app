@@ -71,11 +71,11 @@ aplica CORS. No usa el proxy.
 No son bugs:
 
 - **El módulo de evaluaciones está solo en la web.** `mobile/` tiene login, inicio y cuenta.
-- **Biometría solo en la app.** `mobile/` usa `expo-local-authentication` + keystore del
-  sistema. En el navegador no hay equivalente sin WebAuthn, así que el botón lo dice en vez
-  de simular un acceso, y el switch de la pantalla de cuenta guarda solo la preferencia.
-- **La web tiene "Mantener sesión iniciada"** (localStorage vs. sessionStorage); la app
-  siempre persiste.
+- **Biometría solo en `mobile/`** (`expo-local-authentication` + keystore del sistema). La
+  web y el APK de Capacitor no la tienen.
+- **La sesión no persiste.** Ni en la web ni en el APK: vive en memoria y hay que escribir
+  usuario y contraseña en cada arranque. No se guarda el token ni la contraseña en el
+  disco. `mobile/` sí persiste.
 - La web pasa por proxy; la app va directo.
 
 ## Pendientes

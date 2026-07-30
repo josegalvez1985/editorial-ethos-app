@@ -7,9 +7,6 @@
  */
 
 const BASE = import.meta.env.VITE_API_URL ?? "/api/ords/";
-/** Exportada para que `lib/session.tsx` sepa filtrar el evento `storage`. */
-export const SESSION_KEY = "ethos-sesion";
-const CRED_KEY = "ethos-credenciales";
 
 function url(path: string) {
   return `${BASE.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
@@ -27,92 +24,63 @@ export type Sesion = {
 };
 
 /* -------------------------------------------------------------------------- */
-/* Persistencia                                                               */
+/* Sesión en memoria                                                          */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * La sesión vive SOLO en memoria: se pierde al recargar o al cerrar la app, y
+ * hay que volver a escribir usuario y contraseña.
+ *
+ * Es una decisión deliberada, no una limitación. Antes el token se guardaba en
+ * `localStorage`/`sessionStorage` y la contraseña en `localStorage` para poder
+ * reentrar solo; eso se sacó entero. Consecuencias, para que nadie lo "arregle"
+ * sin querer:
+ *
+ * - **Nada del login queda en el disco.** Ni token ni contraseña: un XSS o
+ *   alguien con acceso al equipo no encuentra nada que robar.
+ * - **Recargar la página cierra la sesión.** Es el costo, y es el esperado.
+ * - En el APK pasa lo mismo: cerrar la app obliga a loguearse de nuevo.
+ *
+ * Un `let` de módulo alcanza porque toda la app corre en un único contexto de JS.
+ */
+let sesionActual: Sesion | null = null;
 
 export function getSesion(): Sesion | null {
-  if (typeof window === "undefined") return null; // SSR: no hay storage
-  try {
-    const raw = localStorage.getItem(SESSION_KEY) ?? sessionStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as Sesion) : null;
-  } catch {
-    return null;
-  }
+  return sesionActual;
 }
 
-/**
- * "Recordar" = localStorage (sobrevive al cierre del navegador).
- * Sin recordar = sessionStorage (muere con la pestaña). Nunca los dos a la vez.
- */
-function guardarSesion(s: Sesion, recordar: boolean) {
-  try {
-    const store = recordar ? localStorage : sessionStorage;
-    const otro = recordar ? sessionStorage : localStorage;
-    otro.removeItem(SESSION_KEY);
-    store.setItem(SESSION_KEY, JSON.stringify(s));
-  } catch {
-    /* modo privado sin storage: la sesión vive solo en memoria */
-  }
+function guardarSesion(s: Sesion) {
+  sesionActual = s;
 }
 
-/** Borra solo el token. Las credenciales de "recordarme" no se tocan acá. */
 export function cerrarSesion() {
-  try {
-    localStorage.removeItem(SESSION_KEY);
-    sessionStorage.removeItem(SESSION_KEY);
-  } catch {
-    /* ignore */
-  }
+  sesionActual = null;
 }
 
 /* -------------------------------------------------------------------------- */
-/* Credenciales para el login automático                                       */
+/* Limpieza de versiones anteriores                                           */
 /* -------------------------------------------------------------------------- */
-
-export type Credenciales = { usuario: string; password: string };
 
 /**
- * Credenciales de "Mantener sesión iniciada".
+ * Borra lo que dejaron versiones anteriores.
  *
- * El token del backend vive 6 h y no se renueva, así que para volver a entrar sin
- * escribir nada hace falta repetir el `POST auth/login` — y para eso hay que
- * guardar la contraseña.
+ * Hasta hace poco esta app guardaba el token y —con "Mantener sesión iniciada"—
+ * **la contraseña en texto plano** en `localStorage`. Las dos cosas se sacaron,
+ * pero quitar el código no borra lo que ya está escrito en el disco de quien
+ * viene usando la app: eso sobrevive a la actualización.
  *
- * LEER ESTO ANTES DE TOCARLO: en el navegador no existe almacén cifrado.
- * Esto queda en localStorage en texto claro, legible por cualquier script del
- * mismo origen (un XSS se lleva la contraseña, no solo la sesión) y por quien
- * tenga acceso al equipo. Es una decisión de producto consciente, no un
- * descuido: se guarda solo si el usuario marca la casilla, y se borra al cerrar
- * sesión o cuando el backend rechaza esas credenciales.
- *
- * La app de `mobile/` no hace esto: usa el keystore del sistema
- * (`expo-secure-store`) detrás de la huella. Ver `mobile/src/lib/biometric.ts`.
+ * Se llama una vez al arrancar. Se puede eliminar cuando no queden instalaciones
+ * viejas dando vueltas.
  */
-function guardarCredenciales(c: Credenciales) {
-  try {
-    localStorage.setItem(CRED_KEY, JSON.stringify(c));
-  } catch {
-    /* modo privado sin storage: no hay login automático y ya */
-  }
-}
-
-export function getCredenciales(): Credenciales | null {
-  if (typeof window === "undefined") return null; // SSR: no hay storage
-  try {
-    const raw = localStorage.getItem(CRED_KEY);
-    if (!raw) return null;
-    const c = JSON.parse(raw) as Credenciales;
-    return c?.usuario && c?.password ? c : null;
-  } catch {
-    return null;
-  }
-}
-
-export function borrarCredenciales() {
-  try {
-    localStorage.removeItem(CRED_KEY);
-  } catch {
-    /* ignore */
+export function limpiarDatosViejos() {
+  if (typeof window === "undefined") return; // SSR: no hay storage
+  for (const clave of ["ethos-sesion", "ethos-credenciales", "ethos-biometry"]) {
+    try {
+      localStorage.removeItem(clave);
+      sessionStorage.removeItem(clave);
+    } catch {
+      /* modo privado sin storage: no había nada que borrar */
+    }
   }
 }
 
@@ -212,7 +180,7 @@ function normalizar(data: Record<string, unknown>, usuarioTipeado: string): Sesi
 /* Endpoints                                                                   */
 /* -------------------------------------------------------------------------- */
 
-export async function login(usuario: string, password: string, recordar = false): Promise<Sesion> {
+export async function login(usuario: string, password: string): Promise<Sesion> {
   const res = await pedir(url("auth/login"), {
     method: "POST",
     cache: "no-store",
@@ -229,30 +197,8 @@ export async function login(usuario: string, password: string, recordar = false)
   }
 
   const sesion = normalizar(data, usuario);
-  guardarSesion(sesion, recordar);
-  // "Recordar" implica poder entrar solo cuando el token de 6 h ya venció.
-  if (recordar) guardarCredenciales({ usuario, password });
-  else borrarCredenciales();
+  guardarSesion(sesion);
   return sesion;
-}
-
-/**
- * Reintenta el login con las credenciales guardadas. `null` si no hay ninguna o
- * si ya no sirven (contraseña cambiada, usuario dado de baja), y en ese caso las
- * borra para no reintentar en cada arranque.
- */
-export async function loginAutomatico(): Promise<Sesion | null> {
-  const c = getCredenciales();
-  if (!c) return null;
-  try {
-    return await login(c.usuario, c.password, true);
-  } catch (e) {
-    // Solo se borran si el backend las RECHAZÓ. Sin red no sabemos si siguen
-    // sirviendo, y borrarlas dejaría al usuario sin login automático incluso
-    // después de recuperar la conexión — perdiendo la contraseña para siempre.
-    if (!esSinConexion(e)) borrarCredenciales();
-    return null;
-  }
 }
 
 export async function logout(): Promise<void> {
@@ -266,8 +212,6 @@ export async function logout(): Promise<void> {
     }).catch(() => {});
   }
   cerrarSesion();
-  // Salir a mano cancela el login automático; expirar el token, no.
-  borrarCredenciales();
 }
 
 /**

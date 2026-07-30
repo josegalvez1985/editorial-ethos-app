@@ -15,38 +15,38 @@ import { toast } from "sonner";
 import {
   cerrarSesion,
   getSesion,
+  limpiarDatosViejos,
   login as apiLogin,
-  loginAutomatico,
   logout as apiLogout,
   msHastaExpirar,
-  revalidar,
-  SESSION_KEY,
   setOnUnauthorized,
   type Sesion,
 } from "@/lib/api";
 import { borrarCachePersistida } from "@/lib/query-persist";
 
+/**
+ * Estado de la sesión.
+ *
+ * **La sesión NO sobrevive a recargar la página ni a cerrar la app.** Vive solo en
+ * memoria (ver `lib/api.ts`): no hay "mantener sesión iniciada", no se guarda la
+ * contraseña y no hay login por biometría. Cada arranque pide usuario y
+ * contraseña. Es deliberado — nada del login queda escrito en el disco.
+ */
 type Ctx = {
   sesion: Sesion | null;
   /** Datos para pintar. `null` = sin sesión. */
   user: { name: string; email: string } | null;
-  biometry: boolean;
-  /** false hasta que terminamos de revalidar la sesión guardada. */
+  /**
+   * Se mantiene por compatibilidad con `AppShell`, que lo usa para no pintar la
+   * pantalla antes de saber si hay sesión. Sin persistencia que restaurar, pasa a
+   * `true` apenas monta.
+   */
   ready: boolean;
-  login: (usuario: string, password: string, recordar?: boolean) => Promise<void>;
+  login: (usuario: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  setBiometry: (v: boolean) => void;
 };
 
 const SessionContext = createContext<Ctx | null>(null);
-const BIO_KEY = "ethos-biometry";
-
-/**
- * Cada cuánto, como mucho, se le pregunta al backend si el token sigue vivo al
- * volver a la pestaña. Sin este freno, alternar entre pestañas dispararía un
- * `auth/me` por cada foco.
- */
-const MIN_ENTRE_CHEQUEOS = 60_000;
 
 /**
  * Aviso de que la sesión se cayó. El `id` fijo es a propósito: si vencen varias
@@ -59,50 +59,22 @@ function avisar(descripcion: string) {
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [sesion, setSesion] = useState<Sesion | null>(null);
-  const [biometry, setBiometryState] = useState(false);
   const [ready, setReady] = useState(false);
   const qc = useQueryClient();
 
+  // No hay sesión que restaurar: se arranca siempre en el login. Lo único que se
+  // hace acá es barrer el token y la contraseña que dejaron versiones anteriores
+  // en el disco — quitar el código no borra lo ya escrito en el equipo del
+  // usuario. Ver `limpiarDatosViejos()`.
   useEffect(() => {
-    // El backend es la autoridad: la sesión de storage puede tener el token
-    // vencido (6 h) aunque el JSON siga ahí.
-    let active = true;
-    const guardada = getSesion();
-    if (guardada) setSesion(guardada);
-
-    try {
-      setBiometryState(localStorage.getItem(BIO_KEY) === "1");
-    } catch {
-      /* ignore */
-    }
-
-    // Si el token murió (6 h) pero el usuario marcó "Mantener sesión iniciada",
-    // rehacemos el login con las credenciales guardadas antes de mandarlo al
-    // formulario.
-    revalidar()
-      .then((s) => s ?? loginAutomatico())
-      .then((s) => {
-        if (active) setSesion(s);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (active) setReady(true);
-      });
-
-    return () => {
-      active = false;
-    };
+    limpiarDatosViejos();
+    setReady(true);
   }, []);
 
   /**
    * Da la sesión por terminada. **La redirección al login no se hace acá**: la
    * hace `AppShell` en cuanto ve la sesión en null, que es el único punto por el
    * que pasan las cinco pantallas protegidas.
-   *
-   * `cerrarSesion()` y no `logout()`: borra el token pero NO las credenciales de
-   * "Mantener sesión iniciada". Que el token venza no es lo mismo que salir a
-   * mano; si acá se borraran, vencer una sola vez dejaría al usuario sin login
-   * automático para siempre.
    */
   const caerSesion = useCallback((motivo: string) => {
     cerrarSesion();
@@ -110,38 +82,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     avisar(motivo);
   }, []);
 
-  // Cualquier 401 del backend tira la sesión del contexto, no solo del storage.
+  // Cualquier 401 del backend tira la sesión.
   useEffect(() => {
     setOnUnauthorized(() => caerSesion("Volvé a iniciar sesión para continuar."));
     return () => setOnUnauthorized(() => {});
   }, [caerSesion]);
 
-  /**
-   * Le pregunta al backend si el token sigue vivo.
-   *
-   * Se usa cuando SOSPECHAMOS que venció, no cuando lo sabemos: el `expira` viene
-   * sin zona horaria (ver `msHastaExpirar`) y una cuenta corrida por el huso no
-   * puede ser motivo para echar a nadie. Que conteste el que sabe.
-   *
-   * Sin red `revalidar()` devuelve la sesión guardada tal cual y no pasa nada:
-   * quedarse sin señal no dice nada sobre el token.
-   */
-  const ultimoChequeo = useRef(0);
-  const verificar = useCallback(async () => {
-    if (!getSesion()) return;
-    ultimoChequeo.current = Date.now();
-    const s = await revalidar();
-    if (s) setSesion(s);
-    else caerSesion("El token venció. Volvé a iniciar sesión.");
-  }, [caerSesion]);
-
-  // Vencimiento proactivo. Sin esto el token puede morir con la app abierta y la
-  // pantalla se queda mostrando datos de una sesión que ya no existe hasta que el
+  // Vencimiento proactivo. El token dura 6 h y no se renueva; sin esto la app
+  // puede quedar abierta mostrando datos de una sesión que ya murió hasta que el
   // usuario toca algo.
   //
-  // Las dependencias son `token` y `expira` y no el objeto `sesion` a propósito:
-  // `revalidar()` devuelve un objeto NUEVO cada vez, así que con `sesion` el
-  // efecto se reprogramaría solo y quedaría un chequeo por segundo contra ORDS.
+  // Acá SÍ se puede cortar sin preguntarle al backend —a diferencia de antes—
+  // porque la sesión vive en memoria: si `expira` estuviera corrido por zona
+  // horaria, el peor caso es pedir el login de nuevo, no perder nada guardado.
   const token = sesion?.token;
   const expira = sesion?.expira;
   useEffect(() => {
@@ -154,47 +107,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // de setTimeout — arriba de ~24,8 días el valor desborda a 32 bits y el timer
     // se dispara AL INSTANTE, en bucle.
     const espera = Math.min(Math.max(restante, 1_000), 2_147_483_647);
-    const id = setTimeout(verificar, espera);
+    const id = setTimeout(() => caerSesion("El token venció. Volvé a iniciar sesión."), espera);
     return () => clearTimeout(id);
-  }, [token, expira, verificar]);
+  }, [token, expira, caerSesion]);
 
-  // Volver a la pestaña después de horas es el caso más común de "venció mientras
-  // no mirabas", y justo el que el timer de arriba no cubre: los navegadores
-  // ralentizan los timers en pestañas de fondo y la WebView del APK directamente
-  // los congela, así que puede no haber disparado nunca.
+  // Los timers se frenan en pestañas de fondo y la WebView del APK los congela,
+  // así que al volver puede haber vencido sin que el timer llegara a disparar.
+  const vencido = useRef(false);
+  vencido.current = msHastaExpirar(expira) !== null && (msHastaExpirar(expira) ?? 0) <= 0;
   useEffect(() => {
     const alVolver = () => {
       if (document.visibilityState !== "visible") return;
       if (!getSesion()) return;
-      if (Date.now() - ultimoChequeo.current < MIN_ENTRE_CHEQUEOS) return;
-      verificar();
+      if (vencido.current) caerSesion("El token venció. Volvé a iniciar sesión.");
     };
     document.addEventListener("visibilitychange", alVolver);
     return () => document.removeEventListener("visibilitychange", alVolver);
-  }, [verificar]);
+  }, [caerSesion]);
 
-  // El token puede desaparecer sin que esta pestaña se entere: un logout en otra
-  // pestaña, o alguien que limpia el storage del navegador. `storage` solo llega
-  // a las OTRAS pestañas, nunca a la que hizo el cambio, así que esto no se cruza
-  // con el logout propio.
-  useEffect(() => {
-    const alCambiarStorage = (e: StorageEvent) => {
-      // key null = `clear()` completo, que también se lleva la sesión puesta.
-      if (e.key !== null && e.key !== SESSION_KEY) return;
-      if (getSesion()) {
-        // Sigue habiendo token pero es otro: pudo ser un login en otra pestaña.
-        verificar();
-      } else {
-        // Desapareció. Sin toast de "venció": no venció, lo cerraron a propósito.
-        setSesion(null);
-      }
-    };
-    window.addEventListener("storage", alCambiarStorage);
-    return () => window.removeEventListener("storage", alCambiarStorage);
-  }, [verificar]);
-
-  const login = useCallback(async (usuario: string, password: string, recordar = false) => {
-    setSesion(await apiLogin(usuario, password, recordar));
+  const login = useCallback(async (usuario: string, password: string) => {
+    setSesion(await apiLogin(usuario, password));
   }, []);
 
   const logout = useCallback(async () => {
@@ -207,23 +139,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     borrarCachePersistida();
   }, [qc]);
 
-  const setBiometry = useCallback((v: boolean) => {
-    setBiometryState(v);
-    try {
-      localStorage.setItem(BIO_KEY, v ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
   const user = useMemo(
     () => (sesion ? { name: sesion.nombre, email: sesion.email || sesion.usuario } : null),
     [sesion],
   );
 
   const value = useMemo<Ctx>(
-    () => ({ sesion, user, biometry, ready, login, logout, setBiometry }),
-    [sesion, user, biometry, ready, login, logout, setBiometry],
+    () => ({ sesion, user, ready, login, logout }),
+    [sesion, user, ready, login, logout],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

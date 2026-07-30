@@ -75,52 +75,92 @@ Si lo instalás en otra ruta, corregí `sdk.dir` en `android/local.properties` y
 
 ## Build
 
+Lo normal es el script, que hace todo esto y **corta en el primer paso que falle**:
+
 ```powershell
-npm run apk          # debug: instalable directo, firmado con la debug key
-npm run apk:release  # release: sale SIN firmar (ver "Firmar")
+npm run apk          # release firmado con la clave propia  <- el que se reparte
+npm run apk:debug    # debug: compila más rápido, pero Play Protect lo bloquea
 ```
 
-Eso corre [`scripts/build-apk.ps1`](scripts/build-apk.ps1), que hace los cinco pasos y corta en el
-primero que falle. Para apuntar a otro ORDS sin editar nada:
+Para apuntar a otro ORDS sin editar nada:
 
 ```powershell
-powershell -File scripts\build-apk.ps1 -config debug -apiUrl "https://oracleapex.com/ords/otro/ethos/"
+powershell -File scripts\build-apk.ps1 -config release -apiUrl "https://oracleapex.com/ords/otro/ethos/"
 ```
 
-Los pasos, si hace falta correrlos a mano desde la raíz:
+### Los pasos a mano
+
+Si hay que diagnosticar algo, los mismos pasos uno por uno. Abrir PowerShell **en la raíz del
+proyecto** y ejecutar en orden:
 
 ```powershell
-# 1. Java 21 solo para esta sesión (no toca el JAVA_HOME global)
+# 1. Ir a la raíz del proyecto
+cd C:\Users\josej\OneDrive\Desktop\Proyectos\editorial-ethos-app.git
+
+# 2. Configurar Java 21 solo para esta sesión (no afecta JAVA_HOME global)
 $env:JAVA_HOME = "C:\Program Files\Java\jdk-21.0.11"
 $env:Path = "$env:JAVA_HOME\bin;$env:Path"
-java --version   # debe decir 21
 
-# 2. Build web en modo SPA, con ORDS directo embebido
+# 3. Verificar que Java 21 está activo
+java --version
+
+# 4. Build web en modo SPA, con la URL de ORDS embebida
+#    APK_BUILD=1 apaga nitro y prende el modo SPA (ver vite.config.ts).
 $env:APK_BUILD = "1"
 $env:VITE_API_URL = "https://oracleapex.com/ords/fundcarac/ethos/"
 npm run build
 $env:APK_BUILD = ""; $env:VITE_API_URL = ""
+
+# 5. Capacitor exige que el punto de entrada se llame index.html;
+#    el prerender lo deja como _shell.html.
 Copy-Item dist\client\_shell.html dist\client\index.html -Force
 
-# 3. Sincronizar la web y la config de Capacitor con el proyecto Android
+#    Sacar el APK anterior del bundle, o el nuevo lo empaqueta adentro.
+Remove-Item dist\client\app.apk -Force -ErrorAction SilentlyContinue
+
+# 6. Sincronizar con Android (IMPORTANTE: desde la raíz, no desde android/)
 npx cap sync android
 
-# 4. Compilar
+# 7. Entrar al directorio android
 cd android
+
+# 8. Detener daemon de Gradle previo (por si quedó con otro JDK)
 .\gradlew --stop
+
+# 9. Limpiar caché de Gradle del proyecto (solo si algo quedó raro;
+#    en un build normal alcanza con el clean del paso 10)
+Remove-Item -Recurse -Force .\.gradle -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force .\app\build -ErrorAction SilentlyContinue
+
+# 10. Limpiar build
 .\gradlew clean
-.\gradlew assembleDebug --stacktrace
-# salida: android\app\build\outputs\apk\debug\app-debug.apk
-# release: .\gradlew assembleRelease  -> app-release-unsigned.apk
+
+# 11. Generar el APK firmado de release (con stacktrace si hay error)
+.\gradlew assembleRelease --stacktrace
+
 cd ..
 ```
 
-En PowerShell invocar siempre `.\gradlew` (con `.\`).
+En PowerShell invocar siempre `.\gradlew` (con `.\`), nunca `./gradlew`.
 
-Abrir la carpeta del resultado:
+## Resultado
+
+El APK se genera en:
+
+```
+android\app\build\outputs\apk\release\app-release.apk
+```
+
+> Si el archivo se llama `app-release-**unsigned**.apk`, Gradle **no encontró la firma**: falta
+> `android\keystore.properties`. Ese APK no se instala. Ver *Firma* más abajo.
+
+El script además lo copia a `public\app.apk` con nombre fijo. Ese archivo **no se commitea**
+(`*.apk` está en `.gitignore`): son ~4 MB por build y git los guardaría para siempre.
+
+Para abrir la carpeta directamente al terminar:
 
 ```powershell
-explorer .\android\app\build\outputs\apk\debug\
+explorer .\android\app\build\outputs\apk\release\
 ```
 
 ## Instalar en el celular
@@ -174,23 +214,129 @@ un `sharp@0.32.6` nativo que el runner tenía que compilar con `node-gyp` para n
 
 Después de regenerarlos, hay que recompilar el APK.
 
-## Firmar el APK release
+## Firma
 
-`assembleRelease` sale sin firmar y **no se instala así**. Para firmarlo:
+**Ya está automatizada.** [`android/app/build.gradle`](android/app/build.gradle) lee
+`android/keystore.properties` y firma el release solo. No hay que correr `apksigner` a mano.
+
+| Archivo | Qué es |
+| --- | --- |
+| `ethos-release.jks` (raíz) | El keystore. `CN=Editorial Ethos, O=Editorial Ethos, L=Asuncion, C=PY` |
+| `android/keystore.properties` | Ruta del `.jks`, alias y contraseñas |
+
+Los dos están en `.gitignore` y **no se commitean**.
+
+> **RESPALDALOS FUERA DEL PROYECTO, HOY.**
+> Si se pierde cualquiera de los dos, **no se puede volver a actualizar la app instalada**:
+> Android exige que toda actualización esté firmada con la misma clave. No hay recuperación. La
+> única salida sería publicar con otro `appId` y que todos reinstalen desde cero.
+
+Verificar con qué clave quedó firmado un APK:
 
 ```powershell
-# Crear un keystore propio. Guardar la contraseña aparte; NO commitear el .jks.
-keytool -genkey -v -keystore ethos-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias ethos
-
 $bt = "C:\Users\josej\Android\Sdk\build-tools\36.1.0"
-& "$bt\apksigner.bat" sign --ks ethos-release.jks `
-    --out ethos-release.apk `
-    android\app\build\outputs\apk\release\app-release-unsigned.apk
-& "$bt\apksigner.bat" verify ethos-release.apk
+& "$bt\apksigner.bat" verify --print-certs --verbose public\app.apk
 ```
 
-Para automatizarlo, agregar un `signingConfig` en `android/app/build.gradle` que lea el keystore
-desde variables de entorno.
+Lo que hay que ver:
+
+```
+Signer #1 certificate DN: CN=Editorial Ethos, ...   <- correcto
+Verified using v2 scheme: true
+Verified using v3 scheme: true                      <- necesario, ver abajo
+```
+
+Si dice `CN=Android Debug`, es un APK **debug**: esa clave es pública y la comparten todos los
+proyectos Capacitor, por eso **Play Protect lo bloquea**. Hay que compilar con `npm run apk`.
+
+### Play Protect: "Se bloqueó la app para proteger tu dispositivo"
+
+Tiene dos causas distintas, y conviene no confundirlas:
+
+1. **Firmado con la debug key** → se arregla compilando el release (arriba).
+2. **Clave propia sin reputación** → **no se arregla compilando.** Google no conoce el
+   certificado, y en apps repartidas fuera de Play eso genera el aviso igual. Salidas:
+   - Tocar **"Más detalles" → "Instalar de todos modos"**.
+   - Instalar por USB, que saltea Play Protect: `adb install -r public\app.apk`.
+   - Publicar en Play Store, donde Google re-firma con su propia clave y el aviso desaparece.
+     Eso requiere un `.aab` (`.\gradlew bundleRelease`), no un APK.
+
+El `signingConfig` fuerza **v1 + v2 + v3**. El v3 importa: es el esquema que le permite a Android
+verificar la identidad de la clave, y sin él la firma queda como no verificable, que es una de las
+señales que empujan a Play Protect a bloquear. AGP por defecto solo emite v2.
+
+## No hay biometría ni sesión persistente
+
+**Se quitaron las dos, a propósito.** La app pide usuario y contraseña en cada
+arranque: la sesión vive solo en memoria y no queda nada escrito en el disco —ni
+token ni contraseña. Ver [`src/lib/api.ts`](src/lib/api.ts).
+
+Si algún día se reimplanta la biometría, estas son las tres causas que hicieron
+perder un día entero. Ninguna es un bug del código y las tres se ven igual desde
+afuera —"el botón no aparece"—, así que conviene descartarlas **antes** de tocar nada:
+
+**1. Sin bloqueo de pantalla NO hay biometría.** La más común y la menos evidente. El
+Keystore de Android exige que el dispositivo tenga **PIN, patrón o contraseña** para
+poder cifrar secretos. Sin eso `isAvailable()` devuelve `false` aunque el celular
+tenga lector de huellas. Es una restricción del sistema operativo, no algo que se
+pueda sortear desde la app: hacen falta bloqueo de pantalla **y** al menos una huella
+registrada. Un celular sin bloqueo instala el APK perfecto y todo lo demás funciona;
+solo la biometría queda muerta, sin ningún mensaje que lo explique.
+
+Si se reimplanta, que la comprobación devuelva el **motivo** y no un booleano: el
+campo `deviceIsSecure` del plugin distingue "poné un PIN" de "registrá una huella", y
+esa diferencia es la que el usuario necesita para poder resolverlo.
+
+**2. Guardar la contraseña es el precio.** El token dura 6 h y no se renueva, así que
+para reentrar sin escribir nada hay que repetir el `POST auth/login` — y para eso hay
+que guardar la contraseña en algún lado. En el navegador eso significa `localStorage`
+en texto plano. La combinación que evita eso es token en memoria + contraseña en el
+Keystore detrás de la huella, pero **solo funciona en el APK**.
+
+### 2. "Fuentes desconocidas" es por app instaladora, no por APK
+
+El permiso se concede a **la app que abre el archivo**, no al archivo. Si lo
+habilitaste para Chrome pero después abrís el APK desde el gestor de archivos,
+Android lo vuelve a bloquear: hay que habilitarlo también para el gestor.
+
+Y Android **no abre el instalador solo** al terminar una descarga web: el usuario
+tiene que tocar la notificación.
+
+### 3. `npx cap sync android` es obligatorio tras instalar un plugin
+
+Sin ese paso el plugin no existe en runtime y los errores son confusos —del tipo
+*"plugin not implemented"*— que parecen problemas de código. El script ya lo hace;
+solo importa si se compila a mano.
+
+Comprobación: el sync tiene que imprimir el plugin.
+
+```
+[info] Found 1 Capacitor plugin for android:
+       @capgo/capacitor-native-biometric@8.6.2
+```
+
+### Diagnosticar el WebView con DevTools
+
+El APK es una WebView, así que se depura con las DevTools de Chrome completas:
+**`chrome://inspect`** en el escritorio, con el celular conectado por USB y
+depuración activada. Da consola, red y breakpoints sobre la app corriendo en el
+teléfono — dos minutos contra horas de adivinar. Los `console.warn` de
+[`lib/biometria.ts`](src/lib/biometria.ts) aparecen ahí.
+
+### Orden de trabajo
+
+Probar todo junto hace imposible saber qué está roto. El orden que funciona:
+
+1. Sesión persistente **en el navegador**
+2. APK básico, sin biometría
+3. Instalarlo y verificar que abre
+4. **Recién ahí** la biometría
+
+### Desinstalar antes de cambiar de firma
+
+Android **no instala encima** una app firmada con otra clave: falla con
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Al pasar de un APK debug a uno release —o al revés— hay que
+desinstalar el anterior primero, y se pierden los datos locales (sesión guardada, preferencias).
 
 ## Relación con la app Expo de `mobile/`
 

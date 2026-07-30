@@ -122,10 +122,14 @@ paint. **La preferencia sí se guarda bien**; el problema es solo el destello.
 Los íconos de la marca ya están hechos en `mobile/assets/`. Ver [`APK.md`](APK.md) →
 *Ícono de la app*.
 
-### 10. Firmar el APK release y versionarlo
+### 10. Versionar el APK antes de repartir una versión nueva
 
-`assembleRelease` sale sin firmar. Y `android/app/build.gradle` está en `versionCode 1` /
-`versionName "1.0"`: hay que subirlos antes de repartir una versión nueva.
+La firma **ya está resuelta**: `assembleRelease` firma solo con `ethos-release.jks` (ver
+[`APK.md`](APK.md) → *Firma*).
+
+Lo que queda: `android/app/build.gradle` sigue en `versionCode 1` / `versionName "1.0"`. Android
+se niega a instalar encima un `versionCode` menor o igual, así que hay que subirlo en cada
+versión que se reparta.
 
 ### 11. La escala está cableada en el front
 
@@ -140,6 +144,19 @@ de cualquiera de las cinco listas existentes.
 `router.tsx`, `server.ts`, `error-capture.ts`). Ninguno es de código escrito para este
 proyecto. `npm run format` lo arregla, pero reformatea medio repo en un commit — por eso
 quedó sin hacer.
+
+### ~~12b. Traversal de rutas en el proxy de ORDS~~ ✅ RESUELTO (30/07/2026)
+
+El splat se concatenaba crudo a la URL de destino, y como `fetch` resuelve los `../`, un
+pedido a `/api/ords/../../_/db-api/stable/` salía del prefijo y llegaba a la API de
+administración SQL de ORDS usando el proxy de pivote. Agravado por que el `Authorization`
+se reenvía sin validarse, así que ni siquiera hacía falta un token válido.
+
+No era alcanzable en producción —el build estático no incluye el proxy—, pero sí en
+`npm run dev` y en cualquier deploy con Node. Resuelto en
+[`src/routes/api/ords.$.ts`](src/routes/api/ords.$.ts) con `resolverDestino()`: normaliza
+con `new URL()` y exige que el `pathname` resuelto siga empezando con `ORDS_PREFIX`,
+rechazando además barras codificadas (`%2f`, `%5c`) y URLs protocol-relative.
 
 ### 13. Sin rate limiting en el login
 

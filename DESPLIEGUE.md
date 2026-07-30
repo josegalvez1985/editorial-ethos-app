@@ -227,20 +227,23 @@ powershell -File scripts\build-static.ps1 -apiUrl "https://oracleapex.com/ords/o
 
 ---
 
-## El APK viaja dentro del sitio
+## El APK ya NO se publica con el sitio
 
-`public/app.apk` se publica junto con el resto, así que queda descargable en
-<https://www.ethospy.online/app.apk>. Lo genera `npm run apk`
-(ver [`APK.md`](APK.md)), que lo copia ahí automáticamente.
+`npm run apk` sigue dejando el resultado en `public/app.apk`, pero ese archivo **no se commitea**:
+`*.apk` está en [`.gitignore`](.gitignore). Son ~4 MB por build y git los guardaría para siempre
+—un binario no se comprime entre versiones como el texto—, así que cada release engordaba el
+historial sin vuelta atrás.
 
-La pantalla de login lo ofrece con un ítem "Descargar app para Android"
-([`src/routes/index.tsx`](src/routes/index.tsx)), que arma la URL con `asset()` para que siga
-funcionando cambie o no la base. Ese ítem **no** se muestra dentro del propio APK: el build de
-Capacitor saca `app.apk` del bundle para que cada APK no empaquete al anterior adentro.
+Consecuencia: **el APK se reparte a mano**, fuera del repo. Y como el sitio ya no tiene el archivo,
+el ítem "Descargar app para Android" del login está **apagado**: lo controla la constante
+`DESCARGA_APK_URL` en [`src/routes/index.tsx`](src/routes/index.tsx), hoy en `""`.
 
-**Costo a tener en cuenta:** son ~4 MB y el `.gitignore` no excluye `*.apk`, así que **cada APK
-que commitees suma 4 MB al historial de git para siempre**. Si se vuelve pesado, las salidas son
-publicarlo como GitHub Release en vez de en `public/`, o dejar de commitearlo y subirlo a mano.
+Para volver a ofrecerlo desde el sitio hace falta darle una URL estable —un GitHub Release es lo
+natural, porque no toca el historial— y poner esa URL en `DESCARGA_APK_URL`. El ítem reaparece
+solo; el JSX quedó intacto.
+
+> El historial ya carga con el peso de los APK commiteados antes. Sacarlo ahora evita seguir
+> sumando, pero no achica lo ya guardado: eso requeriría reescribir el historial.
 
 ---
 
