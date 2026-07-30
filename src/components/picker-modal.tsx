@@ -16,7 +16,15 @@ type Nombre = "facilitadores" | "instituciones" | "areas" | "evaluaciones" | "ci
 
 type Props = {
   label: string;
-  nombre: Nombre;
+  /**
+   * Lista del backend. Excluyente con `opciones`: uno de los dos tiene que venir.
+   */
+  nombre?: Nombre;
+  /**
+   * Lista fija, ya en memoria (una escala, no una tabla). Cuando viene, no hay
+   * request ni buscador: son pocas filas y todas están a la vista.
+   */
+  opciones?: Opcion[];
   value: number | null;
   /** Texto a mostrar cuando el valor viene de la API y la lista no se abrió aún. */
   valueText?: string | null;
@@ -34,23 +42,35 @@ type Props = {
   requerido?: boolean;
 };
 
+/** Desde cuántas filas una lista fija justifica un buscador. */
+const UMBRAL_BUSCADOR = 8;
+
 /**
  * Lista de valores en modal, con un botón como campo y un buscador adentro.
  *
- * El buscador trabaja en dos niveles a la vez:
+ * Sirve a los dos tipos de lista del formulario, y la diferencia es de dónde
+ * salen las filas:
  *
- *   1. Contra el servidor (`?buscar=`, con debounce de 300 ms). Necesario porque
- *      el backend corta en 100 filas: lo que se busca puede no estar cargado.
- *   2. En memoria, sobre TODOS los campos de las filas ya traídas (`busqueda`).
- *      Así se encuentra por CI, por estado o por id, no solo por el nombre, y el
- *      filtrado se siente instantáneo mientras el servidor responde.
+ * - **`nombre`** — una lista del backend (`listas/:nombre`). La consulta arranca
+ *   recién al abrir (`enabled: abierto`): la pantalla no gasta cinco requests en
+ *   listas que el usuario capaz ni toca. El buscador trabaja en dos niveles a la
+ *   vez:
  *
- * La consulta arranca recién al abrir (`enabled: abierto`): la pantalla no gasta
- * cinco requests en listas que el usuario capaz ni toca.
+ *     1. Contra el servidor (`?buscar=`, con debounce de 300 ms). Necesario
+ *        porque el backend corta en 100 filas: lo que se busca puede no estar
+ *        cargado.
+ *     2. En memoria, sobre TODOS los campos de las filas ya traídas (`busqueda`).
+ *        Así se encuentra por CI, por estado o por id, no solo por el nombre, y
+ *        el filtrado se siente instantáneo mientras el servidor responde.
+ *
+ * - **`opciones`** — una escala fija del front (calificaciones). Sin request, sin
+ *   estados de carga y sin buscador si son menos de {@link UMBRAL_BUSCADOR}:
+ *   buscar entre cinco palabras que ya se ven es un campo de más.
  */
 export function PickerModal({
   label,
   nombre,
+  opciones: estaticas,
   value,
   valueText,
   onChange,
@@ -80,26 +100,25 @@ export function PickerModal({
     incluir_id: incluirId ?? undefined,
   };
 
+  // El hook se llama siempre —las reglas de hooks no permiten saltearlo— pero con
+  // lista estática queda apagado y nunca toca la red.
   const { data, isLoading, isFetching, isError, error } = useQuery({
-    queryKey: keys.lista(nombre, params),
-    queryFn: () => lista(nombre, params),
-    enabled: abierto,
+    queryKey: nombre ? keys.lista(nombre, params) : ["lista", "estatica", label],
+    queryFn: () => lista(nombre as Nombre, params),
+    enabled: abierto && !estaticas,
     staleTime: STALE_LISTAS,
   });
 
   const q = texto.trim().toLowerCase();
-  const todas = data ?? [];
+  const todas = estaticas ?? data ?? [];
   const opciones = q ? todas.filter((o) => o.busqueda.includes(q)) : todas;
 
-  /*
-   * Áreas y evaluaciones son descripciones de hasta 255 caracteres: se muestran
-   * completas, ocupando dos o tres líneas si hace falta. Recortarlas con puntos
-   * suspensivos pierde justo la parte que distingue una evaluación de otra.
-   *
-   * Los otros combos (nombres de persona, institución, ciudad) siguen en una
-   * línea: ahí el largo es acotado y las filas parejas se recorren más rápido.
-   */
-  const textoCompleto = nombre === "areas" || nombre === "evaluaciones";
+  const conBuscador = !estaticas || estaticas.length > UMBRAL_BUSCADOR;
+  // Con lista estática no hay nada que cargar ni que falle: las dos banderas
+  // quedarían en false igual, pero decirlo explícito ahorra tener que razonar
+  // sobre qué devuelve react-query con `enabled: false`.
+  const cargando = !estaticas && isLoading;
+  const fallo = !estaticas && isError;
 
   const deshabilitado = Boolean(disabledReason);
   // El texto elegido en esta sesión manda sobre el que vino de la API.
@@ -122,13 +141,11 @@ export function PickerModal({
 
       <Dialog open={abierto} onOpenChange={setAbierto}>
         <DialogTrigger asChild disabled={deshabilitado}>
-          {/* El botón también crece: si la lista muestra el texto completo, ver
-              la elección recortada en el campo sería el mismo problema. */}
+          {/* min-h-12 y no h-12: el campo crece con el texto. Ver la elección
+              recortada acá sería el mismo problema que recortarla en la lista. */}
           <button
             type="button"
-            className={`tap flex w-full items-center gap-2 rounded-xl border bg-card px-4 text-left text-base ${
-              textoCompleto ? "min-h-12 py-2.5" : "h-12"
-            } ${
+            className={`tap flex min-h-12 w-full items-center gap-2 rounded-xl border bg-card px-4 py-2.5 text-left text-base ${
               deshabilitado
                 ? "cursor-not-allowed border-input opacity-60"
                 : conValor
@@ -137,9 +154,7 @@ export function PickerModal({
             }`}
           >
             <span
-              className={`min-w-0 flex-1 ${textoCompleto ? "leading-snug" : "truncate"} ${
-                conValor ? "" : "text-muted-foreground"
-              }`}
+              className={`min-w-0 flex-1 leading-snug ${conValor ? "" : "text-muted-foreground"}`}
             >
               {deshabilitado ? disabledReason : conValor ? mostrado : placeholder}
             </span>
@@ -153,50 +168,57 @@ export function PickerModal({
           p-0 y grid-rows: el header y el buscador quedan fijos y solo scrollea
           la lista.
         */}
-        <DialogContent className="grid max-h-[85vh] w-[calc(100vw-2rem)] max-w-md grid-rows-[auto_auto_1fr] gap-0 overflow-hidden rounded-2xl p-0">
+        <DialogContent
+          className={`grid max-h-[85vh] w-[calc(100vw-2rem)] max-w-md gap-0 overflow-hidden rounded-2xl p-0 ${
+            // Una fila por hijo: sin buscador son dos, no tres.
+            conBuscador ? "grid-rows-[auto_auto_1fr]" : "grid-rows-[auto_1fr]"
+          }`}
+        >
           <DialogHeader className="px-5 pt-5 pb-3 text-left">
             <DialogTitle className="font-display text-xl">{label}</DialogTitle>
             <DialogDescription className="text-xs">
-              Buscá por cualquier dato de la lista
+              {conBuscador ? "Buscá por cualquier dato de la lista" : "Elegí una opción"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="relative px-5 pb-3">
-            <Search className="pointer-events-none absolute top-1/2 left-8 size-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              autoFocus
-              value={texto}
-              onChange={(e) => setTexto(e.target.value)}
-              placeholder="Buscar…"
-              // text-base = 16px: con menos, iOS hace zoom al enfocar.
-              className="h-11 w-full rounded-full border border-input bg-muted/60 pr-10 pl-10 text-base outline-none focus:border-primary/40 focus:bg-card"
-            />
-            {texto ? (
-              <button
-                type="button"
-                onClick={() => setTexto("")}
-                aria-label="Limpiar"
-                className="tap absolute top-1/2 right-7 grid size-8 -translate-y-1/2 place-items-center rounded-full text-muted-foreground"
-              >
-                <X className="size-4" />
-              </button>
-            ) : (
-              // Spinner al costado y no en lugar de la lista: refrescar no debe
-              // hacer desaparecer lo que ya se está viendo.
-              isFetching &&
-              !isLoading && (
-                <Loader2 className="absolute top-1/2 right-8 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-              )
-            )}
-          </div>
+          {conBuscador ? (
+            <div className="relative px-5 pb-3">
+              <Search className="pointer-events-none absolute top-1/2 left-8 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                autoFocus
+                value={texto}
+                onChange={(e) => setTexto(e.target.value)}
+                placeholder="Buscar…"
+                // text-base = 16px: con menos, iOS hace zoom al enfocar.
+                className="h-11 w-full rounded-full border border-input bg-muted/60 pr-10 pl-10 text-base outline-none focus:border-primary/40 focus:bg-card"
+              />
+              {texto ? (
+                <button
+                  type="button"
+                  onClick={() => setTexto("")}
+                  aria-label="Limpiar"
+                  className="tap absolute top-1/2 right-7 grid size-8 -translate-y-1/2 place-items-center rounded-full text-muted-foreground"
+                >
+                  <X className="size-4" />
+                </button>
+              ) : (
+                // Spinner al costado y no en lugar de la lista: refrescar no debe
+                // hacer desaparecer lo que ya se está viendo.
+                isFetching &&
+                !isLoading && (
+                  <Loader2 className="absolute top-1/2 right-8 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                )
+              )}
+            </div>
+          ) : null}
 
           <div className="min-h-[10rem] overflow-y-auto overscroll-contain px-3 pb-4">
-            {isLoading ? (
+            {cargando ? (
               <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
                 Cargando…
               </div>
-            ) : isError ? (
+            ) : fallo ? (
               <p className="px-4 py-12 text-center text-sm text-destructive">
                 {error instanceof Error ? error.message : "No se pudo cargar la lista"}
               </p>
@@ -222,13 +244,10 @@ export function PickerModal({
                         }`}
                       >
                         <span className="min-w-0 flex-1">
-                          <span
-                            className={`block text-[15px] ${
-                              textoCompleto ? "leading-snug" : "truncate"
-                            }`}
-                          >
-                            {o.texto}
-                          </span>
+                          {/* Sin truncate: los nombres de facilitador, de
+                              institución y las descripciones de área se cortarían
+                              justo en la parte que distingue una fila de otra. */}
+                          <span className="block text-[15px] leading-snug">{o.texto}</span>
                           {o.extra ? (
                             <span className="mt-0.5 block text-xs text-muted-foreground">
                               {o.extra}
@@ -242,8 +261,9 @@ export function PickerModal({
                 })}
 
                 {/* El backend corta en 100 filas: decirlo es mejor que dar a
-                    entender que eso es todo lo que hay. */}
-                {todas.length >= 100 ? (
+                    entender que eso es todo lo que hay. Una lista estática no
+                    tiene tope ni buscador, así que el aviso no aplica. */}
+                {!estaticas && todas.length >= 100 ? (
                   <li className="px-4 py-3 text-center text-xs text-muted-foreground">
                     Se muestran las primeras 100. Escribí para buscar en el resto.
                   </li>

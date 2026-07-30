@@ -116,6 +116,40 @@ export function borrarCredenciales() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Fallo de red vs. fallo del servidor                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * No hubo respuesta del servidor. Es DISTINTO de "el servidor dijo que no".
+ *
+ * La diferencia importa para la sesión: un 401 significa que el token murió y hay
+ * que volver al login, pero quedarse sin señal no dice nada sobre el token. Si se
+ * tratan igual, salir del subte te expulsa de la app.
+ */
+export class SinConexion extends Error {
+  constructor() {
+    super("Sin conexión con el servidor. Revisá tu red.");
+    this.name = "SinConexion";
+  }
+}
+
+export function esSinConexion(e: unknown): e is SinConexion {
+  return e instanceof SinConexion;
+}
+
+/**
+ * `fetch` envuelto. Solo rechaza por red, CORS o abort: un 4xx o un 5xx llegan
+ * como respuesta normal, así que todo lo que caiga en el catch es falta de red.
+ */
+async function pedir(input: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new SinConexion();
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Detección de token muerto                                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -161,7 +195,7 @@ function normalizar(data: Record<string, unknown>, usuarioTipeado: string): Sesi
 /* -------------------------------------------------------------------------- */
 
 export async function login(usuario: string, password: string, recordar = false): Promise<Sesion> {
-  const res = await fetch(url("auth/login"), {
+  const res = await pedir(url("auth/login"), {
     method: "POST",
     cache: "no-store",
     headers: { "Content-Type": "application/json" },
@@ -194,8 +228,11 @@ export async function loginAutomatico(): Promise<Sesion | null> {
   if (!c) return null;
   try {
     return await login(c.usuario, c.password, true);
-  } catch {
-    borrarCredenciales();
+  } catch (e) {
+    // Solo se borran si el backend las RECHAZÓ. Sin red no sabemos si siguen
+    // sirviendo, y borrarlas dejaría al usuario sin login automático incluso
+    // después de recuperar la conexión — perdiendo la contraseña para siempre.
+    if (!esSinConexion(e)) borrarCredenciales();
     return null;
   }
 }
@@ -216,8 +253,12 @@ export async function logout(): Promise<void> {
 }
 
 /**
- * Revalida la sesión guardada contra el backend. `null` si el token ya no sirve
- * (y en ese caso deja el storage limpio).
+ * Revalida la sesión guardada contra el backend. `null` si el token ya no sirve.
+ *
+ * **Sin red devuelve la sesión guardada tal cual.** No se puede saber si el token
+ * sigue vivo sin preguntar, y asumir que murió expulsaría al usuario cada vez que
+ * abre la app sin señal. Si el token estaba vencido, la primera llamada con red lo
+ * va a rechazar y ahí sí cae la sesión, por el camino de `handleUnauthorized`.
  */
 export async function revalidar(): Promise<Sesion | null> {
   const s = getSesion();
@@ -226,7 +267,8 @@ export async function revalidar(): Promise<Sesion | null> {
     const data = (await authFetch("auth/me")) as { data?: Record<string, unknown> };
     const d = data?.data ?? {};
     return { ...s, ...normalizar({ ...d, token: s.token }, s.usuario) };
-  } catch {
+  } catch (e) {
+    if (esSinConexion(e)) return s;
     return null;
   }
 }
@@ -236,7 +278,9 @@ export async function authFetch(path: string, init: RequestInit = {}) {
   const s = getSesion();
   if (!s) throw new Error("No hay sesión activa");
 
-  const res = await fetch(url(path), {
+  // Si no hay red, esto lanza SinConexion y NO toca la sesión: el token puede
+  // seguir siendo válido. Solo un rechazo explícito del backend la tira.
+  const res = await pedir(url(path), {
     ...init,
     cache: "no-store", // datos vivos: nunca desde cache
     headers: {

@@ -1,99 +1,100 @@
 ---
 name: build-apk
-description: Compila el APK (o AAB) de Android de la app Expo en mobile/. Úsala cuando el usuario pida "genera el apk", "compila el apk", "build de Android", "hazme el instalable", "sácame el aab" o "súbelo a Play Store". Cubre las precondiciones de EAS, el build en la nube y la entrega del enlace de descarga.
+description: Compila el APK de Android de Editorial Ethos empaquetando el sitio web con Capacitor (build local con Gradle). Úsala cuando el usuario pida "genera el apk", "compila el apk", "build de Android", "hazme el instalable" o "regenera la app". Cubre las precondiciones, el build y la entrega del archivo.
 ---
 
 # Generar el APK de Editorial Ethos
 
-La app Android vive en `mobile/` (Expo SDK 57, expo-router). El build se hace
-**en la nube con EAS**.
+El APK **empaqueta el sitio web** (`src/`, TanStack Start) dentro de una WebView con Capacitor.
+El build es **local con Gradle**, no en la nube.
 
-El repo tiene **dos frontends**: `mobile/` (esta app) y la raíz (sitio web TanStack
-Start + Vite). Comparten el backend `backend/` pero no el código. Esta skill cubre
-solo el APK; un cambio de UI aquí **no** sale en la web.
+Doc completa: [`APK.md`](../../../APK.md). Léela si algo no encaja con lo de acá.
 
-**Esta máquina no tiene Android SDK, `adb` ni Java**, así que `eas build --local` va a fallar.
-No lo intentes ni propongas instalar Android Studio salvo que el usuario lo pida.
+**No compiles la app Expo de `mobile/`.** Sigue en el repo, pero "el apk" es este. Si el usuario
+pide explícitamente el de Expo, eso es `cd mobile && npx eas-cli build --platform android
+--profile preview` y necesita cuenta de Expo + login interactivo.
 
-Todos los comandos se corren desde `mobile/`, con **npm** (no bun — la raíz usa bun, `mobile/` no).
+## 1. El comando
 
-## 1. Precondiciones (verifícalas antes de compilar)
+Desde la raíz del proyecto:
 
-Corre estas comprobaciones y resuelve lo que falle antes de seguir:
-
-```bash
-cd mobile
-npx eas-cli --version     # instala eas-cli si falta
-npx eas-cli whoami        # debe imprimir el usuario de Expo
+```powershell
+npm run apk          # debug: instalable directo
+npm run apk:release  # release: sale SIN firmar, no se instala así
 ```
 
-- **`eas-cli` no instalado** → `npm install -g eas-cli` (o usa `npx eas-cli` en todo).
-- **`whoami` falla / "Not logged in"** → **PARA aquí.** `eas login` es interactivo y pide
-  contraseña; no puedes hacerlo tú. Dile al usuario que corra `eas login` en su terminal y
-  te avise. No pidas ni aceptes credenciales.
-- **Falta `extra.eas.projectId` en `mobile/app.json`** → hace falta `eas init`, que también es
-  interactivo (pregunta por la cuenta/slug). Pídele al usuario que lo corra.
+Eso corre `scripts/build-apk.ps1`, que hace los cinco pasos en orden (Java 21 → build web SPA →
+`cap sync` → Gradle → reporte) y **corta en el primero que falla**. No repitas los pasos a mano
+salvo que estés diagnosticando algo.
 
-## 2. Pre-vuelo local
+**Corre el build en background** (`run_in_background: true`): tarda ~4 minutos con todo cacheado.
+Esperá la notificación, no hagas polling.
 
-Antes de gastar una cola de build en la nube, confirma que el proyecto compila:
+## 2. Todo lo que hace falta YA ESTÁ INSTALADO. No descargues nada.
 
-```bash
-npx tsc --noEmit
-npx expo export --platform android --output-dir "$SCRATCH/export-check" --clear
+Esta máquina tiene todo lo necesario. **Comprobado y funcionando** (build exitoso del 30/07/2026):
+
+| | Dónde |
+| --- | --- |
+| JDK 21 | `C:\Program Files\Java\jdk-21.0.11` |
+| Android SDK | `C:\Users\josej\Android\Sdk` (android-36, build-tools 36.1.0, platform-tools, licencias aceptadas) |
+| Gradle 8.14.3 | cacheado en `~/.gradle/wrapper/dists` |
+| Capacitor + `android/` | en el repo |
+
+**NUNCA instales ni descargues nada sin verificar primero que falta, y sin preguntarle al
+usuario.** Bajar el SDK de nuevo son ~1,1 GB en su disco y su conexión, para nada.
+
+Si el paso 2 del script falla:
+
+```powershell
+Test-Path "C:\Users\josej\Android\Sdk"          # ¿existe?
+Get-ChildItem "C:\Users\josej\Android\Sdk"      # ¿qué tiene adentro?
+Get-Content android\local.properties            # ¿a dónde apunta sdk.dir?
 ```
 
-Usa el scratchpad de la sesión para `--output-dir`; no dejes `dist/` en el repo.
-Si algo falla aquí, arréglalo antes de lanzar el build — un error de bundle también
-tumba el build remoto, pero 15 minutos después.
+Lo más probable es que sea un `sdk.dir` mal apuntado, no un SDK ausente — se arregla editando
+`android/local.properties`, una línea, sin descargar nada. Solo si esas comprobaciones muestran
+que de verdad no está, pedile permiso al usuario antes de instalar y seguí *Si hay que instalarlo
+en otra máquina* de `APK.md`.
 
-## 3. Lanzar el build
+**Nota histórica, para no repetir el error:** el doc del proyecto de origen (balance-mensual) dice
+que el SDK va en `C:\Program Files\Android\cmdline-tools`. Esa ruta **nunca existió** en esta
+máquina; el `local.properties` real de ese proyecto apuntaba a `C:\Users\josej\Android\Sdk`. No te
+guíes por el doc viejo: mirá el disco.
 
-APK instalable directo (lo que el usuario suele querer):
+## 3. Qué revisar antes de dar el APK por bueno
 
-```bash
-npx eas-cli build --platform android --profile preview --non-interactive
-```
-
-AAB para Play Store:
-
-```bash
-npx eas-cli build --platform android --profile production --non-interactive
-```
-
-Los perfiles están en `mobile/eas.json`: `preview` → `buildType: apk`, `production` → `app-bundle`.
-
-**Corre el build en background** (`run_in_background: true`): tarda entre 10 y 25 minutos según
-la cola de EAS. Mientras esperas, no hagas polling con sleeps — te llega la notificación al
-terminar. Si necesitas revisar el avance, lee el archivo de salida de la tarea.
-
-`--non-interactive` falla si EAS necesita generar un keystore nuevo y no hay ninguno.
-Si el error menciona *keystore* o *credentials*, quita `--non-interactive` y dile al usuario
-que responda la pregunta de credenciales en su propia terminal (EAS puede generar y
-guardar el keystore por él; es la opción recomendada).
+- El script imprime la ruta del `.apk` y su tamaño. **Si no imprimió eso, el build no terminó** —
+  no digas que está listo.
+- La URL de ORDS queda **embebida** en el bundle. Por defecto
+  `https://oracleapex.com/ords/fundcarac/ethos/`. Si el usuario necesita otra, pasala:
+  `powershell -File scripts\build-apk.ps1 -config debug -apiUrl "..."`. Cambiarla después obliga a
+  recompilar.
+- Dentro del APK **no corre** el proxy `src/routes/api/ords.$.ts`. Es normal y está previsto: el
+  front pega directo a ORDS. Si el login falla con error de CORS, el problema es el backend, no el
+  APK.
 
 ## 4. Entregar el resultado
 
-Al terminar, EAS imprime una URL de la build en `expo.dev` y un enlace directo al `.apk`.
-**Dale ambos al usuario**, más:
+El script termina imprimiendo `=== APK listo (N MB) ===` con la ruta. **Si no imprimió eso, el
+build no terminó** — no digas que está listo.
 
-- Cómo instalarlo: descargar el APK en el Android y abrirlo; hay que permitir
-  "instalar apps de orígenes desconocidos" para el navegador/gestor de archivos.
-- El icono que verá es el adaptativo de `mobile/assets/android-icon-*.png`.
+Dale al usuario:
 
-Si el build falla, lee los logs con `npx eas-cli build:view` o el enlace de la build,
-y reporta la causa real — no digas "listo" con un build en rojo.
+- La ruta del APK: `android\app\build\outputs\apk\debug\app-debug.apk`, y que el script ya lo
+  copió a `public\app.apk` (nombre fijo, sobrescribe el anterior).
+- Cómo instalarlo: copiarlo al teléfono, habilitar "instalar apps de fuentes desconocidas" y
+  abrirlo. El debug ya viene firmado con la debug key.
+- Si hubo cambios de front en esta sesión, decí que ese APK ya los incluye — y que un cambio
+  posterior necesita un APK nuevo, porque la web viaja adentro.
 
-## 5. Antes de una versión pública
+Si Gradle falla, leé el error real del `--stacktrace` y reportá la causa. No digas "listo" con un
+build en rojo.
 
-Estos puntos no bloquean un APK de prueba, pero sí una publicación. Menciónalos si el
-usuario habla de Play Store o de repartir el APK fuera de su equipo:
+## 5. Antes de una versión para repartir
 
-- `version` y `android.versionCode` en `mobile/app.json` (el perfil `production` ya usa
-  `autoIncrement`, y `eas.json` tiene `appVersionSource: "remote"`).
-- El `package` es `com.editorialethos.app`; cambiarlo después de publicar crea otra app.
-- **`expo.extra.apiUrl` en `mobile/app.json`** queda embebido en el APK. Confirma que
-  apunta al ORDS correcto ANTES de compilar; cambiarlo después obliga a recompilar.
-  El backend (`backend/ethos_auth.sql`) tiene que estar corrido o el login no entra.
-- El login es real contra Oracle APEX/ORDS, pero el contenido de `app/(tabs)/home.tsx`
-  sigue siendo mockup embebido, no una API.
+- Subir `versionCode` / `versionName` en `android/app/build.gradle`. Android no instala encima un
+  `versionCode` menor o igual.
+- El release sale **sin firmar**: hay que firmarlo con `apksigner` (ver `APK.md`).
+- El ícono actual es el de Capacitor por defecto, no el de la marca (`APK.md` → *Ícono de la app*).
+- El backend `backend/ethos_auth.sql` tiene que estar corrido o el login no entra.

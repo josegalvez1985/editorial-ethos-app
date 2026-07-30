@@ -21,6 +21,14 @@ dist-ssr
 .env.*
 !.env.example
 
+# Firma del APK release. NUNCA commitear: quien tenga el .jks y la contraseña
+# puede publicar actualizaciones haciéndose pasar por esta app.
+# Y si SE PIERDEN, no se puede volver a actualizar la app instalada: Android
+# exige la misma firma. Respaldar fuera del repo.
+*.jks
+*.keystore
+android/keystore.properties
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars

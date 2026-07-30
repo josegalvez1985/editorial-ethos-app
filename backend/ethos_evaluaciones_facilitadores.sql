@@ -155,15 +155,14 @@ SET SERVEROUTPUT ON SIZE UNLIMITED
 --     EVALUADO_POR              VARCHAR2(255)  NOT NULL ENABLE,
 --     ID_AREA                   NUMBER         NOT NULL ENABLE,
 --     ID_EVALUACION             NUMBER         NOT NULL ENABLE,
---     CALIFICACION_ESTRELLAS    NUMBER,
---     ASPECTOS_POSITIVOS        VARCHAR2(1000),
---     ASPECTOS_MEJORAR          VARCHAR2(1000),
---     CALIFICACION              VARCHAR2(100),
+--     ESCALA    NUMBER,
+--     ASPECTOS_POSITIVOS        CLOB,
+--     ASPECTOS_MEJORAR          CLOB,
 --     ID_AUDITORIA              NUMBER,
---     CHECK (calificacion_estrellas BETWEEN 1 AND 5) ENABLE,
+--     CHECK (escala BETWEEN 1 AND 5) ENABLE,
 --     CONSTRAINT EVAL_FAC_PK PRIMARY KEY (ID_EVALUACION_FACILITADOR)
 --   );
---   + las 5 FKs (facilitador, institucion, ciudad, area, evaluacion)
+--   + las 6 FKs (facilitador, institucion, ciudad, area, evaluacion, escala)
 --
 -- Agregar una columna IDENTITY a una tabla con datos es seguro: Oracle numera
 -- las filas existentes al vuelo. Nada se pierde.
@@ -247,25 +246,35 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('[SKIP]  La tabla ya tenia PRIMARY KEY.');
   END IF;
 
-  -- 1.2 Las 5 FKs. Si ya las creaste con tus nombres, se saltean.
+  -- 1.2 Las 6 FKs. Si ya las creaste con tus nombres, se saltean.
   fk('EVAL_FAC_FK_FACILITADOR', 'ID_FACILITADOR', 'facilitadores',      'id_facilitador');
   fk('EVAL_FAC_FK_INSTITUCION', 'ID_INSTITUCION', 'instituciones',      'id_institucion');
   fk('EVAL_FAC_FK_CIUDAD',      'ID_CIUDAD',      'ciudades',           'id_ciudad');
   fk('EVAL_FAC_FK_AREA',        'ID_AREA',        'areas_evaluaciones', 'id_area');
   fk('EVAL_FAC_FK_EVALUACION',  'ID_EVALUACION',  'evaluaciones',       'id_evaluacion');
+  -- ESCALA apunta a ESCALAS_EVALUACIONES.ESCALA, que es UNIQUE (no la PK, que es
+  -- ID_ESCALA). Un valor que no este en esa tabla sale como ORA-02291.
+  fk('EVAL_FAC_FK_ESCALA',      'ESCALA',         'escalas_evaluaciones', 'escala');
 
-  -- 1.3 El CHECK de las estrellas.
+  -- 1.3 El CHECK del rango de ESCALA.
+  --
+  -- OJO: el CHECK dice 1..5 pero ESCALAS_EVALUACIONES tiene ESCALA de 1 a 12. Con
+  -- este rango, las filas 6..12 de esa tabla son inalcanzables: solo se pueden
+  -- guardar escalas 1..5, que segun los datos cargados son 'Deficiente' (1-3) y
+  -- 'Aceptable' (4-5). 'Bueno' y 'Excelente' NO se pueden guardar.
+  -- Esta anotado en README.md; hay que decidir si se amplia el CHECK a 1..12 o si
+  -- se recargan los datos de ESCALAS_EVALUACIONES con 5 niveles.
   SELECT COUNT(*) INTO l_c
     FROM user_constraints
    WHERE table_name = 'EVALUACIONES_FACILITADORES'
      AND constraint_type = 'C'
-     AND UPPER(search_condition_vc) LIKE '%CALIFICACION_ESTRELLAS%BETWEEN%';
+     AND UPPER(search_condition_vc) LIKE '%ESCALA%';
   IF l_c = 0 THEN
-    ejecutar('ALTER TABLE evaluaciones_facilitadores ADD CONSTRAINT EVAL_FAC_CK_ESTRELLAS '
-             || 'CHECK (calificacion_estrellas BETWEEN 1 AND 5)',
-             'CHECK de estrellas (1..5) creado.');
+    ejecutar('ALTER TABLE evaluaciones_facilitadores ADD CONSTRAINT EVAL_FAC_CK_ESCALA '
+             || 'CHECK (escala BETWEEN 1 AND 5)',
+             'CHECK de ESCALA (1..5) creado.');
   ELSE
-    DBMS_OUTPUT.PUT_LINE('[SKIP]  El CHECK de estrellas ya existia.');
+    DBMS_OUTPUT.PUT_LINE('[SKIP]  El CHECK de ESCALA ya existia.');
   END IF;
 
   -- 1.4 La columna en el journal. El trigger de la seccion 2 vuelve a guardar
@@ -341,10 +350,9 @@ BEGIN
       EVALUADO_POR,
       ID_AREA,
       ID_EVALUACION,
-      CALIFICACION_ESTRELLAS,
+      ESCALA,
       ASPECTOS_POSITIVOS,
       ASPECTOS_MEJORAR,
-      CALIFICACION,
       JN_OPERATION,
       JN_ORACLE_USER,
       JN_DATETIME,
@@ -362,10 +370,9 @@ BEGIN
       :NEW.EVALUADO_POR,
       :NEW.ID_AREA,
       :NEW.ID_EVALUACION,
-      :NEW.CALIFICACION_ESTRELLAS,
+      :NEW.ESCALA,
       :NEW.ASPECTOS_POSITIVOS,
       :NEW.ASPECTOS_MEJORAR,
-      :NEW.CALIFICACION,
       'INS',
       -- Para que la bitacora guarde el usuario de la app y no el del esquema,
       -- reemplazar por (el paquete deja el usuario en CLIENT_IDENTIFIER):
@@ -388,10 +395,9 @@ BEGIN
       EVALUADO_POR,
       ID_AREA,
       ID_EVALUACION,
-      CALIFICACION_ESTRELLAS,
+      ESCALA,
       ASPECTOS_POSITIVOS,
       ASPECTOS_MEJORAR,
-      CALIFICACION,
       JN_OPERATION,
       JN_ORACLE_USER,
       JN_DATETIME,
@@ -409,10 +415,9 @@ BEGIN
       :NEW.EVALUADO_POR,
       :NEW.ID_AREA,
       :NEW.ID_EVALUACION,
-      :NEW.CALIFICACION_ESTRELLAS,
+      :NEW.ESCALA,
       :NEW.ASPECTOS_POSITIVOS,
       :NEW.ASPECTOS_MEJORAR,
-      :NEW.CALIFICACION,
       'UPD',
       NVL(V('APP_USER'), USER),
       SYSDATE,
@@ -432,10 +437,9 @@ BEGIN
       EVALUADO_POR,
       ID_AREA,
       ID_EVALUACION,
-      CALIFICACION_ESTRELLAS,
+      ESCALA,
       ASPECTOS_POSITIVOS,
       ASPECTOS_MEJORAR,
-      CALIFICACION,
       JN_OPERATION,
       JN_ORACLE_USER,
       JN_DATETIME,
@@ -453,10 +457,9 @@ BEGIN
       :OLD.EVALUADO_POR,
       :OLD.ID_AREA,
       :OLD.ID_EVALUACION,
-      :OLD.CALIFICACION_ESTRELLAS,
+      :OLD.ESCALA,
       :OLD.ASPECTOS_POSITIVOS,
       :OLD.ASPECTOS_MEJORAR,
-      :OLD.CALIFICACION,
       'DEL',
       NVL(V('APP_USER'), USER),
       SYSDATE,
@@ -511,10 +514,9 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
       p_evaluado_por           IN VARCHAR2,
       p_id_area                IN NUMBER,
       p_id_evaluacion          IN NUMBER,
-      p_calificacion_estrellas IN NUMBER   DEFAULT NULL,
+      p_escala IN NUMBER   DEFAULT NULL,
       p_aspectos_positivos     IN CLOB     DEFAULT NULL,
-      p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
-      p_calificacion           IN VARCHAR2 DEFAULT NULL);
+      p_aspectos_mejorar       IN CLOB     DEFAULT NULL);
 
   PROCEDURE actualizar(
       p_token                  IN VARCHAR2,
@@ -527,10 +529,9 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
       p_evaluado_por           IN VARCHAR2,
       p_id_area                IN NUMBER,
       p_id_evaluacion          IN NUMBER,
-      p_calificacion_estrellas IN NUMBER   DEFAULT NULL,
+      p_escala IN NUMBER   DEFAULT NULL,
       p_aspectos_positivos     IN CLOB     DEFAULT NULL,
-      p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
-      p_calificacion           IN VARCHAR2 DEFAULT NULL);
+      p_aspectos_mejorar       IN CLOB     DEFAULT NULL);
 
   PROCEDURE eliminar(
       p_token IN VARCHAR2,
@@ -607,10 +608,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_EVAL_FACILITADORES_ETHOS AS
            a.descripcion            AS area,
            e.id_evaluacion,
            ev.descripcion           AS evaluacion,
-           e.calificacion_estrellas,
+           e.escala,
            e.aspectos_positivos,
            e.aspectos_mejorar,
-           e.calificacion,
            e.id_auditoria
       FROM evaluaciones_facilitadores e
       LEFT JOIN facilitadores      f  ON f.id_facilitador  = e.id_facilitador
@@ -688,7 +688,7 @@ BEGIN
                 'No se puede eliminar: hay registros que dependen de esta evaluacion');
       WHEN SQLCODE = -2290 THEN
         p_error(400, 'Bad Request',
-                'Un valor viola una restriccion de la tabla (revisa las estrellas: 1 a 5)');
+                'Un valor viola una restriccion de la tabla (revisa escala: 1 a 5)');
       WHEN SQLCODE IN (-1438, -12899) THEN
         p_error(400, 'Bad Request', 'Un texto excede el largo permitido');
       WHEN SQLCODE = -1400 THEN
@@ -770,10 +770,9 @@ PROCEDURE validar(
     p_evaluado_por           IN VARCHAR2,
     p_id_area                IN NUMBER,
     p_id_evaluacion          IN NUMBER,
-    p_calificacion_estrellas IN NUMBER,
+    p_escala IN NUMBER,
     p_aspectos_positivos     IN CLOB,
-    p_aspectos_mejorar       IN CLOB,
-    p_calificacion           IN VARCHAR2
+    p_aspectos_mejorar       IN CLOB
 ) IS
     l_area_de_evaluacion evaluaciones.id_area%TYPE;
 BEGIN
@@ -807,16 +806,26 @@ BEGIN
            'La evaluacion no pertenece al area indicada. Carga el combo con '
            || 'GET listas/evaluaciones?id_area=' || p_id_area);
 
-    ------------------------------------------------------------------- estrellas
-    exigir(p_calificacion_estrellas IS NULL
-           OR (p_calificacion_estrellas BETWEEN 1 AND 5
-               AND p_calificacion_estrellas = TRUNC(p_calificacion_estrellas)),
-           'calificacion_estrellas debe ser un entero de 1 a 5');
+    ---------------------------------------------------------------------- escala
+    -- ESCALA reemplazo a CALIFICACION_ESTRELLAS: mismo rango 1..5 en el CHECK,
+    -- pero ahora con FK a ESCALAS_EVALUACIONES.ESCALA.
+    --
+    -- OJO con lo que manda el front hoy: cada fila es un DETALLE (un area + una
+    -- evaluacion) y la estrella es una sola, marcada o no. Manda 1 cuando esta
+    -- marcada y NO manda el campo cuando no lo esta (NULL). El 0 no se usa
+    -- porque el CHECK de la tabla lo rechaza. La calificacion del conjunto sale
+    -- de CONTAR las filas con 1 y buscar ese numero en ESCALAS_EVALUACIONES.
+    -- Nada de eso lo valida la base: es convencion del cliente.
+    --
+    -- El rango del CHECK (1..5) no alcanza para los 12 niveles de
+    -- ESCALAS_EVALUACIONES. Ver la nota de la seccion 1.3 y README.md.
+    exigir(p_escala IS NULL
+           OR (p_escala BETWEEN 1 AND 5
+               AND p_escala = TRUNC(p_escala)),
+           'escala debe ser un entero de 1 a 5');
 
     --------------------------------------------------------------------- largos
     exigir(LENGTH(p_evaluado_por) <= 255, 'evaluado_por no puede pasar de 255 caracteres');
-    exigir(p_calificacion IS NULL OR LENGTH(p_calificacion) <= 100,
-           'calificacion no puede pasar de 100 caracteres');
     -- ASPECTOS_POSITIVOS y ASPECTOS_MEJORAR son CLOB: no hay tope que validar.
     -- El limite practico lo pone el bind de ORDS, no la columna (ver nota 3).
 
@@ -845,10 +854,9 @@ BEGIN
     APEX_JSON.WRITE('area',                      p_r.area);
     APEX_JSON.WRITE('id_evaluacion',             p_r.id_evaluacion);
     APEX_JSON.WRITE('evaluacion',                p_r.evaluacion);
-    APEX_JSON.WRITE('calificacion_estrellas',    p_r.calificacion_estrellas);
+    APEX_JSON.WRITE('escala',    p_r.escala);
     APEX_JSON.WRITE('aspectos_positivos',        p_r.aspectos_positivos);
     APEX_JSON.WRITE('aspectos_mejorar',          p_r.aspectos_mejorar);
-    APEX_JSON.WRITE('calificacion',              p_r.calificacion);
     -- Solo lectura: lo pone el trigger de auditoria.
     APEX_JSON.WRITE('id_auditoria',              p_r.id_auditoria);
     APEX_JSON.CLOSE_OBJECT;
@@ -999,10 +1007,9 @@ PROCEDURE insertar(
     p_evaluado_por           IN VARCHAR2,
     p_id_area                IN NUMBER,
     p_id_evaluacion          IN NUMBER,
-    p_calificacion_estrellas IN NUMBER   DEFAULT NULL,
+    p_escala IN NUMBER   DEFAULT NULL,
     p_aspectos_positivos     IN CLOB     DEFAULT NULL,
-    p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
-    p_calificacion           IN VARCHAR2 DEFAULT NULL
+    p_aspectos_mejorar       IN CLOB     DEFAULT NULL
 ) IS
     l_usuario VARCHAR2(255);
     l_desde   DATE;
@@ -1027,20 +1034,19 @@ BEGIN
         p_evaluado_por           => p_evaluado_por,
         p_id_area                => p_id_area,
         p_id_evaluacion          => p_id_evaluacion,
-        p_calificacion_estrellas => p_calificacion_estrellas,
+        p_escala => p_escala,
         p_aspectos_positivos     => p_aspectos_positivos,
-        p_aspectos_mejorar       => p_aspectos_mejorar,
-        p_calificacion           => p_calificacion);
+        p_aspectos_mejorar       => p_aspectos_mejorar);
 
     -- ID_AUDITORIA no se lista a proposito: lo asigna el trigger.
     INSERT INTO evaluaciones_facilitadores (
         id_facilitador, id_institucion, id_ciudad,
         fecha_desde, fecha_hasta, evaluado_por, id_area, id_evaluacion,
-        calificacion_estrellas, aspectos_positivos, aspectos_mejorar, calificacion
+        escala, aspectos_positivos, aspectos_mejorar
     ) VALUES (
         p_id_facilitador, p_id_institucion, p_id_ciudad,
         l_desde, l_hasta, TRIM(p_evaluado_por), p_id_area, p_id_evaluacion,
-        p_calificacion_estrellas, p_aspectos_positivos, p_aspectos_mejorar, p_calificacion
+        p_escala, p_aspectos_positivos, p_aspectos_mejorar
     ) RETURNING id_evaluacion_facilitador INTO l_id;
 
     COMMIT;
@@ -1075,10 +1081,9 @@ PROCEDURE actualizar(
     p_evaluado_por           IN VARCHAR2,
     p_id_area                IN NUMBER,
     p_id_evaluacion          IN NUMBER,
-    p_calificacion_estrellas IN NUMBER   DEFAULT NULL,
+    p_escala IN NUMBER   DEFAULT NULL,
     p_aspectos_positivos     IN CLOB     DEFAULT NULL,
-    p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
-    p_calificacion           IN VARCHAR2 DEFAULT NULL
+    p_aspectos_mejorar       IN CLOB     DEFAULT NULL
 ) IS
     l_usuario VARCHAR2(255);
     l_desde   DATE;
@@ -1110,10 +1115,9 @@ BEGIN
         p_evaluado_por           => p_evaluado_por,
         p_id_area                => p_id_area,
         p_id_evaluacion          => p_id_evaluacion,
-        p_calificacion_estrellas => p_calificacion_estrellas,
+        p_escala => p_escala,
         p_aspectos_positivos     => p_aspectos_positivos,
-        p_aspectos_mejorar       => p_aspectos_mejorar,
-        p_calificacion           => p_calificacion);
+        p_aspectos_mejorar       => p_aspectos_mejorar);
 
     -- ID_AUDITORIA fuera del SET: es de la bitacora, no del negocio.
     UPDATE evaluaciones_facilitadores
@@ -1125,10 +1129,9 @@ BEGIN
            evaluado_por           = TRIM(p_evaluado_por),
            id_area                = p_id_area,
            id_evaluacion          = p_id_evaluacion,
-           calificacion_estrellas = p_calificacion_estrellas,
+           escala = p_escala,
            aspectos_positivos     = p_aspectos_positivos,
-           aspectos_mejorar       = p_aspectos_mejorar,
-           calificacion           = p_calificacion
+           aspectos_mejorar       = p_aspectos_mejorar
      WHERE id_evaluacion_facilitador = p_id;
 
     IF SQL%ROWCOUNT = 0 THEN
@@ -1535,10 +1538,9 @@ BEGIN
         p_evaluado_por           => :evaluado_por,
         p_id_area                => TO_NUMBER(:id_area),
         p_id_evaluacion          => TO_NUMBER(:id_evaluacion),
-        p_calificacion_estrellas => TO_NUMBER(:calificacion_estrellas),
+        p_escala => TO_NUMBER(:escala),
         p_aspectos_positivos     => :aspectos_positivos,
-        p_aspectos_mejorar       => :aspectos_mejorar,
-        p_calificacion           => :calificacion);
+        p_aspectos_mejorar       => :aspectos_mejorar);
 END;
 ~');
 
@@ -1624,10 +1626,9 @@ BEGIN
         p_evaluado_por           => :evaluado_por,
         p_id_area                => TO_NUMBER(:id_area),
         p_id_evaluacion          => TO_NUMBER(:id_evaluacion),
-        p_calificacion_estrellas => TO_NUMBER(:calificacion_estrellas),
+        p_escala => TO_NUMBER(:escala),
         p_aspectos_positivos     => :aspectos_positivos,
-        p_aspectos_mejorar       => :aspectos_mejorar,
-        p_calificacion           => :calificacion);
+        p_aspectos_mejorar       => :aspectos_mejorar);
 END;
 ~');
 
@@ -1933,8 +1934,11 @@ END;
 --     -d '{"id_facilitador":1,"id_institucion":1,"id_ciudad":1,
 --          "fecha_desde":"2026-07-01","fecha_hasta":"2026-07-15",
 --          "evaluado_por":"Jose Galvez","id_area":1,"id_evaluacion":1,
---          "calificacion_estrellas":4,"aspectos_positivos":"Puntual y claro",
---          "aspectos_mejorar":"Cerrar con resumen","calificacion":"Muy bueno"}'
+--          "escala":1,"aspectos_positivos":"Puntual y claro",
+--          "aspectos_mejorar":"Cerrar con resumen"}'
+--
+--   Cada POST carga UN detalle (un area + una evaluacion + su estrella). Una
+--   evaluacion completa son varios POST, uno por detalle, repitiendo la cabecera.
 --
 --   curl -s -X PUT    "$BASE/evaluaciones-facilitadores/1" -H "$AUTH" \
 --        -H "Content-Type: application/json" -d '{...registro completo...}'

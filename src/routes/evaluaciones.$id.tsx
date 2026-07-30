@@ -17,11 +17,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
-  actualizarEvaluacion,
-  eliminarEvaluacion,
+  eliminarEvaluacionCompleta,
+  guardarEvaluacion,
   keys,
-  obtenerEvaluacion,
-  type EvaluacionInput,
+  obtenerEvaluacionAgrupada,
+  type Cabecera,
+  type Detalle,
 } from "@/lib/evaluaciones";
 
 export const Route = createFileRoute("/evaluaciones/$id")({
@@ -37,22 +38,35 @@ function EditarPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
+  // El id de la ruta es UNA fila; esto junta todas las del grupo.
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: keys.evaluacion(idNum),
-    queryFn: () => obtenerEvaluacion(idNum),
+    queryKey: keys.grupo(idNum),
+    queryFn: () => obtenerEvaluacionAgrupada(idNum),
     enabled: Number.isFinite(idNum),
   });
 
   const invalidar = () => {
     qc.invalidateQueries({ queryKey: ["evaluaciones"] });
+    qc.invalidateQueries({ queryKey: keys.grupo(idNum) });
     qc.invalidateQueries({ queryKey: keys.evaluacion(idNum) });
   };
 
+  /** Los ids que tenía la evaluación al cargarla: lo que no siga, se borra. */
+  const idsOriginales = (data?.detalles ?? [])
+    .map((d) => d.id)
+    .filter((x): x is number => x !== null);
+
   const guardar = useMutation({
-    mutationFn: (v: EvaluacionInput) => actualizarEvaluacion(idNum, v),
-    onSuccess: () => {
+    mutationFn: ({ cab, detalles }: { cab: Cabecera; detalles: Detalle[] }) =>
+      guardarEvaluacion(cab, detalles, idsOriginales),
+    onSuccess: (r) => {
       invalidar();
-      toast.success("Evaluación actualizada");
+      const partes = [
+        r.actualizados ? `${r.actualizados} actualizados` : null,
+        r.creados ? `${r.creados} nuevos` : null,
+        r.borrados ? `${r.borrados} quitados` : null,
+      ].filter(Boolean);
+      toast.success(`Evaluación guardada${partes.length ? `: ${partes.join(", ")}` : ""}`);
       navigate({ to: "/evaluaciones", replace: true });
     },
     onError: (e) =>
@@ -60,7 +74,8 @@ function EditarPage() {
   });
 
   const borrar = useMutation({
-    mutationFn: () => eliminarEvaluacion(idNum),
+    // Borrar la evaluación es borrar todas sus filas, una por una.
+    mutationFn: () => eliminarEvaluacionCompleta(idsOriginales),
     onSuccess: () => {
       invalidar();
       toast.success("Evaluación eliminada");
@@ -74,7 +89,7 @@ function EditarPage() {
       <div className="flex items-start justify-between gap-3 px-5 pt-5">
         <div className="min-w-0">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Evaluación #{id}
+            {data ? `${data.detalles.length} ítems` : `Evaluación #${id}`}
           </p>
           <h1 className="font-display mt-1 truncate text-[2rem] leading-none font-bold">
             {data?.facilitador ?? "Editar"}
@@ -96,8 +111,10 @@ function EditarPage() {
               <AlertDialogHeader>
                 <AlertDialogTitle className="font-display">¿Eliminar evaluación?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Se borra el registro de {data.facilitador ?? "el facilitador"}. Queda copia en la
-                  bitácora de auditoría, pero no se puede deshacer desde la app.
+                  Se borran los {idsOriginales.length} ítems de{" "}
+                  {data.facilitador ?? "el facilitador"}. Queda copia en la bitácora de auditoría,
+                  pero no se puede deshacer desde la app. Se borran de a uno: si falla en el medio,
+                  la evaluación queda incompleta.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter className="gap-2">
@@ -128,10 +145,10 @@ function EditarPage() {
         // key: si se navega de una evaluación a otra, el formulario tiene que
         // reiniciar su estado en vez de quedarse con los valores anteriores.
         <EvaluacionForm
-          key={data.id_evaluacion_facilitador}
+          key={data.clave}
           inicial={data}
           guardando={guardar.isPending}
-          onSubmit={(v) => guardar.mutate(v)}
+          onSubmit={(cab, detalles) => guardar.mutate({ cab, detalles })}
           textoBoton="Guardar cambios"
         />
       ) : null}

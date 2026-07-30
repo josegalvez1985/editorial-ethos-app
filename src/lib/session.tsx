@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { useQueryClient } from "@tanstack/react-query";
+
 import {
   getSesion,
   login as apiLogin,
@@ -17,6 +19,7 @@ import {
   setOnUnauthorized,
   type Sesion,
 } from "@/lib/api";
+import { borrarCachePersistida } from "@/lib/query-persist";
 
 type Ctx = {
   sesion: Sesion | null;
@@ -37,6 +40,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [sesion, setSesion] = useState<Sesion | null>(null);
   const [biometry, setBiometryState] = useState(false);
   const [ready, setReady] = useState(false);
+  const qc = useQueryClient();
 
   useEffect(() => {
     // El backend es la autoridad: la sesión de storage puede tener el token
@@ -82,7 +86,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await apiLogout();
     setSesion(null);
-  }, []);
+    // La caché persistida tiene datos del negocio (nombres, CI de facilitadores):
+    // no puede quedar en el disco después de cerrar sesión. Se borra de los dos
+    // lados, memoria y localStorage, o el próximo login la restauraría.
+    qc.clear();
+    borrarCachePersistida();
+  }, [qc]);
 
   const setBiometry = useCallback((v: boolean) => {
     setBiometryState(v);

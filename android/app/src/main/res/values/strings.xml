@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Editorial Ethos</string>
+    <string name="title_activity_main">Editorial Ethos</string>
+    <string name="package_name">com.editorialethos.app</string>
+    <string name="custom_url_scheme">com.editorialethos.app</string>
+</resources>

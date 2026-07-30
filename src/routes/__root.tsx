@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import {
   Outlet,
   Link,
@@ -12,6 +13,7 @@ import { type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { ThemeProvider } from "../lib/theme";
 import { SessionProvider } from "../lib/session";
+import { CACHE_BUSTER, CACHE_MAX_AGE, persister } from "../lib/query-persist";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -132,13 +134,20 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
-    <QueryClientProvider client={queryClient}>
+    // PersistQueryClientProvider y no QueryClientProvider: además de proveer el
+    // cliente, restaura la caché de localStorage antes de dejar correr las
+    // queries. En SSR el persister es un no-op, así que del lado del servidor se
+    // comporta igual que el provider común. Ver `lib/query-persist.ts`.
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister, maxAge: CACHE_MAX_AGE, buster: CACHE_BUSTER }}
+    >
       <ThemeProvider>
         <SessionProvider>
           <Outlet />
           <Toaster />
         </SessionProvider>
       </ThemeProvider>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   );
 }

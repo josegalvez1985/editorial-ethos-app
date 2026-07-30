@@ -37,6 +37,7 @@ npm run dev
 | `npm run build` | Build de producción |
 | `npm run preview` | Sirve el build |
 | `npm run lint` | ESLint |
+| `npm run apk` | APK de Android con esta misma web dentro — ver [`APK.md`](APK.md) |
 
 **El navegador nunca llama a ORDS directo.** Va a `/api/ords/...` y el proxy server-side
 [`src/routes/api/ords.$.ts`](src/routes/api/ords.$.ts) reenvía a Oracle: mismo origen, sin
@@ -64,6 +65,7 @@ aplica CORS. No usa el proxy.
 
 No son bugs:
 
+- **El módulo de evaluaciones está solo en la web.** `mobile/` tiene login, inicio y cuenta.
 - **Biometría solo en la app.** `mobile/` usa `expo-local-authentication` + keystore del
   sistema. En el navegador no hay equivalente sin WebAuthn, así que el botón lo dice en vez
   de simular un acceso, y el switch de la pantalla de cuenta guarda solo la preferencia.
@@ -71,8 +73,14 @@ No son bugs:
   siempre persiste.
 - La web pasa por proxy; la app va directo.
 
-## Pendientes conocidos
+## Pendientes
 
-- El contenido de `home` es **mockup embebido** en ambos frontends, no viene de una API.
-- Sin rate limiting en el login (ver `backend/README.md`).
-- El token no se renueva: a las 6 h, de vuelta al login.
+**Ver [`PENDIENTES.md`](PENDIENTES.md).** Ahí está todo lo que quedó abierto, con el motivo
+de cada cosa y qué costaría resolverla.
+
+Lo único que bloquea hoy:
+
+1. **Correr [`backend/ethos_evaluaciones_facilitadores.sql`](backend/ethos_evaluaciones_facilitadores.sql)
+   en APEX.** El API de evaluaciones está caído hasta que se aplique.
+
+El APK ya compila: `npm run apk` (ver [`APK.md`](APK.md)).

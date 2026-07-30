@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
 import { EvaluacionForm } from "@/components/evaluacion-form";
-import { crearEvaluacion, type EvaluacionInput } from "@/lib/evaluaciones";
+import { guardarEvaluacion, type Cabecera, type Detalle } from "@/lib/evaluaciones";
 
 export const Route = createFileRoute("/evaluaciones/nueva")({
   head: () => ({
@@ -18,11 +18,14 @@ function NuevaPage() {
   const qc = useQueryClient();
 
   const mutacion = useMutation({
-    mutationFn: (v: EvaluacionInput) => crearEvaluacion(v),
-    onSuccess: () => {
+    // Una llamada por detalle: la tabla no tiene cabecera, así que "crear una
+    // evaluación" es insertar N filas que repiten los datos del encabezado.
+    mutationFn: ({ cab, detalles }: { cab: Cabecera; detalles: Detalle[] }) =>
+      guardarEvaluacion(cab, detalles),
+    onSuccess: (r) => {
       // El listado y el resumen del inicio quedaron viejos.
       qc.invalidateQueries({ queryKey: ["evaluaciones"] });
-      toast.success("Evaluación creada");
+      toast.success(`Evaluación creada con ${r.creados} ítems`);
       navigate({ to: "/evaluaciones", replace: true });
     },
     onError: (e) => {
@@ -44,7 +47,7 @@ function NuevaPage() {
 
       <EvaluacionForm
         guardando={mutacion.isPending}
-        onSubmit={(v) => mutacion.mutate(v)}
+        onSubmit={(cab, detalles) => mutacion.mutate({ cab, detalles })}
         textoBoton="Crear evaluación"
       />
     </AppShell>

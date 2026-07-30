@@ -5,8 +5,8 @@ import { es } from "date-fns/locale";
 import { ArrowRight, ClipboardList, Plus, Star } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
-import { StarsDisplay } from "@/components/star-rating";
-import { keys, listarEvaluaciones } from "@/lib/evaluaciones";
+import { CalificacionDisplay } from "@/components/star-rating";
+import { agrupar, keys, LIMITE_DETALLES, listarEvaluaciones } from "@/lib/evaluaciones";
 
 export const Route = createFileRoute("/home")({
   head: () => ({
@@ -28,20 +28,19 @@ const fecha = (iso: string) => {
 };
 
 function HomePage() {
-  // Una sola consulta alimenta todo el resumen: `total` es exacto y las filas
-  // sirven para las últimas y para el promedio.
-  const filtros = { limite: 20 };
+  // Una sola consulta alimenta todo el resumen. `limite` alto porque el backend
+  // pagina FILAS y una evaluación son varias: con un límite chico los grupos
+  // llegarían cortados y los números de abajo saldrían mal.
+  const filtros = { limite: LIMITE_DETALLES };
   const { data, isLoading, isError } = useQuery({
     queryKey: keys.evaluaciones(filtros),
     queryFn: () => listarEvaluaciones(filtros),
   });
 
   const filas = data?.data ?? [];
-  const conEstrellas = filas.filter((e) => e.calificacion_estrellas != null);
-  const promedio =
-    conEstrellas.length > 0
-      ? conEstrellas.reduce((s, e) => s + (e.calificacion_estrellas ?? 0), 0) / conEstrellas.length
-      : null;
+  const grupos = agrupar(filas);
+  const marcados = grupos.reduce((n, g) => n + g.marcadas, 0);
+  const items = grupos.reduce((n, g) => n + g.detalles.length, 0);
 
   return (
     <AppShell>
@@ -67,16 +66,19 @@ function HomePage() {
           <Tile
             icon={<ClipboardList className="size-4" />}
             label="Evaluaciones"
-            valor={isLoading ? null : isError ? "—" : String(data?.total ?? 0)}
-            hint="en total"
+            valor={isLoading ? null : isError ? "—" : String(grupos.length)}
+            hint={isError ? "sin datos" : `${data?.total ?? 0} ítems cargados`}
           />
+          {/*
+            Ya no hay promedio de estrellas: la estrella es binaria y promediar
+            unos y nulos no significa nada. Lo que se muestra es cuántos ítems
+            están marcados sobre el total, que es de donde sale la calificación.
+          */}
           <Tile
             icon={<Star className="size-4" />}
-            label="Promedio"
-            valor={
-              isLoading ? null : promedio === null ? "—" : promedio.toFixed(1).replace(".", ",")
-            }
-            hint={conEstrellas.length > 0 ? `de las últimas ${conEstrellas.length}` : "sin datos"}
+            label="Marcados"
+            valor={isLoading ? null : isError || !items ? "—" : `${marcados}/${items}`}
+            hint={items ? `en ${grupos.length} evaluaciones` : "sin datos"}
           />
         </div>
 
@@ -98,7 +100,7 @@ function HomePage() {
           <p className="rounded-2xl bg-destructive/10 p-4 text-sm text-destructive">
             No se pudo cargar el resumen. Revisá tu conexión.
           </p>
-        ) : filas.length === 0 ? (
+        ) : grupos.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border p-6 text-center">
             <p className="text-sm text-muted-foreground">
               Todavía no hay evaluaciones cargadas. Empezá por la primera.
@@ -106,22 +108,26 @@ function HomePage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filas.slice(0, 4).map((e) => (
+            {grupos.slice(0, 4).map((g) => (
               <Link
-                key={e.id_evaluacion_facilitador}
+                key={g.clave}
                 to="/evaluaciones/$id"
-                params={{ id: String(e.id_evaluacion_facilitador) }}
+                params={{ id: String(g.id) }}
                 className="tap flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3.5 shadow-soft"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-semibold">
-                    {e.facilitador ?? `Facilitador #${e.id_facilitador}`}
+                    {g.facilitador ?? `Facilitador #${g.id_facilitador}`}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {e.institucion ?? "—"} · {fecha(e.fecha_desde)}
+                    {g.institucion ?? "—"} · {fecha(g.fecha_desde)}
                   </p>
                 </div>
-                <StarsDisplay value={e.calificacion_estrellas} className="shrink-0" />
+                <CalificacionDisplay
+                  marcadas={g.marcadas}
+                  total={g.detalles.length}
+                  className="shrink-0"
+                />
               </Link>
             ))}
           </div>

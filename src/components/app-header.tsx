@@ -2,6 +2,7 @@ import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { ArrowLeft, Moon, Sun } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 
@@ -15,12 +16,29 @@ export function AppHeader() {
   const { theme, toggle } = useTheme();
   const { user, ready } = useSession();
   const router = useRouter();
+
+  /*
+   * El botón de volver solo aparece DESPUÉS de montar, y eso es a propósito.
+   *
+   * `canGoBack()` mira el historial del navegador: en el servidor no existe y
+   * siempre da false, en el cliente puede dar true. Renderizarlo directo hacía
+   * que el HTML del SSR (sin botón) no coincidiera con el primer render del
+   * cliente (con botón), y React tiraba el árbol entero con un error de
+   * hidratación.
+   *
+   * Con esto el primer render del cliente es igual al del servidor y el botón
+   * entra un frame después, ya sin comparación de por medio.
+   */
+  const [montado, setMontado] = useState(false);
+  useEffect(() => setMontado(true), []);
+
   // `canGoBack()` no es reactivo por sí solo: lo recalculamos con cada cambio
   // de ruta para que el botón aparezca/desaparezca al navegar.
   // En /home no se muestra: es la pantalla raíz de la sesión.
-  const showBack = useRouterState({
+  const puedeVolver = useRouterState({
     select: (s) => s.location.pathname !== "/home" && router.history.canGoBack(),
   });
+  const showBack = montado && puedeVolver;
 
   const fecha = format(new Date(), "EEEE d 'de' MMMM", { locale: es });
 

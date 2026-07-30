@@ -1,71 +1,82 @@
 import { Star } from "lucide-react";
 
-const ETIQUETAS = ["", "Muy bajo", "Bajo", "Regular", "Bueno", "Excelente"] as const;
+import { calificacionDeConteo } from "@/lib/evaluaciones";
 
 /**
- * Estrellas para tocar con el dedo: botones de 44px, no iconos de 16.
+ * Una sola estrella, marcada o desmarcada.
  *
- * Permite volver a 0 tocando la estrella ya elegida, porque
- * CALIFICACION_ESTRELLAS es nullable y "sin calificar" es un estado válido —
- * sin eso, un toque accidental sería irreversible.
+ * No es una escala de 1 a 5: cada detalle de la evaluación vale una estrella y la
+ * calificación del conjunto sale de contar cuántas están marcadas. En la base eso
+ * es `ESCALA = 1` o `NULL` (nunca 0, lo rechaza el CHECK).
+ *
+ * El botón mide 44px aunque el icono sea de 28: es el mínimo para tocar con el
+ * dedo sin errarle.
  */
-export function StarRating({
-  value,
+export function StarToggle({
+  marcada,
   onChange,
+  etiqueta,
 }: {
-  value: number | null;
-  onChange: (v: number | null) => void;
+  marcada: boolean;
+  onChange: (marcada: boolean) => void;
+  /** Qué se está marcando; va al aria-label porque el icono no lo dice. */
+  etiqueta: string;
 }) {
   return (
-    <div>
-      <div className="flex items-center gap-1">
-        {[1, 2, 3, 4, 5].map((n) => {
-          const lleno = (value ?? 0) >= n;
-          return (
-            <button
-              key={n}
-              type="button"
-              onClick={() => onChange(value === n ? null : n)}
-              aria-label={`${n} de 5`}
-              aria-pressed={lleno}
-              className="tap grid size-11 place-items-center rounded-full"
-            >
-              <Star
-                className={`size-7 transition-colors ${
-                  lleno ? "fill-primary text-primary" : "text-muted-foreground/40"
-                }`}
-              />
-            </button>
-          );
-        })}
-      </div>
-      <p className="mt-1 h-4 text-xs text-muted-foreground">
-        {value ? ETIQUETAS[value] : "Sin calificar"}
-      </p>
-    </div>
+    <button
+      type="button"
+      onClick={() => onChange(!marcada)}
+      role="switch"
+      aria-checked={marcada}
+      aria-label={etiqueta}
+      className="tap grid size-11 shrink-0 place-items-center rounded-full"
+    >
+      <Star
+        className={`size-7 transition-colors ${
+          marcada ? "fill-primary text-primary" : "text-muted-foreground/40"
+        }`}
+      />
+    </button>
   );
 }
 
-/** Versión compacta de solo lectura, para las tarjetas del listado. */
-export function StarsDisplay({ value, className }: { value: number | null; className?: string }) {
-  if (!value) {
+/**
+ * Resultado de una evaluación: cuántos ítems se marcaron y qué calificación da.
+ *
+ * Muestra una estrella sola y el conteo, no cinco estrellas: el total de ítems
+ * varía según las áreas evaluadas, así que "7 de 12" dice más que un dibujo de
+ * estrellas que habría que inventar sobre una escala fija.
+ */
+export function CalificacionDisplay({
+  marcadas,
+  total,
+  className,
+}: {
+  marcadas: number;
+  /** Ítems evaluados en total. Si no viene, solo se muestra el conteo marcado. */
+  total?: number;
+  className?: string;
+}) {
+  const c = calificacionDeConteo(marcadas);
+
+  if (!c) {
     return (
       <span className={`text-xs text-muted-foreground ${className ?? ""}`}>Sin calificar</span>
     );
   }
+
   return (
     <span
-      className={`inline-flex items-center gap-0.5 ${className ?? ""}`}
-      aria-label={`${value} de 5 estrellas`}
+      className={`inline-flex items-center gap-1.5 ${className ?? ""}`}
+      title={c.descripcion}
+      aria-label={`${c.calificacion}: ${marcadas} marcadas${total ? ` de ${total}` : ""}`}
     >
-      {[1, 2, 3, 4, 5].map((n) => (
-        <Star
-          key={n}
-          className={`size-3.5 ${
-            n <= value ? "fill-primary text-primary" : "text-muted-foreground/30"
-          }`}
-        />
-      ))}
+      <Star className="size-3.5 shrink-0 fill-primary text-primary" />
+      <span className="text-xs font-semibold">{c.calificacion}</span>
+      <span className="text-xs text-muted-foreground">
+        {marcadas}
+        {total ? `/${total}` : ""}
+      </span>
     </span>
   );
 }

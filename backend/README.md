@@ -87,6 +87,83 @@ viejo queda en la tabla `_JN`.
 `ASPECTOS_POSITIVOS` y `ASPECTOS_MEJORAR` son `CLOB`: sin tope de largo. El límite
 práctico lo pone el bind de ORDS (~32 KB por campo), no la columna.
 
+## Cabecera y detalle: una fila NO es una evaluación
+
+Esto es lo más importante para entender el API, y no está modelado en la base.
+
+Una evaluación es **un facilitador en una institución durante un período**, con varios
+detalles: un área + una evaluación de esa área + una estrella. Pero
+`EVALUACIONES_FACILITADORES` tiene **una fila por detalle**, y la cabecera
+(`ID_FACILITADOR`, `ID_INSTITUCION`, `ID_CIUDAD`, `FECHA_DESDE`, `FECHA_HASTA`,
+`EVALUADO_POR`, los aspectos) **se repite en cada fila**. No hay columna que agrupe
+las filas de una misma evaluación.
+
+Consecuencias, todas reales:
+
+- **Crear una evaluación son N `POST`**, uno por detalle, repitiendo la cabecera. No hay
+  transacción: el paquete hace `COMMIT` por llamada, así que si una falla la evaluación
+  queda a medias.
+- **Editar es un diff** de N filas (`PUT` las que siguen, `POST` las nuevas, `DELETE` las
+  que se quitaron). **Borrar** es un `DELETE` por fila.
+- **El agrupado lo hace el frontend**, por clave natural (facilitador + institución +
+  las dos fechas + `evaluado_por` normalizado) — ver `src/lib/evaluaciones.ts`. Eso
+  implica que dos evaluaciones idénticas en esos cinco campos se ven como una sola.
+- **`total`, `pagina` y `limite` cuentan FILAS, no evaluaciones.** El front pide
+  `limite=200` justamente para que un grupo no quede partido entre dos páginas.
+
+La salida de fondo es agregar una columna de cabecera (`ID_CABECERA` o similar) y
+paginar por ella. Requiere DDL sobre una tabla con datos, backfill de las filas ya
+cargadas y actualizar el trigger `_JN`. **No está hecho.**
+
+## `ESCALA` y la calificación
+
+`CALIFICACION_ESTRELLAS` **se renombró a `ESCALA`** y **se eliminó la columna
+`CALIFICACION`**. `ESCALA` además tiene FK a `ESCALAS_EVALUACIONES(ESCALA)` — a la
+columna `UNIQUE`, no a la PK `ID_ESCALA`.
+
+- `ESCALA` guarda **1 (marcada) o NULL (desmarcada)**, una sola estrella por detalle.
+  **No se usa 0**: el `CHECK (ESCALA >= 1 AND ESCALA <= 5)` lo rechaza. Ese CHECK y la
+  validación del paquete se dejaron en 1..5, así que el API todavía acepta 2..5 aunque el
+  front nunca los mande.
+
+### El CHECK de 1..5 no alcanza para los 12 niveles
+
+`ESCALAS_EVALUACIONES.ESCALA` va de **1 a 12**, pero el CHECK de
+`EVALUACIONES_FACILITADORES.ESCALA` corta en **5**. Con los datos cargados hoy, eso
+significa que como valor de fila solo son alcanzables:
+
+| `ESCALA` guardable | `CALIFICACION` que da la FK |
+| --- | --- |
+| 1, 2, 3 | Deficiente |
+| 4, 5 | Aceptable |
+| 6 … 12 | **imposible de guardar** (lo bloquea el CHECK) |
+
+O sea que **"Bueno" y "Excelente" no se pueden poner en una fila.** Con el modelo actual
+no rompe nada, porque la fila usa el 1 solo como "marcada" y la calificación sale del
+**conteo** de filas marcadas, no de la FK. Pero si la escala de la fila pasa a ser la
+calificación de ese ítem, hay que elegir una de dos:
+
+- ampliar el CHECK a `BETWEEN 1 AND 12`, o
+- recargar `ESCALAS_EVALUACIONES` con cinco niveles (1..5) en vez de doce.
+
+**Sin resolver.**
+- **La calificación no se guarda: se deriva** de cuántos detalles están marcados. Ese
+  número es el `ESCALA` de `ESCALAS_EVALUACIONES`, que tiene 12 filas en cuatro tramos:
+
+  | `ESCALA` | `CALIFICACION` |
+  | --- | --- |
+  | 1–3 | Deficiente |
+  | 4–6 | Aceptable |
+  | 7–9 | Bueno |
+  | 10–12 | Excelente |
+
+  No hay fila con `ESCALA = 0`: cero marcadas es "sin calificar", no un nivel.
+
+**`ESCALAS_EVALUACIONES` no tiene endpoint.** Los cuatro tramos están cableados en
+`src/lib/evaluaciones.ts` (`ESCALA`). Si se editan los textos o las descripciones en la
+base, **hay que tocar ese archivo**: el front no se entera solo. Si eso molesta, el
+patrón a copiar para agregar `GET listas/escalas` es cualquiera de las cinco listas.
+
 La sección 1 del `.sql` **no recrea nada**: verifica que estén la PK, las 5 FKs, el
 CHECK de estrellas y la columna de la PK en la tabla `_JN`, y agrega solo lo que falte.
 

@@ -18,13 +18,14 @@ import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { PickerModal } from "@/components/picker-modal";
-import { StarsDisplay } from "@/components/star-rating";
+import { CalificacionDisplay } from "@/components/star-rating";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
+  agrupar,
   keys,
-  LIMITE,
+  LIMITE_DETALLES,
   listarEvaluaciones,
-  type Evaluacion,
+  type EvaluacionAgrupada,
   type Filtros,
 } from "@/lib/evaluaciones";
 
@@ -89,7 +90,12 @@ function EvaluacionesPage() {
   const { data, isLoading, isError, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useInfiniteQuery({
       queryKey: keys.evaluaciones(filtros),
-      queryFn: ({ pageParam }) => listarEvaluaciones({ ...filtros, pagina: pageParam }),
+      // limite alto a propósito: el backend pagina FILAS y una evaluación son
+      // varias filas. Con páginas chicas un grupo se parte entre dos páginas y
+      // aparecería dos veces en la lista. No lo elimina —solo lo hace raro— y es
+      // la contra de no tener tabla de cabecera.
+      queryFn: ({ pageParam }) =>
+        listarEvaluaciones({ ...filtros, pagina: pageParam, limite: LIMITE_DETALLES }),
       initialPageParam: 1,
       // El backend devuelve `total`, así que se sabe si quedan páginas sin
       // tener que pedir una vacía para descubrirlo.
@@ -100,7 +106,10 @@ function EvaluacionesPage() {
     });
 
   const filas = data?.pages.flatMap((p) => p.data) ?? [];
-  const total = data?.pages[0]?.total ?? 0;
+  // `total` del backend cuenta FILAS, no evaluaciones: lo que se muestra es la
+  // cantidad de grupos que se armaron con lo que ya se trajo.
+  const grupos = agrupar(filas);
+  const totalFilas = data?.pages[0]?.total ?? 0;
 
   return (
     <AppShell>
@@ -113,7 +122,7 @@ function EvaluacionesPage() {
             <h1 className="font-display mt-1 text-[2rem] leading-none font-bold">Evaluaciones</h1>
           </div>
           {!isLoading && !isError ? (
-            <p className="pb-1 text-sm text-muted-foreground">{total}</p>
+            <p className="pb-1 text-sm text-muted-foreground">{grupos.length}</p>
           ) : null}
         </div>
 
@@ -151,6 +160,19 @@ function EvaluacionesPage() {
 
       {/* Resultados */}
       <div className="mt-5 space-y-3 px-5">
+        {/*
+          El filtro por área recorta FILAS, y la calificación se calcula sobre las
+          filas que llegaron. Con un área filtrada el conteo es parcial y el tramo
+          que sale no es el de la evaluación completa. Decirlo es mejor que mostrar
+          "Deficiente" en una evaluación que en realidad es "Bueno".
+        */}
+        {avanzados.id_area !== null && !isLoading && !isError && grupos.length > 0 ? (
+          <p className="rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+            Filtrado por área: la calificación de cada tarjeta cuenta solo los ítems de esa área, no
+            la evaluación completa.
+          </p>
+        ) : null}
+
         {isLoading ? (
           <>
             {[0, 1, 2, 3].map((i) => (
@@ -161,7 +183,7 @@ function EvaluacionesPage() {
           <div className="rounded-2xl bg-destructive/10 p-4 text-sm text-destructive">
             {error instanceof Error ? error.message : "No se pudieron cargar las evaluaciones"}
           </div>
-        ) : filas.length === 0 ? (
+        ) : grupos.length === 0 ? (
           <div className="py-14 text-center">
             <p className="font-display text-xl font-bold">
               {activos > 0 ? "Sin resultados" : "Todavía no hay evaluaciones"}
@@ -187,8 +209,8 @@ function EvaluacionesPage() {
           </div>
         ) : (
           <>
-            {filas.map((e) => (
-              <Tarjeta key={e.id_evaluacion_facilitador} e={e} />
+            {grupos.map((g) => (
+              <Tarjeta key={g.clave} g={g} />
             ))}
 
             {hasNextPage ? (
@@ -199,13 +221,15 @@ function EvaluacionesPage() {
                 className="tap flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-border/60 bg-card text-sm font-semibold disabled:opacity-60"
               >
                 {isFetchingNextPage ? <Loader2 className="size-4 animate-spin" /> : null}
-                {isFetchingNextPage ? "Cargando…" : `Cargar más (${filas.length} de ${total})`}
+                {isFetchingNextPage
+                  ? "Cargando…"
+                  : `Cargar más (${filas.length} de ${totalFilas} ítems)`}
               </button>
-            ) : filas.length > LIMITE ? (
+            ) : (
               <p className="py-2 text-center text-xs text-muted-foreground">
-                {total} evaluaciones en total
+                {grupos.length} evaluaciones · {totalFilas} ítems
               </p>
-            ) : null}
+            )}
           </>
         )}
       </div>
@@ -225,51 +249,53 @@ function EvaluacionesPage() {
 
 /* -------------------------------------------------------------------------- */
 
-function Tarjeta({ e }: { e: Evaluacion }) {
+function Tarjeta({ g }: { g: EvaluacionAgrupada }) {
+  // Las áreas del grupo, sin repetir: es el resumen de qué se evaluó. Las
+  // evaluaciones concretas no entran acá — pueden ser doce y no caben.
+  const areas = [...new Set(g.detalles.map((d) => d.area).filter((a): a is string => Boolean(a)))];
+
   return (
     <Link
       to="/evaluaciones/$id"
-      params={{ id: String(e.id_evaluacion_facilitador) }}
+      params={{ id: String(g.id) }}
       className="tap block rounded-2xl border border-border/60 bg-card p-4 shadow-soft"
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <h3 className="font-display truncate text-[17px] leading-snug font-bold">
-            {e.facilitador ?? `Facilitador #${e.id_facilitador}`}
+            {g.facilitador ?? `Facilitador #${g.id_facilitador}`}
           </h3>
           <p className="mt-1 flex items-center gap-1.5 text-[13px] text-muted-foreground">
             <Building2 className="size-3.5 shrink-0" />
-            <span className="truncate">{e.institucion ?? `#${e.id_institucion}`}</span>
+            <span className="truncate">{g.institucion ?? `#${g.id_institucion}`}</span>
           </p>
           <p className="mt-0.5 flex items-center gap-1.5 text-[13px] text-muted-foreground">
             <MapPin className="size-3.5 shrink-0" />
-            <span className="truncate">{e.ciudad ?? `#${e.id_ciudad}`}</span>
+            <span className="truncate">{g.ciudad ?? `#${g.id_ciudad}`}</span>
           </p>
         </div>
         <ChevronRight className="mt-1 size-4 shrink-0 text-muted-foreground" />
       </div>
 
-      {/* Área y evaluación se muestran completas, sin recortar. rounded-lg y no
+      {/* Las áreas se muestran completas, sin recortar. rounded-lg y no
           rounded-full: una pastilla redonda de dos líneas se ve rota. */}
       <div className="mt-3 flex flex-wrap items-start gap-2">
-        {e.area ? (
-          <span className="rounded-lg bg-primary-soft px-2.5 py-1 text-[11px] leading-snug font-semibold text-primary">
-            {e.area}
+        {areas.map((a) => (
+          <span
+            key={a}
+            className="rounded-lg bg-primary-soft px-2.5 py-1 text-[11px] leading-snug font-semibold text-primary"
+          >
+            {a}
           </span>
-        ) : null}
-        {e.evaluacion ? (
-          <span className="rounded-lg bg-muted px-2.5 py-1 text-[11px] leading-snug font-medium text-muted-foreground">
-            {e.evaluacion}
-          </span>
-        ) : null}
+        ))}
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/60 pt-3">
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <CalendarRange className="size-3.5 shrink-0" />
-          {fecha(e.fecha_desde)} – {fecha(e.fecha_hasta)}
+          {fecha(g.fecha_desde)} – {fecha(g.fecha_hasta)}
         </p>
-        <StarsDisplay value={e.calificacion_estrellas} />
+        <CalificacionDisplay marcadas={g.marcadas} total={g.detalles.length} />
       </div>
     </Link>
   );
