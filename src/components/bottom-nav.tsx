@@ -1,11 +1,12 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Home, LogOut, User, type LucideIcon } from "lucide-react";
+import { ClipboardList, Home, LogOut, User, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { useSession } from "@/lib/session";
 
 const items = [
   { to: "/home", label: "Inicio", icon: Home },
+  { to: "/evaluaciones", label: "Evaluar", icon: ClipboardList },
   { to: "/account", label: "Cuenta", icon: User },
 ] as const;
 
@@ -30,16 +31,20 @@ export function BottomNav() {
   return (
     <nav className="glass fixed inset-x-0 bottom-0 z-40 border-t border-border/60 pb-safe select-none-touch">
       <div className="mx-auto flex max-w-[480px] items-stretch px-2">
-        {items.map((item) => (
-          <Link
-            key={item.to}
-            to={item.to}
-            aria-current={pathname === item.to ? "page" : undefined}
-            className="flex-1"
-          >
-            <TabContent icon={item.icon} label={item.label} active={pathname === item.to} />
-          </Link>
-        ))}
+        {items.map((item) => {
+          // startsWith: /evaluaciones/nueva y /evaluaciones/7 también son "Evaluar".
+          const active = pathname === item.to || pathname.startsWith(`${item.to}/`);
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              aria-current={active ? "page" : undefined}
+              className="flex-1"
+            >
+              <TabContent icon={item.icon} label={item.label} active={active} />
+            </Link>
+          );
+        })}
 
         <button type="button" onClick={onLogout} className="flex-1">
           <TabContent icon={LogOut} label="Salir" active={false} danger />

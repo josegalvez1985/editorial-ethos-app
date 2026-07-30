@@ -12,6 +12,9 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as HomeRouteImport } from './routes/home'
+import { Route as EvaluacionesIndexRouteImport } from './routes/evaluaciones.index'
+import { Route as EvaluacionesIdRouteImport } from './routes/evaluaciones.$id'
+import { Route as EvaluacionesNuevaRouteImport } from './routes/evaluaciones.nueva'
 import { Route as ApiOrdsSplatRouteImport } from './routes/api/ords.$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -29,6 +32,21 @@ const HomeRoute = HomeRouteImport.update({
   path: '/home',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EvaluacionesIndexRoute = EvaluacionesIndexRouteImport.update({
+  id: '/evaluaciones/',
+  path: '/evaluaciones/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EvaluacionesIdRoute = EvaluacionesIdRouteImport.update({
+  id: '/evaluaciones/$id',
+  path: '/evaluaciones/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EvaluacionesNuevaRoute = EvaluacionesNuevaRouteImport.update({
+  id: '/evaluaciones/nueva',
+  path: '/evaluaciones/nueva',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiOrdsSplatRoute = ApiOrdsSplatRouteImport.update({
   id: '/api/ords/$',
   path: '/api/ords/$',
@@ -39,12 +57,18 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/home': typeof HomeRoute
+  '/evaluaciones/$id': typeof EvaluacionesIdRoute
+  '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
+  '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/home': typeof HomeRoute
+  '/evaluaciones/$id': typeof EvaluacionesIdRoute
+  '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
+  '/evaluaciones': typeof EvaluacionesIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRoutesById {
@@ -52,20 +76,48 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/home': typeof HomeRoute
+  '/evaluaciones/$id': typeof EvaluacionesIdRoute
+  '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
+  '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/account' | '/home' | '/api/ords/$'
+  fullPaths:
+    | '/'
+    | '/account'
+    | '/home'
+    | '/evaluaciones/$id'
+    | '/evaluaciones/nueva'
+    | '/evaluaciones/'
+    | '/api/ords/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/account' | '/home' | '/api/ords/$'
-  id: '__root__' | '/' | '/account' | '/home' | '/api/ords/$'
+  to:
+    | '/'
+    | '/account'
+    | '/home'
+    | '/evaluaciones/$id'
+    | '/evaluaciones/nueva'
+    | '/evaluaciones'
+    | '/api/ords/$'
+  id:
+    | '__root__'
+    | '/'
+    | '/account'
+    | '/home'
+    | '/evaluaciones/$id'
+    | '/evaluaciones/nueva'
+    | '/evaluaciones/'
+    | '/api/ords/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
   HomeRoute: typeof HomeRoute
+  EvaluacionesIdRoute: typeof EvaluacionesIdRoute
+  EvaluacionesNuevaRoute: typeof EvaluacionesNuevaRoute
+  EvaluacionesIndexRoute: typeof EvaluacionesIndexRoute
   ApiOrdsSplatRoute: typeof ApiOrdsSplatRoute
 }
 
@@ -92,6 +144,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HomeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/evaluaciones/': {
+      id: '/evaluaciones/'
+      path: '/evaluaciones'
+      fullPath: '/evaluaciones/'
+      preLoaderRoute: typeof EvaluacionesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/evaluaciones/$id': {
+      id: '/evaluaciones/$id'
+      path: '/evaluaciones/$id'
+      fullPath: '/evaluaciones/$id'
+      preLoaderRoute: typeof EvaluacionesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/evaluaciones/nueva': {
+      id: '/evaluaciones/nueva'
+      path: '/evaluaciones/nueva'
+      fullPath: '/evaluaciones/nueva'
+      preLoaderRoute: typeof EvaluacionesNuevaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ords/$': {
       id: '/api/ords/$'
       path: '/api/ords/$'
@@ -106,6 +179,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
   HomeRoute: HomeRoute,
+  EvaluacionesIdRoute: EvaluacionesIdRoute,
+  EvaluacionesNuevaRoute: EvaluacionesNuevaRoute,
+  EvaluacionesIndexRoute: EvaluacionesIndexRoute,
   ApiOrdsSplatRoute: ApiOrdsSplatRoute,
 }
 export const routeTree = rootRouteImport

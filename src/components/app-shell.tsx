@@ -11,14 +11,24 @@ import { BottomNav } from "@/components/bottom-nav";
  * contenido: lo dejamos en una columna del ancho de un teléfono con bordes a los
  * lados. Así se ve igual en los dos sitios y no hay que diseñar dos veces.
  */
-export function AppShell({ children }: { children?: ReactNode }) {
+export function AppShell({
+  children,
+  /**
+   * Las pantallas de formulario lo ponen en false: tienen su propio footer fijo
+   * con el botón de guardar y dos barras apiladas abajo no se entienden.
+   */
+  nav = true,
+}: {
+  children?: ReactNode;
+  nav?: boolean;
+}) {
   return (
     <div className="min-h-dvh bg-muted/40">
       <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col bg-background sm:border-x sm:border-border/60">
         <AppHeader />
-        {/* pb-28: hueco para que el tab bar fijo no tape el final del contenido */}
+        {/* pb-28: hueco para que la barra fija no tape el final del contenido */}
         <main className="flex-1 pb-28">{children}</main>
-        <BottomNav />
+        {nav ? <BottomNav /> : null}
       </div>
     </div>
   );

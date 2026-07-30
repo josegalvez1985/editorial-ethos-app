@@ -3,8 +3,7 @@
 | Archivo | Qué trae | Orden |
 | --- | --- | --- |
 | **[`ethos_auth.sql`](ethos_auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | Primero, obligatorio |
-| **[`ethos_evaluaciones_facilitadores.sql`](ethos_evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` (`PKG_EVAL_FACILITADORES_ETHOS`) + sus handlers | Después |
-| **[`ethos_catalogos.sql`](ethos_catalogos.sql)** | Combos del formulario en solo lectura (`PKG_CATALOGOS_ETHOS`) | Después |
+| **[`ethos_evaluaciones_facilitadores.sql`](ethos_evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos (`PKG_EVAL_FACILITADORES_ETHOS`) | Después |
 
 Los dos son idempotentes. El segundo **no** define el módulo ni habilita el esquema:
 agrega handlers al módulo `ethos` que creó el primero.
@@ -62,15 +61,60 @@ Base: `https://oracleapex.com/ords/<pattern>/ethos/`
 | POST | `evaluaciones-facilitadores` | Bearer | JSON plano → **201** `{success, id_evaluacion_facilitador}` |
 | PUT | `evaluaciones-facilitadores/:id` | Bearer | JSON plano (registro completo) → `{success, message}` |
 | DELETE | `evaluaciones-facilitadores/:id` | Bearer | → `{success, message}` o **409** si tiene dependencias |
+| GET | `listas/:nombre` | Bearer | combos → `{success, lista, limite, data:[...]}` |
 
 Filtros de la lista (todos opcionales): `id_facilitador`, `id_institucion`,
 `id_evaluacion`, `id_area`, `desde`, `hasta` (ISO `YYYY-MM-DD`), `buscar` (sobre
-`evaluado_por`), `limite` (máx. 200, por defecto 50) y `pagina` (1-based).
+`evaluado_por`, nombre del facilitador y nombre de la institución), `limite`
+(máx. 200, por defecto 50) y `pagina` (1-based). El listado ya trae resueltos
+`facilitador`, `institucion`, `area`, `evaluacion` y `ciudad`, no solo los IDs.
+
+Listas de valores (`limite` máx. 500, por defecto 100):
+
+| `:nombre` | Parámetros | Devuelve |
+| --- | --- | --- |
+| `facilitadores` | `buscar` (nombre o CI), `activo`, `incluir_id` | `id_facilitador`, `nombre_apellido`, `activo` |
+| `instituciones` | `buscar`, `estado`, `incluir_id`, `id_facilitador`, `anio` | `id_institucion`, `nombre`, `estado`, `id_ciudad`, `ciudad` |
+| `areas` | `buscar` | `id_area`, `descripcion` |
+| `evaluaciones` | `id_area`, `buscar` | `id_evaluacion`, `id_area`, `descripcion` |
+| `ciudades` | `buscar` | `id_ciudad`, `nombre` |
+
+**Ciudades: una sola lista y una sola columna.** `EVALUACIONES_FACILITADORES` guarda
+solo `ID_CIUDAD`, con FK simple a `CIUDADES(ID_CIUDAD)`. El front manda solo
+`id_ciudad`; país y departamento son recuperables por join a `CIUDADES` y el histórico
+viejo queda en la tabla `_JN`.
+
+`ASPECTOS_POSITIVOS` y `ASPECTOS_MEJORAR` son `CLOB`: sin tope de largo. El límite
+práctico lo pone el bind de ORDS (~32 KB por campo), no la columna.
+
+La sección 1 del `.sql` **no recrea nada**: verifica que estén la PK, las 5 FKs, el
+CHECK de estrellas y la columna de la PK en la tabla `_JN`, y agrega solo lo que falte.
+
+**Solo vigentes por defecto**: `facilitadores` filtra `ACTIVO='SI'` e `instituciones`
+`ESTADO='A'` (las filas con `ESTADO` nulo cuentan como activas). Para traer todo,
+`?activo=TODOS` / `?estado=TODOS`.
+
+**Al editar, mandar `incluir_id`** con el valor ya guardado: si ese facilitador o
+institución se dio de baja después de crearse la evaluación, el combo por defecto no
+lo trae y el campo aparecería vacío. `incluir_id` lo incluye aunque esté inactivo.
+
+**Cascada del formulario**: `listas/instituciones?id_facilitador=N` devuelve solo las
+instituciones donde ese facilitador tiene `POSTULACIONES` (con `EXISTS`, no `JOIN`: un
+facilitador puede tener varias postulaciones en la misma institución y un join la
+duplicaría). Esa misma lista trae `id_ciudad` y `ciudad`, así el front carga la ciudad
+sola sin combo aparte. `?anio=` filtra por `POSTULACIONES.ANIO` y es opcional a
+propósito: con el año lectivo por defecto, un facilitador sin postulaciones cargadas de
+este año aparecería sin instituciones y el formulario quedaría trabado.
+
+Nada de esto lo obliga la base: se puede guardar una evaluación con una institución
+donde el facilitador nunca postuló. Es ayuda de captura, no regla de integridad.
+
+**Evaluaciones: cargar el combo filtrado** por el área elegida
+(`listas/evaluaciones?id_area=N`). Una evaluación pertenece a un área y el API
+rechaza con 400 la combinación incoherente, que la base sí permitiría.
 
 Las fechas viajan como `YYYY-MM-DD`. `id_auditoria` es de solo lectura: lo pone el
-trigger de bitácora, mandarlo desde el front no tiene efecto. `id_pais`,
-`id_departamento` e `id_ciudad` son obligatorios los tres juntos — el detalle de por
-qué está en el encabezado del `.sql`.
+trigger de bitácora, mandarlo desde el front no tiene efecto.
 
 Probar sin frontend:
 
