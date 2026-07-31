@@ -112,7 +112,7 @@ entre sí y **no responde ninguna de las dos URLs**:
 ```
 www.ethospy.online/loquesea
   → 301 (Server: hcdn — Hostinger)  →  https://josegalvez1985.github.io/editorial-ethos-app/…
-  → 301 (Server: GitHub.com)        →  http://www.ethospy.online/…    ← porque Pages tiene dominio propio
+  → 301 (Server: GitHub.com)        →  https://www.ethospy.online/…    ← porque Pages tiene dominio propio
   → 301 → ... sin fin
 ```
 

@@ -2,10 +2,12 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { Download, Loader2, UserRound, Lock, Eye, EyeOff, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { asset } from "@/lib/asset";
+import { getUsuarioRecordado, setUsuarioRecordado } from "@/lib/api";
 import { useSession } from "@/lib/session";
 
 /**
@@ -40,12 +42,27 @@ function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [enApp, setEnApp] = useState(false);
+  const [recordar, setRecordar] = useState(false);
 
   // `replace`: el login no debe quedar en el historial, si no el botón de atrás
   // de la cabecera rebota entre esta pantalla y /home.
   useEffect(() => {
     if (sesion) navigate({ to: "/home", replace: true });
   }, [sesion, navigate]);
+
+  // Precarga del usuario recordado. Va en un efecto y NO en el estado inicial
+  // por lo mismo que `enApp`: en SSR/prerender no hay `localStorage`, así que
+  // leerlo durante el render haría que el HTML del servidor (campo vacío) no
+  // coincida con el del cliente (campo lleno) y React tiraría la hidratación.
+  //
+  // El check queda tildado si había un usuario guardado: refleja el estado real
+  // del disco en vez de arrancar siempre en falso y desguardarlo sin querer.
+  useEffect(() => {
+    const guardado = getUsuarioRecordado();
+    if (!guardado) return;
+    setUsuario(guardado);
+    setRecordar(true);
+  }, []);
 
   // Adentro del APK no se ofrece descargar el APK: no tiene sentido y además
   // `scripts/build-apk.ps1` borra `app.apk` del bundle (si no, cada APK
@@ -67,6 +84,10 @@ function LoginPage() {
     setLoading(true);
     try {
       await login(usuario, password);
+      // Se persiste recién ACÁ, con el login ya aceptado: si se guardara al
+      // tildar el check, un usuario mal escrito quedaría recordado y volvería a
+      // precargarse mal en cada arranque. Destildado, esto lo borra.
+      setUsuarioRecordado(recordar ? usuario : "");
       toast.success("Bienvenido a Editorial Ethos");
       navigate({ to: "/home", replace: true });
     } catch (err) {
@@ -151,6 +172,22 @@ function LoginPage() {
               </div>
             </div>
 
+            {/*
+              Recuerda el USUARIO y nada más — la contraseña se escribe siempre.
+              No es "mantener sesión iniciada": la sesión sigue viviendo solo en
+              memoria y cerrar la app sigue obligando a loguearse. Ver lib/api.ts.
+            */}
+            <div className="flex items-center gap-2.5">
+              <Checkbox
+                id="recordar"
+                checked={recordar}
+                onCheckedChange={(v) => setRecordar(v === true)}
+              />
+              <Label htmlFor="recordar" className="text-sm font-normal text-muted-foreground">
+                Recordar mi usuario
+              </Label>
+            </div>
+
             {error ? (
               <p role="alert" className="text-sm text-destructive">
                 {error}
@@ -167,8 +204,9 @@ function LoginPage() {
             </Button>
 
             {/* Acá vivían "Mantener sesión iniciada" y el botón de biometría. Se
-                sacaron: la sesión ya no se guarda en el disco y hay que escribir
-                usuario y contraseña en cada arranque. Ver lib/api.ts. */}
+                sacaron y NO volvieron: el check de arriba solo recuerda el
+                usuario. Ni la contraseña ni el token se guardan, y hay que
+                loguearse en cada arranque. Ver lib/api.ts. */}
           </form>
 
           {/*

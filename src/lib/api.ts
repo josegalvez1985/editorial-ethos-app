@@ -69,6 +69,11 @@ export function cerrarSesion() {
  * pero quitar el código no borra lo que ya está escrito en el disco de quien
  * viene usando la app: eso sobrevive a la actualización.
  *
+ * OJO: `ethos-usuario` NO está en esta lista y no debe estarlo. Es el nombre de
+ * usuario que guarda "Recordar mi usuario" (ver abajo) — dato no sensible y
+ * escrito por la versión actual a pedido explícito del usuario. Meterlo acá lo
+ * borraría en cada arranque y el check no funcionaría nunca.
+ *
  * Se llama una vez al arrancar. Se puede eliminar cuando no queden instalaciones
  * viejas dando vueltas.
  */
@@ -81,6 +86,50 @@ export function limpiarDatosViejos() {
     } catch {
       /* modo privado sin storage: no había nada que borrar */
     }
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* "Recordar mi usuario"                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Nombre de usuario recordado para precargar el campo del login.
+ *
+ * SE GUARDA EL USUARIO Y NADA MÁS. La contraseña y el token siguen sin tocar el
+ * disco: eso es lo que sostiene todo lo escrito arriba sobre la sesión en
+ * memoria. Si alguien agrega acá la contraseña, `limpiarDatosViejos()` deja de
+ * tener sentido y un XSS pasa a tener algo que robar.
+ *
+ * Es una comodidad para tipear, no una sesión: quien abre la app igual tiene que
+ * escribir la contraseña entera.
+ */
+const CLAVE_USUARIO = "ethos-usuario";
+
+/** El usuario recordado, o `""` si no hay o no se puede leer el storage. */
+export function getUsuarioRecordado(): string {
+  if (typeof window === "undefined") return ""; // SSR: no hay storage
+  try {
+    return localStorage.getItem(CLAVE_USUARIO) ?? "";
+  } catch {
+    return ""; // modo privado sin storage
+  }
+}
+
+/**
+ * Guarda el usuario, o lo borra si se pasa `""` / se destildó el check.
+ *
+ * Falla en silencio a propósito: quedarse sin poder recordar el usuario no es
+ * motivo para romperle el login a nadie.
+ */
+export function setUsuarioRecordado(usuario: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const limpio = usuario.trim();
+    if (limpio) localStorage.setItem(CLAVE_USUARIO, limpio);
+    else localStorage.removeItem(CLAVE_USUARIO);
+  } catch {
+    /* modo privado sin storage: se pierde la comodidad, no el login */
   }
 }
 

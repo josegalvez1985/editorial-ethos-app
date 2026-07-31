@@ -3,7 +3,6 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
-import tsConfigPaths from "vite-tsconfig-paths";
 
 /**
  * STATIC_BUILD=1 → build estático, sin servidor Node. Dos destinos lo usan:
@@ -45,7 +44,6 @@ const base = process.env.BASE_PATH || "/";
 export default defineConfig({
   base,
   plugins: [
-    tsConfigPaths(),
     tailwindcss(),
     ...(staticBuild ? [] : [nitro()]),
     tanstackStart({
@@ -57,6 +55,10 @@ export default defineConfig({
     viteReact(),
   ],
   resolve: {
+    // Resuelve el alias `@/*` de tsconfig.json, del que depende cada import del
+    // proyecto. Antes lo hacía el plugin `vite-tsconfig-paths`; Vite 8 lo trae
+    // nativo y el plugin quedó deprecado (avisaba en cada arranque de dev).
+    tsconfigPaths: true,
     dedupe: ["react", "react-dom", "@tanstack/react-router"],
   },
 });
