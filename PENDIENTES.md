@@ -129,18 +129,21 @@ La firma **ya está resuelta**: `assembleRelease` firma solo con `ethos-release.
 
 Lo que queda: subir `versionCode` / `versionName` en `android/app/build.gradle` **en cada
 versión que se reparta** — Android se niega a instalar encima un `versionCode` menor o igual.
-Hoy va en `6` / `"1.5"` (la del acceso biométrico).
+Hoy va en `9` / `"1.7"`.
 
-### ~~15b. Acceso biométrico en el APK~~ ✅ HECHO (31/07/2026)
+### ~~15b. Acceso biométrico en el APK~~ ❌ DESCARTADO (31/07/2026)
 
-La huella entra sin escribir la contraseña. Se activa desde **Mi cuenta → Seguridad** y la
-contraseña queda en el **Keystore de Android**, cifrada por hardware y detrás de un
-`BiometricPrompt` atado a un `CryptoObject` (cada lectura pide huella de nuevo).
+Se implementó y se quitó el mismo día, a pedido explícito: costó demasiado tiempo para lo que
+aportaba. Fuera el plugin, `src/lib/biometria.ts`, el switch de Mi cuenta y los permisos del
+manifest.
 
-**Solo en el APK.** En la web y en la PWA no se ofrece: sin Keystore, guardar la contraseña
-sería `localStorage` en texto plano. El token sigue sin escribirse en el disco en ningún
-frontend. Ver [`src/lib/biometria.ts`](src/lib/biometria.ts) y [`APK.md`](APK.md) →
-*Acceso biométrico*.
+Lo que hace hoy el trabajo es el check **"Recordar usuario y contraseña"** del login, que anda
+igual en la web y en el APK. Guarda la contraseña en `localStorage` **en texto plano** —sin
+Keystore no hay otro lugar—, es opt-in y el login lo advierte en pantalla. El token sigue sin
+escribirse en el disco.
+
+Si alguna vez se reintenta, en [`APK.md`](APK.md) → *No hay acceso biométrico* quedaron
+anotadas las cuatro trampas que costaron el tiempo, para no volver a pagarlas.
 
 ### 11. La escala está cableada en el front
 

@@ -14,8 +14,6 @@ import { toast } from "sonner";
 
 import {
   cerrarSesion,
-  esCredencialRechazada,
-  esSinConexion,
   getSesion,
   limpiarDatosViejos,
   login as apiLogin,
@@ -24,7 +22,6 @@ import {
   setOnUnauthorized,
   type Sesion,
 } from "@/lib/api";
-import { desactivar as desactivarBiometria, leerCredencial } from "@/lib/biometria";
 import { borrarCachePersistida } from "@/lib/query-persist";
 
 /**
@@ -34,11 +31,12 @@ import { borrarCachePersistida } from "@/lib/query-persist";
  * en memoria (ver `lib/api.ts`): no hay "mantener sesión iniciada" y cada arranque
  * pasa por el login.
  *
- * Lo que sí puede sobrevivir —**solo dentro del APK y solo si el usuario lo
- * activó**— es la contraseña, guardada en el Keystore de Android detrás de la
- * huella (ver `lib/biometria.ts`). Eso no restaura la sesión: permite rehacer el
- * `POST auth/login` sin tipear. En la web y en la PWA no hay nada de esto y el
- * comportamiento es el de siempre.
+ * Lo que sí puede sobrevivir, si el usuario tilda el check del login, es **la
+ * contraseña** — en `localStorage` y en texto plano, igual en la web que en el
+ * APK. Ver `lib/api.ts`. Con ella se rehace el `POST auth/login`; la sesión no se
+ * restaura sola.
+ *
+ * **No hay biometría.** Se implementó y se quitó el 31/07/2026; ver `APK.md`.
  */
 type Ctx = {
   sesion: Sesion | null;
@@ -51,12 +49,6 @@ type Ctx = {
    */
   ready: boolean;
   login: (usuario: string, password: string) => Promise<void>;
-  /**
-   * Pide la huella y entra con la credencial del Keystore. `false` si el usuario
-   * canceló o no había nada guardado; en ese caso queda el login normal.
-   * Solo tiene efecto dentro del APK.
-   */
-  loginBiometrico: () => Promise<boolean>;
   logout: () => Promise<void>;
 };
 
@@ -143,57 +135,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setSesion(await apiLogin(usuario, password));
   }, []);
 
-  /**
-   * Login con huella. La contraseña sale del Keystore y se usa para un
-   * `apiLogin` normal: **el backend valida igual que siempre**. La biometría
-   * decide si se puede leer el secreto, no si la sesión es válida.
-   *
-   * Si el backend rechaza esa contraseña —la cambiaron desde otro lado— la
-   * credencial guardada quedó vieja y no sirve más: se borra sola para que el
-   * usuario no repita una huella que nunca va a funcionar, y se lo mandamos al
-   * login normal con el mensaje del backend.
-   */
-  const loginBiometrico = useCallback(async () => {
-    const cred = await leerCredencial();
-    if (!cred) return false; // canceló o no hay nada guardado
-
-    try {
-      setSesion(await apiLogin(cred.usuario, cred.password));
-      return true;
-    } catch (e) {
-      // Acá hay que distinguir TRES casos, y confundirlos borra credenciales
-      // buenas:
-      //
-      // 1. Sin red. No dice nada sobre la contraseña —podés estar en el subte—,
-      //    así que la credencial NO se toca.
-      // 2. El backend rechazó estas credenciales. La contraseña cambió desde
-      //    otro lado y la guardada ya no sirve: hay que borrarla, o el usuario
-      //    repite la huella para siempre contra un login que nunca va a entrar.
-      // 3. El backend falló (500, caído, mantenimiento). La contraseña puede ser
-      //    perfectamente válida: borrarla acá sería destruir la credencial del
-      //    usuario por un problema del servidor.
-      if (esSinConexion(e)) throw e; // (1) que lo muestre la pantalla de login
-
-      if (esCredencialRechazada(e)) {
-        // (2)
-        await desactivarBiometria();
-        toast.error("Tu contraseña cambió", {
-          description: "Volvé a iniciar sesión y activá la huella otra vez desde Mi cuenta.",
-        });
-        return false;
-      }
-
-      throw e; // (3) error del servidor: se reporta, no se borra nada
-    }
-  }, []);
-
   const logout = useCallback(async () => {
     await apiLogout();
     setSesion(null);
-    // Cerrar sesión es un gesto explícito: la contraseña guardada no puede
-    // sobrevivirlo. Sin esto, "cerrar sesión" dejaría la credencial intacta y la
-    // huella volvería a entrar a la misma cuenta.
-    await desactivarBiometria();
+
+    // El check de "recordar" NO se toca acá, a propósito: es comodidad para
+    // tipear, no una sesión. Si se borrara al salir, se destildaría solo cada vez
+    // que el usuario cierra sesión correctamente y no serviría para nada. Se
+    // apaga destildándolo en el login.
+    //
+    // El token sí muere siempre, que es lo que realmente protege la cuenta.
+
     // La caché persistida tiene datos del negocio (nombres, CI de facilitadores):
     // no puede quedar en el disco después de cerrar sesión. Se borra de los dos
     // lados, memoria y localStorage, o el próximo login la restauraría.
@@ -207,8 +159,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<Ctx>(
-    () => ({ sesion, user, ready, login, loginBiometrico, logout }),
-    [sesion, user, ready, login, loginBiometrico, logout],
+    () => ({ sesion, user, ready, login, logout }),
+    [sesion, user, ready, login, logout],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

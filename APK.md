@@ -268,77 +268,44 @@ El `signingConfig` fuerza **v1 + v2 + v3**. El v3 importa: es el esquema que le 
 verificar la identidad de la clave, y sin él la firma queda como no verificable, que es una de las
 señales que empujan a Play Protect a bloquear. AGP por defecto solo emite v2.
 
-## Acceso biométrico — SOLO en el APK
+## No hay acceso biométrico
 
-**Implementado.** El usuario lo activa desde **Mi cuenta → Seguridad** y a partir de
-ahí entra con la huella, sin escribir la contraseña. Código en
-[`src/lib/biometria.ts`](src/lib/biometria.ts).
+**Se implementó y se quitó el 31/07/2026**, a pedido explícito: consumió demasiado tiempo
+para lo que aportaba. Se fueron el plugin `@capgo/capacitor-native-biometric`,
+`src/lib/biometria.ts`, el switch de Mi cuenta, el botón del login y los permisos
+`USE_BIOMETRIC` / `USE_FINGERPRINT` del manifest.
 
-**No existe en la web ni en la PWA**, y eso no es una limitación pendiente: es la
-condición para que sea aceptable. En un navegador no hay Keystore, así que guardar la
-contraseña ahí sería `localStorage` en texto plano — exactamente lo que se sacó de
-este proyecto. `enApp()` corta en seco si no hay puente nativo de Capacitor, así que
-en el navegador el switch no se pinta y el botón del login no aparece.
+Para no escribir la contraseña está el check **"Recordar usuario y contraseña"** del login,
+que funciona igual en la web y en el APK. La guarda en `localStorage` **en texto plano**: sin
+Keystore no hay otro lugar donde ponerla. Es opt-in y el login lo advierte en pantalla. Ver
+[`src/lib/api.ts`](src/lib/api.ts).
 
-### Qué se guarda y qué no
+### Si alguna vez se reimplanta
 
-| | Dónde vive | Sobrevive a cerrar la app |
-| --- | --- | --- |
-| Token de sesión | Memoria, nada más | **No** — sigue igual que siempre |
-| Contraseña | Keystore de Android, cifrada por hardware | Sí, **solo si el usuario activó la huella** |
-| Usuario | `localStorage` (dato no sensible) | Sí, con "Recordar mi usuario" |
+Lo que costó descubrir, para no volver a pagarlo:
 
-La huella **no restaura la sesión**: destapa la contraseña y con ella se rehace el
-`POST auth/login` contra el backend, que valida como siempre. Un token vencido no se
-revive por tener huella.
+**1. Sin bloqueo de pantalla NO hay biometría.** El Keystore exige PIN, patrón o contraseña en
+el equipo para poder cifrar. Sin eso `isAvailable()` devuelve `false` aunque el celular tenga
+lector de huellas, y no se puede sortear desde la app. Es la causa más común de que "el botón
+no aparezca". Que la comprobación devuelva el **motivo** y no un booleano: `deviceIsSecure`
+distingue "poné un PIN" de "registrá una huella", y esa diferencia es la que el usuario
+necesita para resolverlo.
 
-### El modo de guardado importa
+**2. El plugin MIENTE en la web.** Su implementación de navegador es un stub de desarrollo:
+`isAvailable()` devuelve `true`, `verifyIdentity()` siempre tiene éxito sin pedir nada, y las
+credenciales van a un `Map` en memoria. Hay que cortar por `window.Capacitor` **antes** de
+consultarlo, o la web ofrece una huella que no existe y da por guardada una contraseña que no
+está en ningún lado.
 
-`setCredentials({ accessControl: BIOMETRY_ANY })` + `getSecureCredentials()`. Eso ata
-la clave del Keystore a un `CryptoObject`: **cada lectura exige un `BiometricPrompt`
-vivo**, y ningún otro punto del código de la app puede leer la contraseña sin él.
-`authValidityDuration` queda en 0 (el default) justamente para eso — cualquier valor
-mayor abre una ventana en la que el secreto se puede leer en silencio.
+**3. `USE_BIOMETRIC` no lo trae el plugin.** Su `AndroidManifest.xml` solo declara la
+`AuthActivity`. Sin esa línea en el manifest de la app, el `BiometricPrompt` falla en runtime
+con el código JS perfecto y el celular con lector.
 
-Se usa `BIOMETRY_ANY` y no `BIOMETRY_CURRENT_SET` porque este último invalida la
-credencial cuando el usuario registra una huella nueva: agrega un dedo y el acceso
-deja de andar sin ninguna explicación.
-
-`isAvailable({ useFallback: false })`: el PIN del equipo **no** alcanza para destapar
-la contraseña. Si se aceptara, cualquiera que sepa el PIN entra a la cuenta, que es
-justo lo que la huella tiene que evitar.
-
-### El permiso va en el manifest de la app
-
-`USE_BIOMETRIC` **no lo trae el plugin** — su `AndroidManifest.xml` solo declara la
-`AuthActivity`. Está agregado a mano en
-[`android/app/src/main/AndroidManifest.xml`](android/app/src/main/AndroidManifest.xml).
-Sin esa línea el `BiometricPrompt` falla en runtime aunque el código JS esté perfecto
-y el celular tenga lector.
-
-### Las tres causas que hicieron perder un día
-
-Ninguna es un bug del código y las tres se ven igual desde afuera —"el botón no
-aparece"—, así que conviene descartarlas **antes** de tocar nada:
-
-**1. Sin bloqueo de pantalla NO hay biometría.** La más común y la menos evidente. El
-Keystore de Android exige que el dispositivo tenga **PIN, patrón o contraseña** para
-poder cifrar secretos. Sin eso `isAvailable()` devuelve `false` aunque el celular
-tenga lector de huellas. Es una restricción del sistema operativo, no algo que se
-pueda sortear desde la app: hacen falta bloqueo de pantalla **y** al menos una huella
-registrada. Un celular sin bloqueo instala el APK perfecto y todo lo demás funciona;
-solo la biometría queda muerta.
-
-Por eso `disponible()` devuelve el **motivo** y no un booleano: `deviceIsSecure`
-distingue "poné un PIN" de "registrá una huella", y el switch de Mi cuenta muestra esa
-diferencia, que es la que el usuario necesita para poder resolverlo.
-
-**2. Guardar la contraseña es el precio.** El token dura 6 h y no se renueva, así que
-para reentrar sin escribir nada hay que repetir el `POST auth/login` — y para eso hay
-que guardar la contraseña en algún lado. En el navegador eso significa `localStorage`
-en texto plano. La combinación que lo evita es token en memoria + contraseña en el
-Keystore detrás de la huella, y **solo funciona en el APK**: es exactamente lo que
-está implementado.
+**4. El modo de guardado correcto** es `setCredentials({ accessControl: BIOMETRY_ANY })` +
+`getSecureCredentials()`, con `authValidityDuration` en 0: ata la clave del Keystore a un
+`CryptoObject` y exige una huella viva en cada lectura. `BIOMETRY_ANY` y no
+`BIOMETRY_CURRENT_SET`, porque este último invalida la credencial cuando el usuario registra
+una huella nueva y el acceso deja de andar sin explicación.
 
 ### 2. "Fuentes desconocidas" es por app instaladora, no por APK
 
@@ -355,11 +322,11 @@ Sin ese paso el plugin no existe en runtime y los errores son confusos —del ti
 *"plugin not implemented"*— que parecen problemas de código. El script ya lo hace;
 solo importa si se compila a mano.
 
-Comprobación: el sync tiene que imprimir el plugin.
+Comprobación: el sync tiene que listar el plugin instalado. **Hoy el proyecto no usa
+ninguno**, así que lo correcto es que no aparezca esa línea:
 
 ```
-[info] Found 1 Capacitor plugin for android:
-       @capgo/capacitor-native-biometric@8.6.2
+[info] Found 0 Capacitor plugins for android:
 ```
 
 ### Diagnosticar el WebView con DevTools
@@ -367,17 +334,7 @@ Comprobación: el sync tiene que imprimir el plugin.
 El APK es una WebView, así que se depura con las DevTools de Chrome completas:
 **`chrome://inspect`** en el escritorio, con el celular conectado por USB y
 depuración activada. Da consola, red y breakpoints sobre la app corriendo en el
-teléfono — dos minutos contra horas de adivinar. Los `console.warn` de
-[`lib/biometria.ts`](src/lib/biometria.ts) aparecen ahí.
-
-### Orden de trabajo
-
-Probar todo junto hace imposible saber qué está roto. El orden que funciona:
-
-1. Sesión persistente **en el navegador**
-2. APK básico, sin biometría
-3. Instalarlo y verificar que abre
-4. **Recién ahí** la biometría
+teléfono — dos minutos contra horas de adivinar.
 
 ### Desinstalar antes de cambiar de firma
 
@@ -391,9 +348,10 @@ Este APK y la app Expo son **dos implementaciones distintas** del mismo producto
 se genera es este, el de la web. Lo que eso implica:
 
 - **A favor:** trae el módulo de evaluaciones completo. La app Expo solo tiene login, inicio y
-  cuenta. Y desde la v1.5 **también tiene biometría real**, vía
-  `@capgo/capacitor-native-biometric` contra el mismo Keystore del sistema que usa Expo.
-- **En contra:** ya casi nada. La diferencia que queda es de implementación, no de capacidades.
+  cuenta.
+- **En contra:** no tiene biometría. `mobile/` sí (`expo-local-authentication`), pero es la app
+  que ya no se compila. En el APK de Capacitor se probó y se quitó — ver *No hay acceso
+  biométrico* más arriba.
 
 `mobile/` sigue en el repo y se puede compilar a mano con EAS (`cd mobile && npm run build:apk`),
 pero ya no es lo que responde a "generá el apk".

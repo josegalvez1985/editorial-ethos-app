@@ -16,8 +16,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { asset } from "@/lib/asset";
-import { getUsuarioRecordado, setUsuarioRecordado } from "@/lib/api";
-import { activada as biometriaActivada, hayCredencial } from "@/lib/biometria";
+import {
+  getPasswordRecordada,
+  getUsuarioRecordado,
+  setPasswordRecordada,
+  setUsuarioRecordado,
+} from "@/lib/api";
 import { useSession } from "@/lib/session";
 
 /**
@@ -45,7 +49,7 @@ export const Route = createFileRoute("/")({
 
 function LoginPage() {
   const navigate = useNavigate();
-  const { sesion, login, loginBiometrico } = useSession();
+  const { sesion, login } = useSession();
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -53,9 +57,6 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [enApp, setEnApp] = useState(false);
   const [recordar, setRecordar] = useState(false);
-  /** Hay huella configurada y credencial guardada: se puede ofrecer el botón. */
-  const [conHuella, setConHuella] = useState(false);
-  const [huellaCargando, setHuellaCargando] = useState(false);
 
   // `replace`: el login no debe quedar en el historial, si no el botón de atrás
   // de la cabecera rebota entre esta pantalla y /home.
@@ -75,6 +76,9 @@ function LoginPage() {
     if (!guardado) return;
     setUsuario(guardado);
     setRecordar(true);
+    // La contraseña solo vuelve en la web; en el APK `getPasswordRecordada()`
+    // devuelve "" y el camino para no tipearla es la huella.
+    setPassword(getPasswordRecordada());
   }, []);
 
   // Adentro del APK no se ofrece descargar el APK: no tiene sentido y además
@@ -86,54 +90,6 @@ function LoginPage() {
   useEffect(() => {
     setEnApp(Boolean((window as unknown as { Capacitor?: unknown }).Capacitor));
   }, []);
-
-  const entrarConHuella = useCallback(async () => {
-    setError("");
-    setHuellaCargando(true);
-    try {
-      // El prompt del sistema lo dispara el Keystore al descifrar; si el usuario
-      // cancela, esto devuelve false y se queda en el formulario normal.
-      if (await loginBiometrico()) {
-        toast.success("Bienvenido a Editorial Ethos");
-        navigate({ to: "/home", replace: true });
-      }
-    } catch (err) {
-      // Solo llega acá el fallo de red: la contraseña vieja la resuelve
-      // `loginBiometrico` borrando la credencial y avisando por su cuenta.
-      setError(err instanceof Error ? err.message : "No se pudo entrar con la huella");
-    } finally {
-      setHuellaCargando(false);
-    }
-  }, [loginBiometrico, navigate]);
-
-  /**
-   * Ofrecer la huella y dispararla sola al abrir la app.
-   *
-   * Las dos condiciones son necesarias: `activada()` es la preferencia del
-   * usuario y `hayCredencial()` es lo que de verdad hay en el Keystore. Si se
-   * mirara solo la primera, un `deleteCredentials` fallido dejaría el botón
-   * ofreciendo una huella que no puede resolver nada.
-   *
-   * El auto-disparo es lo que hace útil a esto: sin él, entrar con huella cuesta
-   * un toque más que escribir nada. `hecho` evita que se repita si el efecto se
-   * vuelve a montar —React 19 en desarrollo monta dos veces— porque disparar dos
-   * `BiometricPrompt` encimados los cancela a los dos.
-   */
-  const autoDisparado = useRef(false);
-  useEffect(() => {
-    if (!biometriaActivada()) return;
-    let vivo = true;
-    void (async () => {
-      if (!(await hayCredencial()) || !vivo) return;
-      setConHuella(true);
-      if (autoDisparado.current) return;
-      autoDisparado.current = true;
-      void entrarConHuella();
-    })();
-    return () => {
-      vivo = false;
-    };
-  }, [entrarConHuella]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -147,8 +103,9 @@ function LoginPage() {
       await login(usuario, password);
       // Se persiste recién ACÁ, con el login ya aceptado: si se guardara al
       // tildar el check, un usuario mal escrito quedaría recordado y volvería a
-      // precargarse mal en cada arranque. Destildado, esto lo borra.
+      // precargarse mal en cada arranque. Destildado, esto borra las dos claves.
       setUsuarioRecordado(recordar ? usuario : "");
+      setPasswordRecordada(recordar ? password : "");
       toast.success("Bienvenido a Editorial Ethos");
       navigate({ to: "/home", replace: true });
     } catch (err) {
@@ -234,20 +191,33 @@ function LoginPage() {
             </div>
 
             {/*
-              Recuerda el USUARIO y nada más — la contraseña se escribe siempre.
-              No es "mantener sesión iniciada": la sesión sigue viviendo solo en
-              memoria y cerrar la app sigue obligando a loguearse. Ver lib/api.ts.
+              Recuerda usuario Y contraseña. NO es "mantener sesión iniciada": el
+              token sigue viviendo solo en memoria y cerrar la app obliga a pasar
+              por acá — lo que se ahorra es tipear, no la autenticación.
+
+              Mismo comportamiento en la web y en el APK: sin biometría ya no hay
+              Keystore, así que la contraseña va a `localStorage` en los dos
+              casos. Ver lib/api.ts.
             */}
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-start gap-2.5">
               <Checkbox
                 id="recordar"
                 checked={recordar}
                 onCheckedChange={(v) => setRecordar(v === true)}
+                className="mt-0.5"
               />
-              <Label htmlFor="recordar" className="text-sm font-normal text-muted-foreground">
-                Recordar mi usuario
+              <Label
+                htmlFor="recordar"
+                className="text-sm leading-snug font-normal text-muted-foreground"
+              >
+                Recordar usuario y contraseña
               </Label>
             </div>
+
+            {/* Acá estaba la advertencia de que la contraseña se guarda sin
+                cifrar. Se quitó a pedido (31/07/2026). El comportamiento no
+                cambió: sigue yendo a `localStorage` en texto plano, ver
+                lib/api.ts — lo que se sacó es el cartel, no el riesgo. */}
 
             {error ? (
               <p role="alert" className="text-sm text-destructive">
@@ -257,50 +227,17 @@ function LoginPage() {
 
             <Button
               type="submit"
-              disabled={loading || huellaCargando}
+              disabled={loading}
               className="tap h-12 w-full rounded-xl text-base"
             >
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {loading ? "Iniciando..." : "Entrar"}
             </Button>
 
-            {/*
-              Acceso con huella. Existe SOLO en el APK: `conHuella` sale de
-              `lib/biometria.ts`, que corta en seco si no hay puente nativo, así
-              que en la web y en la PWA este bloque nunca se pinta.
-
-              Se ofrece como alternativa y no como única vía a propósito: si el
-              usuario cancela el prompt, o cambia la contraseña desde otro lado,
-              el formulario de arriba sigue siendo el camino que siempre funciona.
-
-              "Mantener sesión iniciada" NO volvió: el token sigue sin escribirse
-              en el disco. Lo que la huella destapa es la contraseña guardada en
-              el Keystore, y con ella se rehace el login contra el backend.
-            */}
-            {conHuella && (
-              <>
-                <div className="flex items-center gap-3 pt-1">
-                  <span className="h-px flex-1 bg-border" />
-                  <span className="text-xs text-muted-foreground">o</span>
-                  <span className="h-px flex-1 bg-border" />
-                </div>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={entrarConHuella}
-                  disabled={loading || huellaCargando}
-                  className="tap h-12 w-full rounded-xl text-base"
-                >
-                  {huellaCargando ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Fingerprint className="mr-2 size-5" />
-                  )}
-                  {huellaCargando ? "Verificando..." : "Entrar con tu huella"}
-                </Button>
-              </>
-            )}
+            {/* Acá estuvo el botón "Entrar con tu huella". Se quitó junto con todo
+                el acceso biométrico el 31/07/2026; ver APK.md. Para no escribir la
+                contraseña está el check de arriba, que anda igual en la web y en
+                el APK. */}
           </form>
 
           {/*

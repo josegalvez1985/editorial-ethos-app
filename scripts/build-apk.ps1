@@ -41,9 +41,20 @@ if (-not (Test-Path $env:JAVA_HOME)) {
 $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 # --version y no -version: el segundo escribe en stderr y PowerShell lo reporta
 # como error nativo aunque el comando haya salido bien.
-$javaVer = & java --version | Select-Object -First 1
-if ($LASTEXITCODE -ne 0) { Fallar "java --version falló" }
-Write-Host "   $javaVer" -ForegroundColor $Ok
+#
+# OJO CON EL PIPE: esto NO puede ser `& java --version | Select-Object -First 1`.
+# `Select-Object -First 1` cierra el pipeline apenas recibe la primera línea, y
+# eso mata a `java` antes de que termine de escribir las otras dos. Java muere
+# por pipe cerrado y deja un $LASTEXITCODE != 0 aunque haya andado perfecto.
+#
+# Es una carrera: gana casi siempre y falla de vez en cuando con "java --version
+# falló" en una máquina donde Java está impecable. Pasó el 31/07/2026 después de
+# tres builds seguidos exitosos. Se captura TODO y se recorta después.
+$javaSalida = & java --version 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Fallar "java --version falló (exit $LASTEXITCODE): $javaSalida"
+}
+Write-Host "   $(@($javaSalida)[0])" -ForegroundColor $Ok
 
 # --- 2. Android SDK ---------------------------------------------------------
 # Se valida ANTES de gastar el build web: Gradle sin SDK falla con un stack

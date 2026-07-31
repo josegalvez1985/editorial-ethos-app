@@ -39,12 +39,10 @@ export type Sesion = {
  *   encuentra una sesión que robar.
  * - **Recargar la página cierra la sesión.** Es el costo, y es el esperado.
  *
- * ÚNICA EXCEPCIÓN, y no toca nada de lo de arriba: dentro del APK el usuario
- * puede activar el acceso con huella (`lib/biometria.ts`), que guarda **la
- * contraseña** —no el token— en el Keystore de Android, cifrada por hardware. Con
- * ella se rehace el `login()` de abajo, que valida contra el backend como
- * siempre. En la web y en la PWA eso no existe: sin Keystore sería `localStorage`
- * en texto plano, que es justamente lo que se sacó.
+ * Lo anterior es sobre el TOKEN. La CONTRASEÑA es otra cosa y sí puede quedar
+ * guardada, si el usuario tilda el check del login: ver "Recordar usuario y
+ * contraseña" más abajo. Con ella se rehace el `login()`, que valida contra el
+ * backend como siempre; la sesión no se restaura sola.
  *
  * Un `let` de módulo alcanza porque toda la app corre en un único contexto de JS.
  */
@@ -74,22 +72,30 @@ export function cerrarSesion() {
  * pero quitar el código no borra lo que ya está escrito en el disco de quien
  * viene usando la app: eso sobrevive a la actualización.
  *
- * OJO: `ethos-usuario` NO está en esta lista y no debe estarlo. Es el nombre de
- * usuario que guarda "Recordar mi usuario" (ver abajo) — dato no sensible y
- * escrito por la versión actual a pedido explícito del usuario. Meterlo acá lo
- * borraría en cada arranque y el check no funcionaría nunca.
+ * `ethos-biometria-activa` está en la lista porque el acceso con huella existió
+ * en la v1.5/1.6 y se quitó en la 1.7: quien haya instalado alguna de esas tiene
+ * esa clave escrita en el teléfono, y sin esto le quedaría para siempre.
  *
- * Lo mismo vale para `ethos-biometria-activa` (`lib/biometria.ts`). Es la clave
- * ACTUAL del acceso con huella y tampoco va acá: borrarla en cada arranque
- * apagaría el botón de la huella siempre. La de esta lista es `ethos-biometry`,
- * la de la versión vieja — parecidas a propósito de nada, pero distintas.
+ * OJO: las claves que la versión ACTUAL escribe **no** van acá, o se borrarían
+ * solas en cada arranque y el check del login no funcionaría nunca. Son
+ * `ethos-usuario` y `ethos-password`, parecidas a las viejas pero distintas:
+ *
+ * | Actual (NO tocar) | Vieja, parecida (sí se barre) |
+ * | --- | --- |
+ * | `ethos-usuario` | — |
+ * | `ethos-password` | `ethos-credenciales` |
  *
  * Se llama una vez al arrancar. Se puede eliminar cuando no queden instalaciones
  * viejas dando vueltas.
  */
 export function limpiarDatosViejos() {
   if (typeof window === "undefined") return; // SSR: no hay storage
-  for (const clave of ["ethos-sesion", "ethos-credenciales", "ethos-biometry"]) {
+  for (const clave of [
+    "ethos-sesion",
+    "ethos-credenciales",
+    "ethos-biometry",
+    "ethos-biometria-activa",
+  ]) {
     try {
       localStorage.removeItem(clave);
       sessionStorage.removeItem(clave);
@@ -100,21 +106,36 @@ export function limpiarDatosViejos() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* "Recordar mi usuario"                                                       */
+/* "Recordar usuario y contraseña"                                             */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Nombre de usuario recordado para precargar el campo del login.
+ * Credenciales recordadas para precargar el login.
  *
- * SE GUARDA EL USUARIO Y NADA MÁS. La contraseña y el token siguen sin tocar el
- * disco: eso es lo que sostiene todo lo escrito arriba sobre la sesión en
- * memoria. Si alguien agrega acá la contraseña, `limpiarDatosViejos()` deja de
- * tener sentido y un XSS pasa a tener algo que robar.
+ * ## LA CONTRASEÑA ACÁ QUEDA EN TEXTO PLANO
  *
- * Es una comodidad para tipear, no una sesión: quien abre la app igual tiene que
- * escribir la contraseña entera.
+ * En `localStorage`, legible desde la consola del navegador (F12 → Application →
+ * Local Storage) y alcanzable por cualquier XSS que llegue al sitio. **Es una
+ * decisión tomada a conciencia**, pedida explícitamente el 31/07/2026, no un
+ * descuido: no la "arregles" borrando esto sin hablarlo.
+ *
+ * Vale igual en la web y en el APK. Hubo una versión con biometría en la que el
+ * APK guardaba la contraseña en el Keystore de Android, cifrada por hardware; eso
+ * **se quitó entero** (ver `APK.md`), así que hoy no hay ningún entorno con
+ * almacenamiento seguro y el comportamiento es uno solo.
+ *
+ * Se mitiga por dos lados:
+ *
+ * 1. **Es opt-in.** Solo se guarda si el usuario tilda el check.
+ * 2. **La UI lo dice.** El login muestra una advertencia mientras el check está
+ *    tildado, para que nadie lo active en un equipo compartido sin saber lo que
+ *    implica.
+ *
+ * El TOKEN sigue sin escribirse en el disco: lo que se guarda es la contraseña
+ * para rehacer el login, nunca la sesión.
  */
 const CLAVE_USUARIO = "ethos-usuario";
+const CLAVE_PASSWORD = "ethos-password";
 
 /** El usuario recordado, o `""` si no hay o no se puede leer el storage. */
 export function getUsuarioRecordado(): string {
@@ -123,6 +144,16 @@ export function getUsuarioRecordado(): string {
     return localStorage.getItem(CLAVE_USUARIO) ?? "";
   } catch {
     return ""; // modo privado sin storage
+  }
+}
+
+/** La contraseña recordada, o `""`. */
+export function getPasswordRecordada(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem(CLAVE_PASSWORD) ?? "";
+  } catch {
+    return "";
   }
 }
 
@@ -140,6 +171,23 @@ export function setUsuarioRecordado(usuario: string) {
     else localStorage.removeItem(CLAVE_USUARIO);
   } catch {
     /* modo privado sin storage: se pierde la comodidad, no el login */
+  }
+}
+
+/**
+ * Guarda la contraseña **en texto plano**, o la borra con `""`.
+ *
+ * Llamar SIEMPRE después de un login aceptado por el backend, nunca al tildar el
+ * check: una contraseña mal escrita quedaría guardada y volvería a precargarse
+ * mal en cada arranque.
+ */
+export function setPasswordRecordada(password: string) {
+  if (typeof window === "undefined") return;
+  try {
+    if (password) localStorage.setItem(CLAVE_PASSWORD, password);
+    else localStorage.removeItem(CLAVE_PASSWORD);
+  } catch {
+    /* modo privado sin storage */
   }
 }
 
@@ -165,26 +213,16 @@ export function esSinConexion(e: unknown): e is SinConexion {
   return e instanceof SinConexion;
 }
 
-/**
- * El backend rechazó el usuario y la contraseña. Es DISTINTO de "el servidor
- * falló".
+/*
+ * Acá vivía `CredencialRechazada`, que distinguía "el backend dijo que no" de
+ * "el backend falló". La consumía solo el login biométrico, para decidir si
+ * borrar la contraseña del Keystore, y se fue con él el 31/07/2026.
  *
- * La diferencia importa para el acceso biométrico (`lib/biometria.ts`): un
- * rechazo significa que la contraseña guardada en el Keystore quedó vieja y hay
- * que borrarla, pero un 500 o un backend caído no dicen nada sobre ella. Si se
- * tratan igual, una caída del servidor le borra al usuario una credencial
- * perfectamente válida y lo obliga a reconfigurar la huella.
+ * Si algún día hay que reponerla —por ejemplo para invalidar la contraseña
+ * recordada cuando el usuario la cambia desde otro lado— el criterio era:
+ * `res.status >= 500` es fallo del servidor y NO invalida nada; cualquier otro
+ * rechazo sí. Confundirlos borra credenciales buenas cuando se cae Oracle.
  */
-export class CredencialRechazada extends Error {
-  constructor(mensaje: string) {
-    super(mensaje);
-    this.name = "CredencialRechazada";
-  }
-}
-
-export function esCredencialRechazada(e: unknown): e is CredencialRechazada {
-  return e instanceof CredencialRechazada;
-}
 
 /**
  * `fetch` envuelto. Solo rechaza por red, CORS o abort: un 4xx o un 5xx llegan
@@ -273,17 +311,7 @@ export async function login(usuario: string, password: string): Promise<Sesion> 
   const data = (json?.data ?? json) as Record<string, unknown>;
 
   if (!res.ok || json?.success === false || !data?.token) {
-    const mensaje = String(json?.message ?? "Usuario o contraseña incorrectos");
-
-    // Rechazo de credenciales vs. fallo del servidor. Solo el primero invalida
-    // la contraseña guardada en el Keystore — ver `CredencialRechazada`.
-    //
-    // El 5xx se excluye explícitamente porque ORDS puede devolver `success:
-    // false` con un mensaje cualquiera cuando el paquete PL/SQL no compila, y
-    // eso no es una contraseña equivocada.
-    const fallaDelServidor = res.status >= 500;
-    if (!fallaDelServidor) throw new CredencialRechazada(mensaje);
-    throw new Error(mensaje);
+    throw new Error(String(json?.message ?? "Usuario o contraseña incorrectos"));
   }
 
   const sesion = normalizar(data, usuario);
