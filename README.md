@@ -71,11 +71,13 @@ aplica CORS. No usa el proxy.
 No son bugs:
 
 - **El módulo de evaluaciones está solo en la web.** `mobile/` tiene login, inicio y cuenta.
-- **Biometría solo en `mobile/`** (`expo-local-authentication` + keystore del sistema). La
-  web y el APK de Capacitor no la tienen.
-- **La sesión no persiste.** Ni en la web ni en el APK: vive en memoria y hay que escribir
-  usuario y contraseña en cada arranque. No se guarda el token ni la contraseña en el
-  disco. `mobile/` sí persiste.
+- **Biometría en el APK y en `mobile/`, nunca en la web ni en la PWA.** El APK usa
+  `@capgo/capacitor-native-biometric` contra el Keystore de Android; `mobile/` usa
+  `expo-local-authentication`. En el navegador **no se ofrece**: sin Keystore, guardar la
+  contraseña sería `localStorage` en texto plano. Ver [`APK.md`](APK.md) → *Acceso biométrico*.
+- **El token nunca persiste**, en ningún frontend: vive en memoria y cada arranque pasa por
+  el login. Lo único que puede quedar guardado es **la contraseña, cifrada en el Keystore y
+  solo si el usuario activó la huella** — con ella se rehace el login, no se revive la sesión.
 - La web pasa por proxy; la app va directo.
 
 ## Pendientes

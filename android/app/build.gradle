@@ -18,8 +18,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Subir en CADA versión que se reparta: Android se niega a instalar
         // encima un versionCode menor o igual al ya instalado.
-        versionCode 5
-        versionName "1.4"
+        versionCode 6
+        versionName "1.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

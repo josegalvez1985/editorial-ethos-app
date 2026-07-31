@@ -28,18 +28,23 @@ export type Sesion = {
 /* -------------------------------------------------------------------------- */
 
 /**
- * La sesión vive SOLO en memoria: se pierde al recargar o al cerrar la app, y
- * hay que volver a escribir usuario y contraseña.
+ * La sesión vive SOLO en memoria: se pierde al recargar o al cerrar la app.
  *
  * Es una decisión deliberada, no una limitación. Antes el token se guardaba en
  * `localStorage`/`sessionStorage` y la contraseña en `localStorage` para poder
  * reentrar solo; eso se sacó entero. Consecuencias, para que nadie lo "arregle"
  * sin querer:
  *
- * - **Nada del login queda en el disco.** Ni token ni contraseña: un XSS o
- *   alguien con acceso al equipo no encuentra nada que robar.
+ * - **El token NUNCA se escribe en el disco**, en ningún frontend. Un XSS no
+ *   encuentra una sesión que robar.
  * - **Recargar la página cierra la sesión.** Es el costo, y es el esperado.
- * - En el APK pasa lo mismo: cerrar la app obliga a loguearse de nuevo.
+ *
+ * ÚNICA EXCEPCIÓN, y no toca nada de lo de arriba: dentro del APK el usuario
+ * puede activar el acceso con huella (`lib/biometria.ts`), que guarda **la
+ * contraseña** —no el token— en el Keystore de Android, cifrada por hardware. Con
+ * ella se rehace el `login()` de abajo, que valida contra el backend como
+ * siempre. En la web y en la PWA eso no existe: sin Keystore sería `localStorage`
+ * en texto plano, que es justamente lo que se sacó.
  *
  * Un `let` de módulo alcanza porque toda la app corre en un único contexto de JS.
  */
@@ -73,6 +78,11 @@ export function cerrarSesion() {
  * usuario que guarda "Recordar mi usuario" (ver abajo) — dato no sensible y
  * escrito por la versión actual a pedido explícito del usuario. Meterlo acá lo
  * borraría en cada arranque y el check no funcionaría nunca.
+ *
+ * Lo mismo vale para `ethos-biometria-activa` (`lib/biometria.ts`). Es la clave
+ * ACTUAL del acceso con huella y tampoco va acá: borrarla en cada arranque
+ * apagaría el botón de la huella siempre. La de esta lista es `ethos-biometry`,
+ * la de la versión vieja — parecidas a propósito de nada, pero distintas.
  *
  * Se llama una vez al arrancar. Se puede eliminar cuando no queden instalaciones
  * viejas dando vueltas.
@@ -153,6 +163,27 @@ export class SinConexion extends Error {
 
 export function esSinConexion(e: unknown): e is SinConexion {
   return e instanceof SinConexion;
+}
+
+/**
+ * El backend rechazó el usuario y la contraseña. Es DISTINTO de "el servidor
+ * falló".
+ *
+ * La diferencia importa para el acceso biométrico (`lib/biometria.ts`): un
+ * rechazo significa que la contraseña guardada en el Keystore quedó vieja y hay
+ * que borrarla, pero un 500 o un backend caído no dicen nada sobre ella. Si se
+ * tratan igual, una caída del servidor le borra al usuario una credencial
+ * perfectamente válida y lo obliga a reconfigurar la huella.
+ */
+export class CredencialRechazada extends Error {
+  constructor(mensaje: string) {
+    super(mensaje);
+    this.name = "CredencialRechazada";
+  }
+}
+
+export function esCredencialRechazada(e: unknown): e is CredencialRechazada {
+  return e instanceof CredencialRechazada;
 }
 
 /**
@@ -242,7 +273,17 @@ export async function login(usuario: string, password: string): Promise<Sesion> 
   const data = (json?.data ?? json) as Record<string, unknown>;
 
   if (!res.ok || json?.success === false || !data?.token) {
-    throw new Error(String(json?.message ?? "Usuario o contraseña incorrectos"));
+    const mensaje = String(json?.message ?? "Usuario o contraseña incorrectos");
+
+    // Rechazo de credenciales vs. fallo del servidor. Solo el primero invalida
+    // la contraseña guardada en el Keystore — ver `CredencialRechazada`.
+    //
+    // El 5xx se excluye explícitamente porque ORDS puede devolver `success:
+    // false` con un mensaje cualquiera cuando el paquete PL/SQL no compila, y
+    // eso no es una contraseña equivocada.
+    const fallaDelServidor = res.status >= 500;
+    if (!fallaDelServidor) throw new CredencialRechazada(mensaje);
+    throw new Error(mensaje);
   }
 
   const sesion = normalizar(data, usuario);

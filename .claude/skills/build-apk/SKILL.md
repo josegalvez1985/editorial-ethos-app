@@ -31,8 +31,13 @@ Eso corre `scripts/build-apk.ps1`, que hace los cinco pasos en orden (Java 21 �
 `cap sync` → Gradle → reporte) y **corta en el primero que falla**. No repitas los pasos a mano
 salvo que estés diagnosticando algo.
 
-**Corre el build en background** (`run_in_background: true`): tarda ~4 minutos con todo cacheado.
-Esperá la notificación, no hagas polling.
+**En primer plano y SIN PIPES.** `npm run apk` crudo, con `timeout: 600000`. Nada de
+`run_in_background`, nada de `| grep` ni `| tail` para acortar el log: el pipe lo retiene en
+buffer, no se ve una sola línea mientras corre, y si el build se pasa del timeout el harness lo
+manda a segundo plano con el archivo de salida **vacío**. Pasó el 31/07/2026 y hubo que matar el
+proceso y correr `android\gradlew --stop` para destrabar el daemon antes de reintentar.
+
+Un build limpio tarda ~1,5 min de Gradle más el build web.
 
 ## 2. Todo lo que hace falta YA ESTÁ INSTALADO. No descargues nada.
 
@@ -85,8 +90,13 @@ build no terminó** — no digas que está listo.
 
 Dale al usuario:
 
-- La ruta del APK: `android\app\build\outputs\apk\debug\app-debug.apk`, y que el script ya lo
-  copió a `public\app.apk` (nombre fijo, sobrescribe el anterior).
+- La ruta del APK, que es de donde Jose lo copia a mano:
+  - release: `android\app\build\outputs\apk\release\app-release.apk`
+  - debug: `android\app\build\outputs\apk\debug\app-debug.apk`
+
+  **No lo copies a `public\app.apk` ni menciones esa ruta.** Jose pidió sacar esa copia
+  (31/07/2026): el sitio ya no ofrece la descarga, así que solo dejaba un binario viejo en
+  `public/` que el build siguiente volvía a empaquetar adentro del APK.
 - Cómo instalarlo: copiarlo al teléfono, habilitar "instalar apps de fuentes desconocidas" y
   abrirlo. El debug ya viene firmado con la debug key.
 - Si hubo cambios de front en esta sesión, decí que ese APK ya los incluye — y que un cambio

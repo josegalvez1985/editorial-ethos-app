@@ -32,4 +32,17 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+        Acceso con huella (src/lib/biometria.ts). Va acá y NO lo trae el plugin:
+        el AndroidManifest de @capgo/capacitor-native-biometric solo declara su
+        AuthActivity, así que sin esta línea el BiometricPrompt falla en runtime
+        aunque el celular tenga lector y todo el código JS esté bien.
+
+        Es un permiso normal, no peligroso: no genera diálogo de concesión.
+        USE_FINGERPRINT es el equivalente para Android 8 y anteriores, donde
+        USE_BIOMETRIC todavía no existía.
+    -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
 </manifest>

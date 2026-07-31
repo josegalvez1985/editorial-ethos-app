@@ -127,9 +127,20 @@ Los íconos de la marca ya están hechos en `mobile/assets/`. Ver [`APK.md`](APK
 La firma **ya está resuelta**: `assembleRelease` firma solo con `ethos-release.jks` (ver
 [`APK.md`](APK.md) → *Firma*).
 
-Lo que queda: `android/app/build.gradle` sigue en `versionCode 1` / `versionName "1.0"`. Android
-se niega a instalar encima un `versionCode` menor o igual, así que hay que subirlo en cada
-versión que se reparta.
+Lo que queda: subir `versionCode` / `versionName` en `android/app/build.gradle` **en cada
+versión que se reparta** — Android se niega a instalar encima un `versionCode` menor o igual.
+Hoy va en `6` / `"1.5"` (la del acceso biométrico).
+
+### ~~15b. Acceso biométrico en el APK~~ ✅ HECHO (31/07/2026)
+
+La huella entra sin escribir la contraseña. Se activa desde **Mi cuenta → Seguridad** y la
+contraseña queda en el **Keystore de Android**, cifrada por hardware y detrás de un
+`BiometricPrompt` atado a un `CryptoObject` (cada lectura pide huella de nuevo).
+
+**Solo en el APK.** En la web y en la PWA no se ofrece: sin Keystore, guardar la contraseña
+sería `localStorage` en texto plano. El token sigue sin escribirse en el disco en ningún
+frontend. Ver [`src/lib/biometria.ts`](src/lib/biometria.ts) y [`APK.md`](APK.md) →
+*Acceso biométrico*.
 
 ### 11. La escala está cableada en el front
 

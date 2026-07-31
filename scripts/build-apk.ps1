@@ -125,18 +125,17 @@ foreach ($c in $candidatos) {
 }
 if (-not $apk) { Fallar "Gradle terminó bien pero no apareció el APK en $($candidatos -join ' ni ')" }
 
-# --- 6. Publicar en public\app.apk -----------------------------------------
-# Nombre fijo y -Force: siempre se reemplaza el APK viejo por el nuevo, no se
-# acumulan versiones en el repo. El .gitignore de la raíz no excluye *.apk, así
-# que este archivo se commitea.
-$publicado = Join-Path $raiz "public\app.apk"
-Copy-Item $apk $publicado -Force
-
+# --- 6. Reporte -------------------------------------------------------------
+# El APK queda SOLO donde lo deja Gradle: se copia a mano desde ahí.
+#
+# Antes esto lo duplicaba en `public\app.apk`. Se sacó a pedido de Jose: el sitio
+# ya no ofrece la descarga (`DESCARGA_APK_URL` está en "", ver DESPLIEGUE.md), así
+# que esa copia no la servía nadie y solo dejaba un binario viejo en `public/`
+# que el build web volvía a empaquetar dentro del APK siguiente.
 $mb = [math]::Round((Get-Item $apk).Length / 1MB, 1)
 Write-Host ""
 Write-Host "=== APK listo ($mb MB) ===" -ForegroundColor $Ok
 Write-Host $apk -ForegroundColor $Ok
-Write-Host "Copiado a public\app.apk" -ForegroundColor $Ok
 
 # Con qué clave quedó firmado. Importa: un APK firmado con la debug key lo
 # bloquea Play Protect al instalarlo ("Se bloqueó la app para proteger tu

@@ -249,14 +249,24 @@ powershell -File scripts\build-static.ps1 -apiUrl "https://oracleapex.com/ords/o
 
 ## El APK ya NO se publica con el sitio
 
-`npm run apk` sigue dejando el resultado en `public/app.apk`, pero ese archivo **no se commitea**:
-`*.apk` está en [`.gitignore`](.gitignore). Son ~4 MB por build y git los guardaría para siempre
-—un binario no se comprime entre versiones como el texto—, así que cada release engordaba el
-historial sin vuelta atrás.
+`npm run apk` deja el resultado **solo** donde lo genera Gradle:
 
-Consecuencia: **el APK se reparte a mano**, fuera del repo. Y como el sitio ya no tiene el archivo,
-el ítem "Descargar app para Android" del login está **apagado**: lo controla la constante
-`DESCARGA_APK_URL` en [`src/routes/index.tsx`](src/routes/index.tsx), hoy en `""`.
+```
+android\app\build\outputs\apk\release\app-release.apk
+```
+
+Ya **no** se copia a `public/app.apk`. Esa copia existía para que el sitio sirviera la descarga, y
+como el sitio ya no la ofrece no la usaba nadie: lo único que lograba era dejar un binario viejo en
+`public/`, que el build web volvía a empaquetar **dentro** del APK siguiente. De ahí el
+`Remove-Item dist\client\app.apk` que el script todavía hace por las dudas.
+
+De todos modos el archivo tampoco se commiteaba: `*.apk` está en [`.gitignore`](.gitignore). Son
+varios MB por build y git los guardaría para siempre —un binario no se comprime entre versiones como
+el texto—, así que cada release engordaba el historial sin vuelta atrás.
+
+Consecuencia: **el APK se reparte a mano**, copiándolo desde la carpeta de Gradle. Y como el sitio no
+tiene el archivo, el ítem "Descargar app para Android" del login está **apagado**: lo controla la
+constante `DESCARGA_APK_URL` en [`src/routes/index.tsx`](src/routes/index.tsx), hoy en `""`.
 
 Para volver a ofrecerlo desde el sitio hace falta darle una URL estable —un GitHub Release es lo
 natural, porque no toca el historial— y poner esa URL en `DESCARGA_APK_URL`. El ítem reaparece

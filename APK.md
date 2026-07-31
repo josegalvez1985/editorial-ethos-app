@@ -154,8 +154,10 @@ android\app\build\outputs\apk\release\app-release.apk
 > Si el archivo se llama `app-release-**unsigned**.apk`, Gradle **no encontró la firma**: falta
 > `android\keystore.properties`. Ese APK no se instala. Ver *Firma* más abajo.
 
-El script además lo copia a `public\app.apk` con nombre fijo. Ese archivo **no se commitea**
-(`*.apk` está en `.gitignore`): son ~4 MB por build y git los guardaría para siempre.
+**El script no lo copia a ningún otro lado**: se reparte desde ahí. Antes lo duplicaba en
+`public\app.apk` para que el sitio ofreciera la descarga, pero el sitio ya no la ofrece
+(`DESCARGA_APK_URL` está en `""`), así que esa copia solo dejaba un binario viejo en `public/`
+que el build web volvía a empaquetar dentro del APK siguiente.
 
 Para abrir la carpeta directamente al terminar:
 
@@ -235,7 +237,7 @@ Verificar con qué clave quedó firmado un APK:
 
 ```powershell
 $bt = "C:\Users\josej\Android\Sdk\build-tools\36.1.0"
-& "$bt\apksigner.bat" verify --print-certs --verbose public\app.apk
+& "$bt\apksigner.bat" verify --print-certs --verbose android\app\build\outputs\apk\release\app-release.apk
 ```
 
 Lo que hay que ver:
@@ -257,7 +259,8 @@ Tiene dos causas distintas, y conviene no confundirlas:
 2. **Clave propia sin reputación** → **no se arregla compilando.** Google no conoce el
    certificado, y en apps repartidas fuera de Play eso genera el aviso igual. Salidas:
    - Tocar **"Más detalles" → "Instalar de todos modos"**.
-   - Instalar por USB, que saltea Play Protect: `adb install -r public\app.apk`.
+   - Instalar por USB, que saltea Play Protect:
+     `adb install -r android\app\build\outputs\apk\release\app-release.apk`.
    - Publicar en Play Store, donde Google re-firma con su propia clave y el aviso desaparece.
      Eso requiere un `.aab` (`.\gradlew bundleRelease`), no un APK.
 
@@ -265,15 +268,58 @@ El `signingConfig` fuerza **v1 + v2 + v3**. El v3 importa: es el esquema que le 
 verificar la identidad de la clave, y sin él la firma queda como no verificable, que es una de las
 señales que empujan a Play Protect a bloquear. AGP por defecto solo emite v2.
 
-## No hay biometría ni sesión persistente
+## Acceso biométrico — SOLO en el APK
 
-**Se quitaron las dos, a propósito.** La app pide usuario y contraseña en cada
-arranque: la sesión vive solo en memoria y no queda nada escrito en el disco —ni
-token ni contraseña. Ver [`src/lib/api.ts`](src/lib/api.ts).
+**Implementado.** El usuario lo activa desde **Mi cuenta → Seguridad** y a partir de
+ahí entra con la huella, sin escribir la contraseña. Código en
+[`src/lib/biometria.ts`](src/lib/biometria.ts).
 
-Si algún día se reimplanta la biometría, estas son las tres causas que hicieron
-perder un día entero. Ninguna es un bug del código y las tres se ven igual desde
-afuera —"el botón no aparece"—, así que conviene descartarlas **antes** de tocar nada:
+**No existe en la web ni en la PWA**, y eso no es una limitación pendiente: es la
+condición para que sea aceptable. En un navegador no hay Keystore, así que guardar la
+contraseña ahí sería `localStorage` en texto plano — exactamente lo que se sacó de
+este proyecto. `enApp()` corta en seco si no hay puente nativo de Capacitor, así que
+en el navegador el switch no se pinta y el botón del login no aparece.
+
+### Qué se guarda y qué no
+
+| | Dónde vive | Sobrevive a cerrar la app |
+| --- | --- | --- |
+| Token de sesión | Memoria, nada más | **No** — sigue igual que siempre |
+| Contraseña | Keystore de Android, cifrada por hardware | Sí, **solo si el usuario activó la huella** |
+| Usuario | `localStorage` (dato no sensible) | Sí, con "Recordar mi usuario" |
+
+La huella **no restaura la sesión**: destapa la contraseña y con ella se rehace el
+`POST auth/login` contra el backend, que valida como siempre. Un token vencido no se
+revive por tener huella.
+
+### El modo de guardado importa
+
+`setCredentials({ accessControl: BIOMETRY_ANY })` + `getSecureCredentials()`. Eso ata
+la clave del Keystore a un `CryptoObject`: **cada lectura exige un `BiometricPrompt`
+vivo**, y ningún otro punto del código de la app puede leer la contraseña sin él.
+`authValidityDuration` queda en 0 (el default) justamente para eso — cualquier valor
+mayor abre una ventana en la que el secreto se puede leer en silencio.
+
+Se usa `BIOMETRY_ANY` y no `BIOMETRY_CURRENT_SET` porque este último invalida la
+credencial cuando el usuario registra una huella nueva: agrega un dedo y el acceso
+deja de andar sin ninguna explicación.
+
+`isAvailable({ useFallback: false })`: el PIN del equipo **no** alcanza para destapar
+la contraseña. Si se aceptara, cualquiera que sepa el PIN entra a la cuenta, que es
+justo lo que la huella tiene que evitar.
+
+### El permiso va en el manifest de la app
+
+`USE_BIOMETRIC` **no lo trae el plugin** — su `AndroidManifest.xml` solo declara la
+`AuthActivity`. Está agregado a mano en
+[`android/app/src/main/AndroidManifest.xml`](android/app/src/main/AndroidManifest.xml).
+Sin esa línea el `BiometricPrompt` falla en runtime aunque el código JS esté perfecto
+y el celular tenga lector.
+
+### Las tres causas que hicieron perder un día
+
+Ninguna es un bug del código y las tres se ven igual desde afuera —"el botón no
+aparece"—, así que conviene descartarlas **antes** de tocar nada:
 
 **1. Sin bloqueo de pantalla NO hay biometría.** La más común y la menos evidente. El
 Keystore de Android exige que el dispositivo tenga **PIN, patrón o contraseña** para
@@ -281,17 +327,18 @@ poder cifrar secretos. Sin eso `isAvailable()` devuelve `false` aunque el celula
 tenga lector de huellas. Es una restricción del sistema operativo, no algo que se
 pueda sortear desde la app: hacen falta bloqueo de pantalla **y** al menos una huella
 registrada. Un celular sin bloqueo instala el APK perfecto y todo lo demás funciona;
-solo la biometría queda muerta, sin ningún mensaje que lo explique.
+solo la biometría queda muerta.
 
-Si se reimplanta, que la comprobación devuelva el **motivo** y no un booleano: el
-campo `deviceIsSecure` del plugin distingue "poné un PIN" de "registrá una huella", y
-esa diferencia es la que el usuario necesita para poder resolverlo.
+Por eso `disponible()` devuelve el **motivo** y no un booleano: `deviceIsSecure`
+distingue "poné un PIN" de "registrá una huella", y el switch de Mi cuenta muestra esa
+diferencia, que es la que el usuario necesita para poder resolverlo.
 
 **2. Guardar la contraseña es el precio.** El token dura 6 h y no se renueva, así que
 para reentrar sin escribir nada hay que repetir el `POST auth/login` — y para eso hay
 que guardar la contraseña en algún lado. En el navegador eso significa `localStorage`
-en texto plano. La combinación que evita eso es token en memoria + contraseña en el
-Keystore detrás de la huella, pero **solo funciona en el APK**.
+en texto plano. La combinación que lo evita es token en memoria + contraseña en el
+Keystore detrás de la huella, y **solo funciona en el APK**: es exactamente lo que
+está implementado.
 
 ### 2. "Fuentes desconocidas" es por app instaladora, no por APK
 
@@ -344,9 +391,9 @@ Este APK y la app Expo son **dos implementaciones distintas** del mismo producto
 se genera es este, el de la web. Lo que eso implica:
 
 - **A favor:** trae el módulo de evaluaciones completo. La app Expo solo tiene login, inicio y
-  cuenta.
-- **En contra:** se pierde la biometría real (`expo-local-authentication` + keystore del sistema).
-  En la WebView, el botón de biometría del login web solo avisa que no está disponible.
+  cuenta. Y desde la v1.5 **también tiene biometría real**, vía
+  `@capgo/capacitor-native-biometric` contra el mismo Keystore del sistema que usa Expo.
+- **En contra:** ya casi nada. La diferencia que queda es de implementación, no de capacidades.
 
 `mobile/` sigue en el repo y se puede compilar a mano con EAS (`cd mobile && npm run build:apk`),
 pero ya no es lo que responde a "generá el apk".
