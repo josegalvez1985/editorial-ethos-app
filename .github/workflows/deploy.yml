@@ -47,13 +47,15 @@ jobs:
     # clon nuevo no tendría. Para cambiar de dominio se edita esta línea; para
     # apagarlo y volver al github.io, se deja en "".
     env:
-      # VACÍO = sin dominio propio: el sitio se sirve en el github.io y cuelga de
-      # /<repo>/, así que la base del build sale /editorial-ethos-app/ y NO se
-      # escribe ningún CNAME en el artefacto.
+      # Con dominio: el sitio se sirve en él, cuelga de la RAÍZ (base "/") y el
+      # artefacto lleva el CNAME que se lo declara a Pages. Vacío ("") vuelve al
+      # github.io, donde el sitio cuelga de /<repo>/ y no va ningún CNAME.
       #
-      # Poner acá un dominio NO alcanza para prenderlo: hay que apuntar el DNS a
-      # GitHub y cargar el Custom domain en Settings → Pages. Ver DESPLIEGUE.md.
-      CUSTOM_DOMAIN: ""
+      # Este valor NO alcanza por sí solo: tiene que coincidir con `public/CNAME`
+      # (el workflow falla si no) y el DNS del dominio tiene que apuntar a GitHub.
+      # Prenderlo con el DNS todavía en el registrador es lo que armó el bucle de
+      # redirecciones que dejó el sitio caído. Ver DESPLIEGUE.md.
+      CUSTOM_DOMAIN: "www.ethospy.online"
     steps:
       - uses: actions/checkout@v4
 

@@ -3,18 +3,17 @@
 El sitio se publica desde GitHub Pages con el workflow
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), en cada push a `main`.
 
-**El sitio vive en <https://josegalvez1985.github.io/editorial-ethos-app/>.**
+**El sitio vive en <https://www.ethospy.online/>**: el dominio **sirve** el sitio, no redirige a
+otro lado, así que la URL que queda a la vista mientras se navega es siempre la del dominio. El
+`github.io` sigue existiendo, pero responde un `301` hacia el dominio.
 
-**El dominio propio (`www.ethospy.online`) está APAGADO.** Se intentó usarlo y no llegó a
-funcionar: el DNS de Hostinger nunca apuntó a GitHub —seguía resolviendo a `2.57.91.91`, un
-servidor de Hostinger— y encima había un redirect hacia el `github.io`. Como Pages, al tener
-dominio propio configurado, responde con un `301` en la dirección contraria, los dos se apuntaban
-entre sí y **no respondía ninguna de las dos URLs**. Ver
+El DNS **apunta a GitHub** (`www` → `CNAME josegalvez1985.github.io`, apex → los cuatro `A` de
+Pages). Eso es lo que hace falta y lo que faltó la primera vez: mientras el dominio siguió
+resolviendo a Hostinger con un redirect hacia el `github.io`, ese redirect y el `301` de Pages se
+apuntaban entre sí y **no respondía ninguna de las dos URLs**. Ver
 [El bucle de redirecciones](#el-bucle-de-redirecciones).
 
-Volver al `github.io` saca a Hostinger de la ecuación: sin dominio propio no hay CNAME, Pages no
-redirige a ningún lado y el sitio se sirve directo. Para volver a prenderlo:
-[Volver a prender el dominio propio](#volver-a-prender-el-dominio-propio).
+Si hay que apagarlo y volver al `github.io`: [Apagar el dominio propio](#apagar-el-dominio-propio).
 
 ---
 
@@ -50,42 +49,22 @@ build SSR por defecto. Ahí el proxy vuelve a correr y no hace falta nada de est
 
 No elijas "Deploy from a branch": el workflow publica un artefacto, no una rama `gh-pages`.
 
-### 2. Sin dominio propio: el sitio cuelga de /editorial-ethos-app/
+### 2. El dominio www.ethospy.online
 
-**Es la configuración actual y no hay nada que tocar** — `CUSTOM_DOMAIN: ""` en
-[`deploy.yml`](.github/workflows/deploy.yml) y no existe ningún `CNAME` en el repo.
+**Es la configuración actual.** El sitio **se sirve en el dominio**: eso es lo que hace que la URL
+a la vista sea `www.ethospy.online/evaluaciones` y no la de `github.io`, en la primera carga y en
+toda la navegación posterior.
 
-Lo único que hay que entender es de dónde **cuelga** el sitio, porque es lo que rompe todo si no
-coincide. El Pages de proyecto publica en `https://<usuario>.github.io/<repo>/`, así que la base
-del build tiene que ser `/editorial-ethos-app/`. El workflow la calcula solo a partir de
-`CUSTOM_DOMAIN` y la pasa como `BASE_PATH`.
+**Un redirect no sirve para esto.** Un `301` cambia la barra de direcciones por definición: se
+entra por el dominio y se termina en la URL de destino. La única forma de que el dominio se quede
+es que Pages responda *en* ese dominio, y para eso el DNS tiene que apuntar a GitHub.
 
-**Si la base no coincide con la URL, da 404 en bloque y la página sale en blanco.** Un build hecho
-para la raíz y servido en `/editorial-ethos-app/` pide `josegalvez1985.github.io/assets/…` en vez
-de `josegalvez1985.github.io/editorial-ethos-app/assets/…`. Se reconoce por el error del manifest
-en la consola:
+Son tres piezas y **el orden importa** — invertirlo es lo que armó el bucle la primera vez:
 
-```
-Manifest fetch from https://josegalvez1985.github.io/site.webmanifest failed, code 404
-                                                    ↑ sin /editorial-ethos-app/ = base equivocada
-```
-
-Para comprobar que quedó bien:
-
-```powershell
-curl.exe -s -o NUL -D - https://josegalvez1985.github.io/editorial-ethos-app/
-#  200 (Server: GitHub.com)  → listo, sin redirecciones de por medio.
-#  301 → www.ethospy.online  → quedó el Custom domain cargado en Settings → Pages. Vaciarlo.
-```
-
-#### Volver a prender el dominio propio
-
-Es la parte que ya falló una vez, así que **el orden importa**: primero el DNS, después el repo.
-
-1. **DNS**, en Hostinger (hPanel → Dominios → DNS). Dos cosas, y las dos hacen falta: **borrar
-   cualquier redirección** (*Forward Domain* / *301 Redirect*) y **apuntar los registros a
-   GitHub**. Apuntaba a Hostinger (`ethospy.online` → `A 2.57.91.91`, `www` → `CNAME
-   ethospy.online`), que es justamente lo que hay que reemplazar:
+1. **DNS**, en Hostinger (hPanel → Dominios → DNS). Dos cosas, y las dos hacen falta: que **no
+   exista ninguna redirección** (*Forward Domain* / *301 Redirect*) y que los registros apunten a
+   GitHub. Antes apuntaba a Hostinger (`ethospy.online` → `A 2.57.91.91`, `www` → `CNAME
+   ethospy.online`); hoy está así:
 
    | Tipo | Nombre | Valor |
    | --- | --- | --- |
@@ -98,33 +77,50 @@ Es la parte que ya falló una vez, así que **el orden importa**: primero el DNS
    Los cuatro registros `A` del apex son los que dejan que `ethospy.online` sin `www` funcione:
    Pages lo redirige solo hacia `www`, que es el dominio configurado.
 
-   **Verificalo ANTES de seguir** —puede tardar de minutos a horas en propagar. Borrar el redirect
+   **Verificalo ANTES de tocar el repo** —tarda de minutos a horas en propagar. Borrar el redirect
    no alcanza: mientras el `A` siga en `2.57.91.91`, contesta Hostinger:
 
    ```powershell
-   curl.exe -s -o NUL -D - https://www.ethospy.online/
-   #  Server: GitHub.com  → el DNS ya apunta a GitHub (un 404 acá es normal todavía).
-   #  Server: hcdn        → sigue contestando Hostinger. NO sigas: falta el DNS o falta propagar.
+   nslookup -type=A www.ethospy.online 8.8.8.8
+   #  185.199.10x.153 → el DNS ya apunta a GitHub.
+   #  2.57.91.91      → sigue en Hostinger. NO sigas: falta el cambio o falta propagar.
    ```
 
-2. **Repo**: poner el dominio en `CUSTOM_DOMAIN` ([`deploy.yml`](.github/workflows/deploy.yml)) y
-   crear [`public/CNAME`](public/) con el dominio adentro, sin protocolo y en una sola línea. Vive
-   en `public/` —**no en la raíz**— porque de ahí lo copia vite al artefacto; en la raíz vite no lo
-   mira. El workflow falla a propósito si los dos no coinciden.
+2. **Repo**: el dominio va en `CUSTOM_DOMAIN` ([`deploy.yml`](.github/workflows/deploy.yml)) **y**
+   en [`public/CNAME`](public/CNAME), sin protocolo y en una sola línea. El `CNAME` vive en
+   `public/` —**no en la raíz**— porque de ahí lo copia vite al artefacto; en la raíz vite no lo
+   mira. El workflow falla a propósito si uno está y el otro no.
 
-   Ese build compila con la base en `/` en vez de `/editorial-ethos-app/`: mismo problema que
-   arriba, al revés.
+   Ese build compila con la base en `/` en vez de `/editorial-ethos-app/`. **Si la base no coincide
+   con la URL donde se sirve, da 404 en bloque y la página sale en blanco.** Se reconoce por el
+   error del manifest en la consola:
+
+   ```
+   Manifest fetch from https://.../site.webmanifest failed, code 404
+   ```
 
 3. **Settings → Pages**: el `CNAME` del artefacto deja el *Custom domain* puesto solo. Comprobá que
-   diga el dominio y marcá **Enforce HTTPS** cuando se habilite (tarda unos minutos mientras GitHub
-   emite el certificado; hasta entonces aparece en gris).
+   diga `www.ethospy.online` y **marcá Enforce HTTPS** cuando se habilite (tarda unos minutos
+   mientras GitHub emite el certificado; hasta entonces aparece en gris). Ese tilde **no es
+   opcional**: sin él Pages redirige a `http://` sin la `s` y el navegador bloquea la carga por
+   mezclar protocolos.
+
+Para comprobar que quedó bien:
+
+```powershell
+curl.exe -s -o NUL -D - https://www.ethospy.online/
+#  200 (Server: GitHub.com)  → listo, el dominio sirve el sitio.
+
+curl.exe -s -o NUL -D - https://josegalvez1985.github.io/editorial-ethos-app/
+#  301 → https://www.ethospy.online/  → correcto: ahora el github.io es el que redirige.
+```
 
 #### El bucle de redirecciones
 
-**Esto es lo que pasó y por qué el dominio está apagado.** Con dominio propio configurado, Pages
-responde `301` en `github.io` mandando al dominio. Si del lado de Hostinger sigue viva la
-redirección que va en la dirección contraria, los dos se apuntan entre sí y **no responde ninguna
-de las dos URLs** — ni el dominio ni el `github.io`:
+**Esto es lo que pasó la primera vez que se intentó prender el dominio.** Con dominio propio
+configurado, Pages responde `301` en `github.io` mandando al dominio. Si del lado de Hostinger
+sigue viva la redirección que va en la dirección contraria, los dos se apuntan entre sí y **no
+responde ninguna de las dos URLs** — ni el dominio ni el `github.io`:
 
 ```
 www.ethospy.online/loquesea
@@ -143,13 +139,16 @@ eso primero se arregla el DNS y recién después se prende `CUSTOM_DOMAIN`.
 
 #### Apagar el dominio propio
 
-Tres cosas, y las tres hacen falta. Las dos primeras **ya están hechas**:
+Si alguna vez hay que volver al `github.io`, son tres cosas y **las tres hacen falta**:
 
-1. ✅ `CUSTOM_DOMAIN: ""` en [`deploy.yml`](.github/workflows/deploy.yml).
-2. ✅ Borrado `public/CNAME` del repo.
-3. ⚠️ **Vaciar a mano el Custom domain** en Settings → Pages. Que el artefacto deje de traer el
+1. `CUSTOM_DOMAIN: ""` en [`deploy.yml`](.github/workflows/deploy.yml).
+2. Borrar [`public/CNAME`](public/CNAME) del repo.
+3. **Vaciar a mano el Custom domain** en Settings → Pages. Que el artefacto deje de traer el
    `CNAME` **no borra el dominio ya guardado**: GitHub lo recuerda y sigue redirigiendo. Ningún
-   archivo del repo controla esto.
+   archivo del repo controla esto, y es el paso que más fácil se olvida.
+
+El build vuelve a colgar de `/editorial-ethos-app/`, así que el sitio queda en
+`https://josegalvez1985.github.io/editorial-ethos-app/`.
 
 ### 3. Opcional: apuntar a otro ORDS
 
