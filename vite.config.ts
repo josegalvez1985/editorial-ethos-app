@@ -51,6 +51,17 @@ export default defineConfig({
       // nitro/vite builds from this
       server: { entry: "server" },
       ...(staticBuild && { spa: { enabled: true } }),
+      // El prerender tiene que saber de dónde cuelga el router, o pide "/" y
+      // recibe un 404: `src/router.tsx` usa `basepath: BASE_URL`, así que con el
+      // sitio en /<repo>/ —GitHub Pages sin dominio propio— la raíz no matchea
+      // ninguna ruta y el build MUERE con "Failed to fetch /: Not Found", sin
+      // generar el shell.
+      //
+      // Hay que declararlo acá aparte de `base`: el plugin lee su propia config
+      // (`startConfig.router.basepath`), no la `base` de vite, y resuelve contra
+      // eso la ruta que crawlea. Con base "/" el valor es "/" y no cambia nada
+      // en dev, en el APK ni con dominio propio.
+      router: { basepath: base },
     }),
     viteReact(),
   ],

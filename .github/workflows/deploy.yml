@@ -1,14 +1,21 @@
 name: Desplegar a GitHub Pages
 
-# El sitio se sirve EN https://www.ethospy.online/ — la URL del dominio es la que
-# queda a la vista, y Pages redirige el github.io hacia ella.
+# El sitio se sirve EN https://josegalvez1985.github.io/editorial-ethos-app/.
 #
-# El dominio y la URL del backend están PUESTOS EN ESTE ARCHIVO, no en repository
-# variables, para que el repo se despliegue solo: si dependieran de configuración
-# invisible en Settings, un clon nuevo compilaría un sitio roto sin avisar.
-# Ninguno de los dos es secreto —los dos terminan a la vista en el sitio.
+# EL DOMINIO PROPIO ESTÁ APAGADO a propósito (`CUSTOM_DOMAIN: ""`). Se usaba
+# www.ethospy.online, pero el DNS de Hostinger nunca llegó a apuntar a GitHub:
+# quedó un redirect hacia el github.io que chocaba con el 301 que Pages manda
+# hacia el dominio, y los dos se apuntaban entre sí — no respondía NINGUNA de las
+# dos URLs. Con el dominio apagado, el github.io sirve el sitio directo y no hay
+# redirect de nadie.
 #
-# El DNS tiene que apuntar a GitHub, no redirigir: DESPLIEGUE.md
+# Para volver a prenderlo hay que resolver PRIMERO el DNS: ver DESPLIEGUE.md →
+# "Volver a prender el dominio propio". No alcanza con editar este archivo.
+#
+# La URL del backend está PUESTA EN ESTE ARCHIVO, no en repository variables,
+# para que el repo se despliegue solo: si dependiera de configuración invisible
+# en Settings, un clon nuevo compilaría un sitio roto sin avisar. No es secreta
+# —termina a la vista en el JS del sitio.
 
 on:
   push:
@@ -40,7 +47,13 @@ jobs:
     # clon nuevo no tendría. Para cambiar de dominio se edita esta línea; para
     # apagarlo y volver al github.io, se deja en "".
     env:
-      CUSTOM_DOMAIN: "www.ethospy.online"
+      # VACÍO = sin dominio propio: el sitio se sirve en el github.io y cuelga de
+      # /<repo>/, así que la base del build sale /editorial-ethos-app/ y NO se
+      # escribe ningún CNAME en el artefacto.
+      #
+      # Poner acá un dominio NO alcanza para prenderlo: hay que apuntar el DNS a
+      # GitHub y cargar el Custom domain en Settings → Pages. Ver DESPLIEGUE.md.
+      CUSTOM_DOMAIN: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -119,29 +132,25 @@ jobs:
           # Sin esto Jekyll ignora todo lo que empieza con "_" y se come el shell.
           touch dist/client/.nojekyll
 
-          # El CNAME es lo que hace que la URL del dominio sea la que queda a la
-          # vista: con él, Pages sirve el sitio en ese dominio y manda un 301
-          # desde el github.io hacia allá. Sin él pasa lo contrario.
+          # El CNAME es lo que decide QUÉ URL sirve el sitio: con él, Pages sirve
+          # en el dominio y manda un 301 desde el github.io hacia allá. Sin él,
+          # el github.io sirve el sitio directo.
           #
-          # Vive en `public/CNAME` y de ahí lo copia vite, así que acá NO se
-          # escribe: una sola fuente. Antes estaba en la raíz del repo —donde
-          # vite no lo mira— y el workflow lo generaba aparte; eran dos sitios
-          # para el mismo dato y era fácil cambiar uno y olvidar el otro.
-          #
-          # Solo se borra si se apagó el dominio propio, para que el artefacto no
-          # lo lleve: si viaja igual, Pages reactiva el dominio.
-          #
-          # OJO con el DNS: el dominio tiene que APUNTAR a GitHub. Si además hay
-          # un redirect del lado del registrador apuntando de vuelta al github.io
-          # (lo que hacía Hostinger), los dos 301 se apuntan entre sí y queda un
-          # bucle en el que no responde ninguna de las dos URLs.
+          # HOY EL DOMINIO ESTÁ APAGADO, así que el archivo NO debe existir. Se
+          # borra por las dudas: un CNAME que se cuele en el artefacto le
+          # reactiva el dominio propio a Pages y vuelve el bucle de redirecciones.
+          # `rm -f` no falla si no está, que es el caso normal.
           if [ -z "$CUSTOM_DOMAIN" ]; then
             rm -f dist/client/CNAME
           fi
 
-          # El CNAME tiene que estar SÍ o SÍ en el artefacto: sin él Pages sirve
-          # en github.io y el dominio queda muerto. Es el error más difícil de
-          # notar, porque el build sale verde igual.
+          # Las dos comprobaciones son la misma idea en los dos sentidos: que el
+          # artefacto coincida con lo que dice CUSTOM_DOMAIN. Sin esto el build
+          # sale verde igual y el error recién se ve en el navegador.
+          if [ -z "$CUSTOM_DOMAIN" ] && [ -f dist/client/CNAME ]; then
+            echo "ERROR: sobra dist/client/CNAME con el dominio apagado." >&2
+            exit 1
+          fi
           if [ -n "$CUSTOM_DOMAIN" ] && [ ! -f dist/client/CNAME ]; then
             echo "ERROR: falta dist/client/CNAME. ¿Se borró public/CNAME?" >&2
             exit 1

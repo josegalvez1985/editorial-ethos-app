@@ -20,7 +20,7 @@ param(
     # compartir el link. Tiene que ser absoluto o WhatsApp/Facebook no muestran
     # imagen: ver `assetAbsoluto()` en src/lib/asset.ts. En producción lo calcula
     # el workflow; acá se pasa a mano solo para revisar las meta tags.
-    [string]$siteUrl = "https://www.ethospy.online"
+    [string]$siteUrl = "https://josegalvez1985.github.io"
 )
 
 $ErrorActionPreference = "Stop"
