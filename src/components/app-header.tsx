@@ -4,19 +4,26 @@ import { es } from "date-fns/locale";
 import { ArrowLeft, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { asset } from "@/lib/asset";
+import { itemActivo } from "@/lib/navegacion";
 import { useSession } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 
 /**
  * Cabecera translúcida al estilo de una app nativa: atrás + logo + saludo + tema.
  *
- * La navegación vive en `BottomNav` (barra inferior), que también incluye el
- * acceso para cerrar sesión.
+ * La navegación NO vive acá: en el celular es `BottomNav` (barra inferior + hoja
+ * "Menú") y en escritorio `SidebarNav`. Los dos salen de `lib/navegacion.ts`.
+ *
+ * En escritorio la cabecera se aliviana: el logo se oculta —ya está arriba de la
+ * sidebar, repetirlo son dos logos en la misma pantalla— y en su lugar se muestra
+ * el nombre del módulo actual, que es lo que orienta cuando hay siete secciones.
  */
 export function AppHeader() {
   const { theme, toggle } = useTheme();
   const { user, ready } = useSession();
   const router = useRouter();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const modulo = itemActivo(pathname);
 
   /*
    * El botón de volver solo aparece DESPUÉS de montar, y eso es a propósito.
@@ -58,10 +65,11 @@ export function AppHeader() {
           </button>
         ) : null}
 
+        {/* El logo es solo del celular: en escritorio ya está en la sidebar. */}
         <Link
           to="/home"
           aria-label="Editorial Ethos"
-          className="tap shrink-0 rounded-xl bg-white p-1 shadow-soft"
+          className="tap shrink-0 rounded-xl bg-white p-1 shadow-soft lg:hidden"
         >
           <img src={asset("logo.png")} alt="Editorial Ethos" className="size-8 rounded-lg" />
         </Link>
@@ -75,11 +83,18 @@ export function AppHeader() {
           </div>
         ) : user ? (
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] leading-tight">
+            {/* Celular: el saludo, que es lo que da calidez a una app de uso
+                diario. Escritorio: el módulo, porque el nombre del usuario ya
+                está fijo abajo en la sidebar y lo que falta es saber dónde estás. */}
+            <p className="truncate text-[15px] leading-tight lg:hidden">
               Hola, <span className="font-semibold">{user.name}</span>
             </p>
+            <p className="font-display hidden truncate text-lg leading-tight font-bold lg:block">
+              {modulo?.label ?? "Editorial Ethos"}
+            </p>
             <p className="mt-0.5 truncate text-[11.5px] leading-tight text-muted-foreground">
-              {fecha}
+              <span className="lg:hidden">{fecha}</span>
+              <span className="hidden lg:inline">{modulo?.descripcion ?? fecha}</span>
             </p>
           </div>
         ) : (
