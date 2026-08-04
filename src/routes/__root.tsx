@@ -85,14 +85,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content: "width=device-width, initial-scale=1, viewport-fit=cover",
       },
       // El valor real lo pisa ThemeProvider según el tema elegido.
-      { name: "theme-color", content: "#fbf9f7" },
+      { name: "theme-color", content: "#f5f8fc" },
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "default" },
-      { name: "apple-mobile-web-app-title", content: "Ethos" },
-      { title: "Editorial Ethos" },
-      { name: "description", content: "Editorial Ethos — ideas, cultura y opinión con carácter." },
-      { name: "author", content: "Editorial Ethos" },
+      // Corto a propósito: iOS lo recorta bajo el ícono de la pantalla de inicio.
+      { name: "apple-mobile-web-app-title", content: "Juventud" },
+      { title: "Juventud con Valores" },
+      { name: "description", content: "Juventud con Valores — ideas, cultura y opinión con carácter." },
+      { name: "author", content: "Juventud con Valores" },
 
       // ── Vista previa al compartir el link (Open Graph) ──────────────────────
       // Viven SOLO acá y no en cada ruta a propósito: el sitio es estático y
@@ -102,22 +103,26 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       // ruta que sembró el shell le imponga su título a todo el sitio.
       //
       // Las URLs son ABSOLUTAS por obligación: ver assetAbsoluto() en lib/asset.ts.
-      { property: "og:title", content: "Editorial Ethos" },
+      { property: "og:title", content: "Juventud con Valores" },
       { property: "og:description", content: "Ideas, cultura y opinión con carácter." },
       { property: "og:type", content: "website" },
-      { property: "og:site_name", content: "Editorial Ethos" },
+      { property: "og:site_name", content: "Juventud con Valores" },
       { property: "og:locale", content: "es_ES" },
       { property: "og:url", content: assetAbsoluto("") },
       { property: "og:image", content: assetAbsoluto("logo.png") },
-      // logo.png y no los icon-*.png: esos son RGBA y la transparencia sale NEGRA
-      // en la vista previa de WhatsApp y X. logo.png es RGB opaco.
+      // logo.png y no los icon-*.png: la transparencia sale NEGRA en la vista
+      // previa de WhatsApp y X. El logo actual es RGBA pero 100% opaco (se
+      // verificó pixel por pixel), así que sirve; si alguna vez se reemplaza por
+      // uno con fondo transparente, hay que aplanarlo antes de ponerlo acá.
       { property: "og:image:type", content: "image/png" },
       // Declarar el tamaño evita que la primera vez que se comparte el link salga
       // sin imagen: sin esto el scraper tiene que bajar el PNG para medirlo, y si
-      // no llega a tiempo cachea la vista previa sin nada.
-      { property: "og:image:width", content: "2000" },
-      { property: "og:image:height", content: "2000" },
-      { property: "og:image:alt", content: "Logo de Editorial Ethos" },
+      // no llega a tiempo cachea la vista previa sin nada. Tiene que coincidir
+      // con el archivo real (public/logo.png, 512x512) o algunos scrapers lo
+      // descartan por no dar con lo declarado.
+      { property: "og:image:width", content: "512" },
+      { property: "og:image:height", content: "512" },
+      { property: "og:image:alt", content: "Logo de Juventud con Valores" },
       // "summary" y no "summary_large_image": el large recorta a 1.91:1 y a un
       // logo cuadrado le come la mitad. X lo muestra como miniatura sin recortar.
       { name: "twitter:card", content: "summary" },

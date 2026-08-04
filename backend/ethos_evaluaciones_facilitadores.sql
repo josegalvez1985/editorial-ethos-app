@@ -1197,16 +1197,58 @@ END eliminar;
 -- data:[...]} y ordenan por el texto que se muestra, no por el ID.
 ------------------------------------------------------------------------------
 
+------------------------------------------------------------------------------
+-- Resuelve el año por el que filtran los combos.
+--
+--   p_anio NULL      -> el año lectivo activo (ANIOS_LECTIVOS.ESTADO = 'A')
+--   p_anio 'TODOS'   -> NULL, o sea: no filtrar
+--   p_anio '2026'    -> ese
+--
+-- Devolver NULL significa SIEMPRE "no filtres por año", y por eso el caso de
+-- "no hay año activo cargado" cae ahi: es preferible un combo con datos de mas
+-- a un combo vacio que nadie sabe por que esta vacio.
+--
+-- El TO_CHAR es obligatorio: POSTULACIONES.ANIO es VARCHAR2(4) y la funcion
+-- devuelve NUMBER. Comparar los dos sin convertir hace que Oracle convierta la
+-- COLUMNA a numero, y ahi se pierde el indice IDX_POST_INST_FAC_ANIO — ademas
+-- de reventar con ORA-01722 si alguna fila tiene texto que no es un año.
+------------------------------------------------------------------------------
+FUNCTION anio_a_filtrar(p_anio IN VARCHAR2) RETURN VARCHAR2 IS
+    l_anio NUMBER;
+BEGIN
+    IF p_anio IS NOT NULL THEN
+        IF UPPER(TRIM(p_anio)) = 'TODOS' THEN
+            RETURN NULL;
+        END IF;
+        RETURN TRIM(p_anio);
+    END IF;
+
+    l_anio := fn_anio_lectivo_actual();
+    RETURN CASE WHEN l_anio IS NULL THEN NULL ELSE TO_CHAR(l_anio) END;
+END anio_a_filtrar;
+
 -- Dominio: ACTIVO = 'SI' / 'NO'. Por defecto solo los activos, porque un combo
 -- no debe ofrecer gente dada de baja.
 --
 -- p_incluir_id: el id que el formulario ya tiene cargado entra SIEMPRE, aunque
 -- este inactivo. Sin esto, editar una evaluacion vieja cuyo facilitador se dio
 -- de baja despues muestra el combo en blanco y al guardar se pierde el dato.
+--
+-- FILTRO POR AÑO LECTIVO: ademas de estar activo, el facilitador tiene que
+-- tener al menos una POSTULACION en el año vigente. Si no, el combo ofrece
+-- gente que este año no trabaja — sigue activa en la ficha, pero no esta dando
+-- clases, y evaluarla no tiene sentido.
+--
+--   * EXISTS y no JOIN: un facilitador tiene varias postulaciones por año
+--     (materias, turnos, instituciones) y un JOIN lo repetiria en el combo.
+--   * Si no hay año activo cargado, anio_a_filtrar devuelve NULL y este filtro
+--     se apaga solo: vuelven a salir todos los activos.
+--   * ?anio=TODOS lo apaga explicitamente.
 PROCEDURE lov_facilitadores(
     p_patron     IN VARCHAR2,
     p_activo     IN VARCHAR2,
     p_incluir_id IN NUMBER,
+    p_anio       IN VARCHAR2,
     p_tope       IN PLS_INTEGER
 ) IS
     -- 'TODOS' desactiva el filtro; cualquier otro valor filtra por el.
@@ -1215,15 +1257,21 @@ PROCEDURE lov_facilitadores(
                                WHEN UPPER(TRIM(p_activo)) = 'TODOS' THEN NULL
                                ELSE UPPER(TRIM(p_activo))
                              END;
+    l_anio VARCHAR2(4) := anio_a_filtrar(p_anio);
 BEGIN
     APEX_JSON.OPEN_ARRAY('data');
     FOR r IN (
         SELECT id_facilitador, nombre_apellido, activo
-          FROM facilitadores
-         WHERE id_facilitador = p_incluir_id
-            OR ((p_patron IS NULL OR UPPER(nombre_apellido) LIKE p_patron
-                                  OR UPPER(nro_ci)          LIKE p_patron)
-                AND (l_activo IS NULL OR UPPER(activo) = l_activo))
+          FROM facilitadores f
+         WHERE f.id_facilitador = p_incluir_id
+            OR ((p_patron IS NULL OR UPPER(f.nombre_apellido) LIKE p_patron
+                                  OR UPPER(f.nro_ci)          LIKE p_patron)
+                AND (l_activo IS NULL OR UPPER(f.activo) = l_activo)
+                AND (l_anio IS NULL
+                     OR EXISTS (SELECT 1
+                                  FROM postulaciones p
+                                 WHERE p.id_facilitador = f.id_facilitador
+                                   AND p.anio           = l_anio)))
          ORDER BY nombre_apellido
          FETCH FIRST p_tope ROWS ONLY
     ) LOOP
@@ -1248,10 +1296,19 @@ END lov_facilitadores;
 --   * ID_FACILITADOR es NULLABLE en POSTULACIONES: las postulaciones sin
 --     facilitador asignado simplemente no matchean, que es lo correcto.
 --
--- p_anio: opcional, contra POSTULACIONES.ANIO (VARCHAR2(4)). Sin el parametro no
--- filtra por año: si filtrara por el lectivo actual por defecto, un facilitador
--- cuyas postulaciones de este año todavia no se cargaron apareceria sin ninguna
--- institucion y el formulario quedaria trabado sin explicacion.
+-- p_anio: contra POSTULACIONES.ANIO (VARCHAR2(4)).
+--
+--   SIN el parametro se usa EL AÑO LECTIVO ACTIVO (FN_ANIO_LECTIVO_ACTUAL, que
+--   lee ANIOS_LECTIVOS.ESTADO = 'A'). Antes el default era "no filtrar por
+--   año", y eso mezclaba en el combo las instituciones de todos los años en los
+--   que el facilitador alguna vez postulo. Se cambio a pedido: una evaluacion
+--   es siempre del año en curso.
+--
+--   Para desactivarlo explicitamente: ?anio=TODOS.
+--
+--   SI NO HAY AÑO ACTIVO cargado, la funcion devuelve NULL y esto NO filtra por
+--   año — se comporta como antes. Es a proposito: una tabla de configuracion sin
+--   cargar no puede dejar el formulario sin instituciones y sin explicacion.
 --
 -- Devuelve tambien ID_CIUDAD y el nombre de la ciudad para que el front cargue
 -- la ciudad solo, sin combo aparte. INSTITUCIONES.ID_CIUDAD es NULLABLE: cuando
@@ -1269,6 +1326,9 @@ PROCEDURE lov_instituciones(
                                WHEN UPPER(TRIM(p_estado)) = 'TODOS' THEN NULL
                                ELSE UPPER(TRIM(p_estado))
                              END;
+    -- NULL = no filtrar por año. Se resuelve UNA vez y no dentro del SELECT:
+    -- adentro, la funcion se evaluaria por fila candidata.
+    l_anio VARCHAR2(4) := anio_a_filtrar(p_anio);
 BEGIN
     APEX_JSON.OPEN_ARRAY('data');
     FOR r IN (
@@ -1290,7 +1350,7 @@ BEGIN
                                   FROM postulaciones p
                                  WHERE p.id_institucion  = i.id_institucion
                                    AND p.id_facilitador  = p_id_facilitador
-                                   AND (p_anio IS NULL OR p.anio = p_anio))))
+                                   AND (l_anio IS NULL OR p.anio = l_anio))))
          ORDER BY i.nombre
          FETCH FIRST p_tope ROWS ONLY
     ) LOOP
@@ -1414,7 +1474,8 @@ BEGIN
     APEX_JSON.WRITE('limite',  l_tope);
 
     CASE l_clave
-      WHEN 'facilitadores' THEN lov_facilitadores(l_patron, p_activo, p_incluir_id, l_tope);
+      WHEN 'facilitadores' THEN
+        lov_facilitadores(l_patron, p_activo, p_incluir_id, p_anio, l_tope);
       WHEN 'instituciones' THEN
         lov_instituciones(l_patron, p_estado, p_incluir_id, p_id_facilitador, p_anio, l_tope);
       WHEN 'areas'         THEN lov_areas(l_patron, l_tope);

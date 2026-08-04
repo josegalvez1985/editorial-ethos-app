@@ -1,12 +1,20 @@
-# Backend — Editorial Ethos (Oracle APEX / ORDS)
+# Backend — Juventud con Valores (Oracle APEX / ORDS)
 
 | Archivo | Qué trae | Orden |
 | --- | --- | --- |
-| **[`ethos_auth.sql`](ethos_auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | Primero, obligatorio |
-| **[`ethos_evaluaciones_facilitadores.sql`](ethos_evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos (`PKG_EVAL_FACILITADORES_ETHOS`) | Después |
+| **[`ethos_auth.sql`](ethos_auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
+| **[`ethos_anios_lectivos.sql`](ethos_anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` | 2º |
+| **[`ethos_evaluaciones_facilitadores.sql`](ethos_evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
 
-Los dos son idempotentes. El segundo **no** define el módulo ni habilita el esquema:
+Los tres son idempotentes. El tercero **no** define el módulo ni habilita el esquema:
 agrega handlers al módulo `ethos` que creó el primero.
+
+**El orden importa entre el 2º y el 3º:** el paquete de evaluaciones llama a
+`FN_ANIO_LECTIVO_ACTUAL()`. Si no existe, no compila.
+
+> Los objetos y el prefijo ORDS se siguen llamando `ethos` aunque la marca haya cambiado a
+> *Juventud con Valores* el 04/08/2026. Renombrarlos obliga a tocar la URL base, el `.env`,
+> el workflow de deploy y el APK ya instalado: mucho riesgo para un cambio cosmético.
 
 ## Qué contiene
 
@@ -73,11 +81,57 @@ Listas de valores (`limite` máx. 500, por defecto 100):
 
 | `:nombre` | Parámetros | Devuelve |
 | --- | --- | --- |
-| `facilitadores` | `buscar` (nombre o CI), `activo`, `incluir_id` | `id_facilitador`, `nombre_apellido`, `activo` |
+| `facilitadores` | `buscar` (nombre o CI), `activo`, `incluir_id`, `anio` | `id_facilitador`, `nombre_apellido`, `activo` |
 | `instituciones` | `buscar`, `estado`, `incluir_id`, `id_facilitador`, `anio` | `id_institucion`, `nombre`, `estado`, `id_ciudad`, `ciudad` |
 | `areas` | `buscar` | `id_area`, `descripcion` |
 | `evaluaciones` | `id_area`, `buscar` | `id_evaluacion`, `id_area`, `descripcion` |
 | `ciudades` | `buscar` | `id_ciudad`, `nombre` |
+
+### El filtro por año lectivo
+
+**Los dos combos de personas filtran por el año lectivo activo POR DEFECTO**, sin que el
+front mande nada. El año sale de `FN_ANIO_LECTIVO_ACTUAL()`, que devuelve el `ANIO` de la
+fila de `ANIOS_LECTIVOS` con `ESTADO = 'A'`.
+
+| Lista | Qué exige además de estar vigente |
+| --- | --- |
+| `facilitadores` | `ACTIVO = 'SI'` **y** al menos una `POSTULACIONES` en el año activo |
+| `instituciones` | `ESTADO = 'A'` **y**, si vino `id_facilitador`, postulación de ESE facilitador en el año activo |
+
+Un facilitador puede seguir activo en su ficha y no estar dando clases este año: sin este
+filtro, el combo lo ofrecía igual y no tiene sentido evaluarlo.
+
+Cómo desactivarlo:
+
+| Query | Efecto |
+| --- | --- |
+| *(nada)* | El año lectivo activo |
+| `?anio=TODOS` | No filtra por año |
+| `?anio=2025` | Ese año |
+
+**Si no hay ningún año con `ESTADO = 'A'`,** la función devuelve `NULL` y los filtros se
+apagan solos: vuelven a salir todos los activos. Es deliberado — una tabla de configuración
+sin cargar no puede dejar los combos vacíos y sin explicación.
+
+**El año se compara como TEXTO** (`POSTULACIONES.ANIO` es `VARCHAR2(4)`). El
+`anio_a_filtrar()` del paquete hace el `TO_CHAR`: comparar contra un `NUMBER` haría que
+Oracle convierta la columna y se pierda el índice `IDX_POST_INST_FAC_ANIO`.
+
+### Un solo año activo a la vez
+
+`ethos_anios_lectivos.sql` crea un **índice único funcional** que solo indexa las filas con
+`ESTADO = 'A'`, así que la base rechaza un segundo año activo. Activar uno nuevo obliga a
+desactivar el anterior en la misma transacción.
+
+Es la única forma de expresar "solo una fila activa" sin un trigger: un `CHECK` no puede
+mirar otras filas y un trigger de tabla choca con la *mutating table*.
+
+> **`FN_ANIO_LECTIVO_ACTUAL` ya existía en la base** —la usa el trigger
+> `TRG_POSTULACIONES_SET_ANIO`— pero su fuente **no estaba en el repositorio**. El script la
+> versiona con `CREATE OR REPLACE`, así que **pisa la que estaba**. Si la anterior decidía
+> por otro criterio (por ejemplo `SYSDATE` contra `FECHA_DESDE`/`FECHA_HASTA` en vez de por
+> `ESTADO`), el cambio también afecta a las postulaciones nuevas. Es lo buscado —un solo
+> criterio para todo el sistema— pero conviene saberlo antes de correrlo.
 
 **Ciudades: una sola lista y una sola columna.** `EVALUACIONES_FACILITADORES` guarda
 solo `ID_CIUDAD`, con FK simple a `CIUDADES(ID_CIUDAD)`. El front manda solo

@@ -27,7 +27,7 @@ import {
 
 export const Route = createFileRoute("/evaluaciones/$id")({
   head: () => ({
-    meta: [{ title: "Editar evaluación — Editorial Ethos" }],
+    meta: [{ title: "Editar evaluación — Juventud con Valores" }],
   }),
   component: EditarPage,
 });

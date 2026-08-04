@@ -69,19 +69,24 @@ export function SidebarNav() {
     >
       {/* Marca */}
       <div className="flex h-16 items-center gap-3 px-4">
+        {/*
+          Sin `bg-white` ni padding: el logo trae su propio fondo azul, así que
+          el recuadro blanco le quedaba como un borde suelto alrededor. Va a
+          sangre dentro del cuadrado redondeado.
+        */}
         <Link
           to="/home"
-          aria-label="Editorial Ethos"
-          className="tap grid size-10 shrink-0 place-items-center rounded-xl bg-white p-1.5 shadow-soft"
+          aria-label="Juventud con Valores"
+          className="tap grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl shadow-soft"
         >
-          <img src={asset("logo.png")} alt="" className="size-full rounded-lg" />
+          <img src={asset("logo.png")} alt="" className="size-full" />
         </Link>
         {!colapsada && (
           <div className="min-w-0 flex-1">
             <p className="font-display truncate text-[15px] leading-tight font-bold text-white">
-              Editorial Ethos
+              Juventud con Valores
             </p>
-            <p className="truncate text-[11px] leading-tight text-white/45">Sistema de gestión</p>
+            <p className="truncate text-[11px] leading-tight text-white/65">Sistema de gestión</p>
           </div>
         )}
       </div>
@@ -96,7 +101,7 @@ export function SidebarNav() {
                 // leyendo: una línea corta hace de separador.
                 <div className="mx-auto mb-2 h-px w-6 bg-white/15" />
               ) : (
-                <p className="mb-1.5 px-3 text-[10.5px] font-semibold tracking-[0.14em] text-white/35 uppercase">
+                <p className="mb-1.5 px-3 text-[10.5px] font-semibold tracking-[0.14em] text-white/55 uppercase">
                   {grupo.titulo}
                 </p>
               ))}
@@ -133,7 +138,7 @@ export function SidebarNav() {
               <p className="truncate text-[13px] leading-tight font-semibold text-white">
                 {user?.name ?? "—"}
               </p>
-              <p className="truncate text-[11px] leading-tight text-white/45">
+              <p className="truncate text-[11px] leading-tight text-white/65">
                 {user?.email ?? ""}
               </p>
             </div>
@@ -144,7 +149,7 @@ export function SidebarNav() {
           type="button"
           onClick={onLogout}
           title={colapsada ? "Cerrar sesión" : undefined}
-          className={`tap mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] font-medium text-white/60 hover:bg-white/10 hover:text-white ${
+          className={`tap mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] font-medium text-white/75 hover:bg-white/10 hover:text-white ${
             colapsada ? "justify-center px-0" : ""
           }`}
         >
@@ -156,7 +161,7 @@ export function SidebarNav() {
           type="button"
           onClick={alternar}
           aria-label={colapsada ? "Expandir el menú" : "Colapsar el menú"}
-          className={`tap mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-[12px] font-medium text-white/40 hover:bg-white/10 hover:text-white/80 ${
+          className={`tap mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-[12px] font-medium text-white/60 hover:bg-white/10 hover:text-white/90 ${
             colapsada ? "justify-center px-0" : ""
           }`}
         >

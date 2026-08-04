@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Colores nativos de Android. NO los usa la interfaz —esa es la WebView, que se
+  pinta con `src/styles.css`—, pero si los pinta el sistema: la barra de estado,
+  la pantalla de "apps recientes" y los dialogos nativos.
+
+  styles.xml los referenciaba sin que estuvieran definidos aca: los resolvia el
+  template de Capacitor. Definirlos explicitamente es lo que hace que la parte
+  nativa acompañe a la marca en vez de quedarse en el morado por defecto.
+
+  Espejo de la paleta de `src/styles.css`.
+-->
+<resources>
+    <!-- Navy de "VALORES": el primario de la marca. -->
+    <color name="colorPrimary">#27306A</color>
+    <!-- Un escalon mas oscuro, para la barra de estado. -->
+    <color name="colorPrimaryDark">#1A1F3D</color>
+    <!-- Rojo de la franja: acento, igual que en la web. -->
+    <color name="colorAccent">#E41420</color>
+    <!-- Fondo del splash, por si el tema lo pide como color y no como drawable. -->
+    <color name="colorSplashBackground">#7095CC</color>
+</resources>

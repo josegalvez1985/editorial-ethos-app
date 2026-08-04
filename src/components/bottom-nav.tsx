@@ -108,13 +108,13 @@ function MenuDrawer({
         <div className="flex items-center gap-3 px-5 pt-4 pb-3">
           <span
             aria-hidden
-            className="bg-hero-gradient grid size-10 shrink-0 place-items-center rounded-full text-[13px] font-semibold text-primary-foreground"
+            className="bg-hero-gradient grid size-10 shrink-0 place-items-center rounded-full text-[13px] font-semibold text-on-brand"
           >
             {iniciales(user?.name ?? "")}
           </span>
           <div className="min-w-0 flex-1">
             <DrawerTitle className="truncate text-[15px] leading-tight font-semibold">
-              {user?.name ?? "Editorial Ethos"}
+              {user?.name ?? "Juventud con Valores"}
             </DrawerTitle>
             <p className="truncate text-[11.5px] leading-tight text-muted-foreground">
               {actual ? actual.descripcion : (user?.email ?? "")}

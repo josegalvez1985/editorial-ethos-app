@@ -37,8 +37,8 @@ const DESCARGA_APK_URL = "";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Iniciar sesión — Editorial Ethos" },
-      { name: "description", content: "Accede a tu cuenta de Editorial Ethos." },
+      { title: "Iniciar sesión — Juventud con Valores" },
+      { name: "description", content: "Accede a tu cuenta de Juventud con Valores." },
       // Sin og:* acá: esta ruta es la que siembra el _shell.html estático, así que
       // su Open Graph terminaba siendo el de TODO el sitio y compartir
       // www.ethospy.online mostraba "Iniciar sesión". Las tags viven en __root.
@@ -106,7 +106,7 @@ function LoginPage() {
       // precargarse mal en cada arranque. Destildado, esto borra las dos claves.
       setUsuarioRecordado(recordar ? usuario : "");
       setPasswordRecordada(recordar ? password : "");
-      toast.success("Bienvenido a Editorial Ethos");
+      toast.success("Bienvenido a Juventud con Valores");
       navigate({ to: "/home", replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
@@ -124,14 +124,19 @@ function LoginPage() {
       */}
       <aside className="relative overflow-hidden bg-hero-gradient px-6 pt-safe pb-9 lg:flex lg:flex-col lg:justify-between lg:rounded-none lg:p-12">
         <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_20%_20%,white_1px,transparent_1px)] [background-size:24px_24px]" />
-        <div className="relative z-10 flex items-center justify-between pt-8 text-primary-foreground lg:contents">
+        {/* `text-on-brand` y no `text-primary-foreground`: este panel es oscuro
+            en los dos temas, así que su texto es blanco siempre. */}
+        <div className="relative z-10 flex items-center justify-between pt-8 text-on-brand lg:contents">
+          {/* Sin recuadro blanco: el logo ya trae fondo propio. */}
           <img
             src={asset("logo.png")}
-            alt="Editorial Ethos"
-            className="size-16 rounded-2xl bg-white p-1.5 shadow-soft lg:size-20 lg:self-start lg:rounded-xl lg:p-2"
+            alt="Juventud con Valores"
+            className="size-16 rounded-2xl shadow-soft lg:size-20 lg:self-start lg:rounded-xl"
           />
-          <p className="text-xs text-primary-foreground/60">
-            © {new Date().getFullYear()} Editorial Ethos
+          {/* /75 y no /60: al 60% el copyright sobre el gradiente quedaba por
+              debajo del contraste mínimo legible. */}
+          <p className="text-xs text-on-brand/75">
+            © {new Date().getFullYear()} Juventud con Valores
           </p>
         </div>
       </aside>

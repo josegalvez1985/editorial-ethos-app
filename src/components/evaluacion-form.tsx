@@ -6,6 +6,7 @@ import { PickerModal } from "@/components/picker-modal";
 import { CalificacionDisplay, StarToggle } from "@/components/star-rating";
 import {
   ESCALA_MAXIMA,
+  formatearNombre,
   keys,
   lista,
   STALE_LISTAS,
@@ -396,14 +397,28 @@ export function EvaluacionForm({
           </Campo>
         </div>
 
-        <Campo label="Evaluado por" requerido hint="Nombre de quien hizo la evaluación">
+        <Campo
+          label="Evaluado por"
+          requerido
+          hint="Nombre y apellido. Para varios, separalos con coma"
+        >
+          {/*
+            El formato ("jose galvez" -> "Jose Galvez") se aplica al SALIR del
+            campo, no en cada tecla: capitalizar mientras se tipea hace saltar
+            el cursor y no deja escribir. Al guardar se vuelve a normalizar
+            —ver filaInput()— así que el dato queda parejo aunque el usuario
+            mande el formulario sin sacar el foco de acá.
+          */}
           <input
             type="text"
             required
             maxLength={255}
             value={cab.evaluado_por}
             onChange={(e) => set("evaluado_por", e.target.value)}
-            placeholder="Nombre y apellido"
+            onBlur={(e) => set("evaluado_por", formatearNombre(e.target.value))}
+            placeholder="Jose Galvez, Elena Baez"
+            // Ayuda en el celular: el teclado arranca en mayúscula por palabra.
+            autoCapitalize="words"
             className={inputCls}
           />
         </Campo>

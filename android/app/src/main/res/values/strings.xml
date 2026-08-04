@@ -1,7 +1,17 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Editorial Ethos</string>
-    <string name="title_activity_main">Editorial Ethos</string>
+    <!--
+      Nombre visible: el que se ve bajo el icono y en la lista de apps.
+
+      package_name y custom_url_scheme SIGUEN SIENDO com.editorialethos.app a
+      proposito, aunque la marca haya cambiado: el applicationId es la identidad
+      de la app para Android. Si se cambia, el sistema la toma como una app
+      distinta — no se instala encima de la que ya esta en los telefonos, queda
+      duplicada, y el usuario pierde lo que tuviera guardado. El nombre visible
+      se puede cambiar cuando se quiera; el id, no sin migrar.
+    -->
+    <string name="app_name">Juventud con Valores</string>
+    <string name="title_activity_main">Juventud con Valores</string>
     <string name="package_name">com.editorialethos.app</string>
     <string name="custom_url_scheme">com.editorialethos.app</string>
 </resources>

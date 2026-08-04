@@ -33,7 +33,17 @@
       "Bash(git checkout *)",
       "Bash(cp .env.example .env)",
       "Bash(rm -rf .expo)",
-      "Bash(echo \"=== MOBILE TSC exit=$? ===\")"
+      "Bash(echo \"=== MOBILE TSC exit=$? ===\")",
+      "PowerShell(& \"C:\\\\Users\\\\josej\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-josej-OneDrive-Desktop-Proyectos-editorial-ethos-app-git\\\\4b3ab63c-7b18-445d-9928-577d42a5a2d4\\\\scratchpad\\\\iconos-android.ps1\")",
+      "Bash(echo \"=== TSC exit: $? ===\")",
+      "Bash(node \"C:/Users/josej/AppData/Local/Temp/claude/c--Users-josej-OneDrive-Desktop-Proyectos-editorial-ethos-app-git/4b3ab63c-7b18-445d-9928-577d42a5a2d4/scratchpad/pngcolors.mjs\" android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_background.png)",
+      "Bash(grep -vE \"^\\\\s*//|\\\\* \")",
+      "Bash(echo \"=== tsc exit: $? ===\")",
+      "Bash(echo \"=== tsc: $? ===\")",
+      "Bash(echo \"=== eslint exit: $? ===\")",
+      "Bash(sed -i 's/l > 0.55 ? \"#18181b\"/l > 0.38 ? \"#18181b\"/' \"C:/Users/josej/AppData/Local/Temp/claude/c--Users-josej-OneDrive-Desktop-Proyectos-editorial-ethos-app-git/4b3ab63c-7b18-445d-9928-577d42a5a2d4/scratchpad/lum.mjs\")",
+      "Bash(node \"C:/Users/josej/AppData/Local/Temp/claude/c--Users-josej-OneDrive-Desktop-Proyectos-editorial-ethos-app-git/4b3ab63c-7b18-445d-9928-577d42a5a2d4/scratchpad/lum.mjs\")",
+      "Bash(echo \"\\(exit $?\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\josej\\OneDrive\\Desktop\\Proyectos\\editorial-ethos-app.git"

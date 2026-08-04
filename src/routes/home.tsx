@@ -11,7 +11,7 @@ import { agrupar, keys, LIMITE_DETALLES, listarEvaluaciones } from "@/lib/evalua
 export const Route = createFileRoute("/home")({
   head: () => ({
     meta: [
-      { title: "Inicio — Editorial Ethos" },
+      { title: "Inicio — Juventud con Valores" },
       { name: "description", content: "Resumen de evaluaciones de facilitadores." },
     ],
   }),
@@ -47,7 +47,7 @@ function HomePage() {
         {/* Acción principal: es lo que el usuario viene a hacer */}
         <Link
           to="/evaluaciones/nueva"
-          className="tap relative flex items-center gap-4 overflow-hidden rounded-3xl bg-hero-gradient p-5 text-primary-foreground shadow-elegant"
+          className="tap relative flex items-center gap-4 overflow-hidden rounded-3xl bg-hero-gradient p-5 text-on-brand shadow-elegant"
         >
           <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_20%_20%,white_1px,transparent_1px)] [background-size:20px_20px]" />
           <div className="relative grid size-12 shrink-0 place-items-center rounded-2xl bg-white/20">
@@ -55,7 +55,7 @@ function HomePage() {
           </div>
           <div className="relative min-w-0 flex-1">
             <p className="font-display text-lg leading-tight font-bold">Nueva evaluación</p>
-            <p className="text-[13px] text-primary-foreground/80">Cargar la de un facilitador</p>
+            <p className="text-[13px] text-on-brand/80">Cargar la de un facilitador</p>
           </div>
           <ArrowRight className="relative size-5 shrink-0" />
         </Link>

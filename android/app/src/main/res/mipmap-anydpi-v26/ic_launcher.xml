@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Icono adaptativo (Android 8+). El launcher recorta las dos capas con la forma
+  que use el fabricante (circulo, squircle, cuadrado redondeado).
+
+  El FONDO va sin inset: tiene que llenar los 108dp completos o el recorte deja
+  un borde transparente alrededor del azul de marca.
+
+  El FRENTE tampoco lleva inset aca: el margen ya viene aplicado dentro del PNG
+  (el logo esta dibujado al 62% y centrado), que es lo que evita que "Juventud
+  con Valores" quede cortado en los launchers que recortan mas agresivo.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background>
-        <inset android:drawable="@mipmap/ic_launcher_background" android:inset="16.7%" />
-    </background>
-    <foreground>
-        <inset android:drawable="@mipmap/ic_launcher_foreground" android:inset="16.7%" />
-    </foreground>
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
 </adaptive-icon>

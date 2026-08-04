@@ -25,6 +25,9 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-soft: var(--primary-soft);
   --color-brand-navy: var(--brand-navy);
+  --color-brand-red: var(--brand-red);
+  --color-brand-blue: var(--brand-blue);
+  --color-on-brand: var(--on-brand);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -50,107 +53,1187 @@
 }
 
 /*
- * Paleta = colores exactos del logo (rojo #e31e24, navy #0f2a3d), en hex y
- * espejo de `mobile/src/theme/colors.ts`. Los dos frontends tienen que verse
- * igual: si tocas un valor acá, tócalo allá.
+ * Paleta = colores exactos del logo "Juventud con Valores"
+ * (`public/logo.png`), muestreados del PNG, no estimados a ojo:
+ *
+ * | Hex       | Qué es en el logo        | % del archivo |
+ * | --------- | ------------------------ | ------------- |
+ * | `#27306a` | navy de "VALORES"        | 2.6%          |
+ * | `#e41420` | rojo de la franja        | 5.5%          |
+ * | `#7095cc` | azul del fondo           | 77.8%         |
+ * | `#ffffff` | blanco de "Juventud"     | 5.9%          |
+ *
+ * **El primario es el NAVY, no el rojo**, aunque en el logo el rojo ocupe más
+ * superficie. Un botón "Guardar" en rojo compite con los mensajes de error: el
+ * rojo se lee como advertencia, y si todo es rojo, nada avisa. Acá el rojo
+ * queda para `--destructive` y para acentos puntuales.
+ *
+ * El azul `#7095cc` NO se usa para texto: da 3.0:1 sobre blanco y no llega al
+ * 4.5:1 que pide WCAG AA. Vive en `--ring`, en bordes y en superficies.
+ *
+ * Espejo de `mobile/src/theme/colors.ts`: si tocas un valor acá, tócalo allá.
  */
 :root {
   --radius: 1rem;
 
-  --background: #fbf9f7;
-  --foreground: #12293a;
+  /* Fondo con una gota del azul de marca: no es gris neutro ni el crema de antes. */
+  --background: #f5f8fc;
+  --foreground: #1a1f3d;
 
   --card: #ffffff;
-  --card-foreground: #12293a;
+  --card-foreground: #1a1f3d;
   --popover: #ffffff;
-  --popover-foreground: #12293a;
+  --popover-foreground: #1a1f3d;
 
-  --primary: #e31e24;
+  --primary: #27306a;
   --primary-foreground: #ffffff;
-  --primary-soft: #fdeaea;
-  --brand-navy: #0f2a3d;
+  --primary-soft: #e8ecf7;
+  --brand-navy: #27306a;
+  --brand-red: #e41420;
+  --brand-blue: #7095cc;
 
-  --secondary: #f4efeb;
-  --secondary-foreground: #12293a;
+  /*
+   * Texto sobre superficies de MARCA (`bg-hero-gradient`, `bg-navy-gradient`).
+   *
+   * Es blanco en los DOS temas y ahí está el punto: esos gradientes son
+   * oscuros siempre, no se invierten con el tema. Usar `--primary-foreground`
+   * para esto es el error que dejaba el copyright del login ilegible en modo
+   * oscuro — allá el primario es azul claro, así que su foreground es casi
+   * negro, y terminaba negro sobre navy.
+   */
+  --on-brand: #ffffff;
 
-  --muted: #f1ede9;
-  --muted-foreground: #6b7480;
+  --secondary: #e9eef7;
+  --secondary-foreground: #1a1f3d;
 
-  --accent: #f4efeb;
-  --accent-foreground: #12293a;
+  --muted: #eaeef6;
+  --muted-foreground: #5f6b85;
 
-  --destructive: #c8181d;
+  --accent: #e9eef7;
+  --accent-foreground: #1a1f3d;
+
+  /* El rojo del logo, apenas oscurecido para llegar a 4.5:1 sobre blanco. */
+  --destructive: #d1121c;
   --destructive-foreground: #ffffff;
 
-  --border: #e5e0db;
-  --input: #e5e0db;
-  --ring: #e31e24;
+  --border: #d9e1ef;
+  --input: #d9e1ef;
+  --ring: #7095cc;
 
-  --sidebar: #fbf9f7;
-  --sidebar-foreground: #12293a;
-  --sidebar-primary: #e31e24;
+  --sidebar: #f5f8fc;
+  --sidebar-foreground: #1a1f3d;
+  --sidebar-primary: #27306a;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f1ede9;
-  --sidebar-accent-foreground: #12293a;
-  --sidebar-border: #e5e0db;
-  --sidebar-ring: #e31e24;
+  --sidebar-accent: #e9eef7;
+  --sidebar-accent-foreground: #1a1f3d;
+  --sidebar-border: #d9e1ef;
+  --sidebar-ring: #7095cc;
 
-  --gradient-hero: linear-gradient(135deg, #e31e24 0%, #14314a 100%);
-  --gradient-navy: linear-gradient(150deg, #14314a 0%, #0b1e2c 100%);
+  /* Los tres colores de la bandera, en el orden en que están en el logo. */
+  --gradient-hero: linear-gradient(135deg, #e41420 0%, #7095cc 55%, #27306a 100%);
+  --gradient-navy: linear-gradient(150deg, #27306a 0%, #161c42 100%);
 
   /* Sombras cortas: en una pantalla de teléfono las difusas se ven sucias. */
-  --shadow-soft: 0 1px 2px rgb(18 41 58 / 0.06), 0 8px 20px -14px rgb(18 41 58 / 0.18);
-  --shadow-card: 0 1px 3px rgb(18 41 58 / 0.05), 0 12px 28px -20px rgb(18 41 58 / 0.22);
-  --shadow-elegant: 0 16px 40px -24px rgb(227 30 36 / 0.45);
-  --surface-glass: rgb(251 249 247 / 0.72);
+  --shadow-soft: 0 1px 2px rgb(26 31 61 / 0.06), 0 8px 20px -14px rgb(26 31 61 / 0.18);
+  --shadow-card: 0 1px 3px rgb(26 31 61 / 0.05), 0 12px 28px -20px rgb(26 31 61 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(39 48 106 / 0.45);
+  --surface-glass: rgb(245 248 252 / 0.72);
 }
 
+/*
+ * Oscuro. **Acá el primario NO es el navy**: `#27306a` sobre un fondo oscuro da
+ * menos de 2:1 y un botón primario quedaría invisible. El rol pasa al azul
+ * claro del logo (`#7095cc`, aclarado a `#8fb0dd` para despegarlo del fondo),
+ * que en oscuro sí es el color de marca legible.
+ *
+ * Los fondos son el navy de marca bajado en luminosidad, no gris neutro: así el
+ * modo oscuro sigue siendo de la misma familia que el claro.
+ */
 .dark {
-  --background: #0c1620;
-  --foreground: #eef3f7;
+  --background: #0e1226;
+  --foreground: #e8ecf7;
 
-  --card: #14212c;
-  --card-foreground: #eef3f7;
-  --popover: #14212c;
-  --popover-foreground: #eef3f7;
+  --card: #171d3a;
+  --card-foreground: #e8ecf7;
+  --popover: #171d3a;
+  --popover-foreground: #e8ecf7;
 
-  --primary: #ff6b6b;
-  --primary-foreground: #1a0708;
-  --primary-soft: #3a1c20;
-  --brand-navy: #0f2a3d;
+  --primary: #8fb0dd;
+  --primary-foreground: #0e1226;
+  --primary-soft: #1f2850;
+  --brand-navy: #27306a;
+  --brand-red: #e41420;
+  --brand-blue: #7095cc;
 
-  --secondary: #1a2733;
-  --secondary-foreground: #eef3f7;
+  /* Blanco igual que en claro: el gradiente de marca es oscuro en los dos. */
+  --on-brand: #ffffff;
 
-  --muted: #1a2733;
-  --muted-foreground: #9aa8b4;
+  --secondary: #1c2344;
+  --secondary-foreground: #e8ecf7;
 
-  --accent: #1f2e3b;
-  --accent-foreground: #eef3f7;
+  --muted: #1c2344;
+  --muted-foreground: #9aa5c4;
 
-  --destructive: #f94144;
-  --destructive-foreground: #ffffff;
+  --accent: #232b52;
+  --accent-foreground: #e8ecf7;
 
-  --border: #26333f;
-  --input: #2c3a47;
-  --ring: #ff6b6b;
+  /* Rojo aclarado: el #e41420 del logo sobre fondo oscuro queda apagado. */
+  --destructive: #ff5a5f;
+  --destructive-foreground: #2a0508;
 
-  --sidebar: #0f1c26;
-  --sidebar-foreground: #eef3f7;
-  --sidebar-primary: #ff6b6b;
-  --sidebar-primary-foreground: #1a0708;
-  --sidebar-accent: #1a2733;
-  --sidebar-accent-foreground: #eef3f7;
-  --sidebar-border: #26333f;
-  --sidebar-ring: #ff6b6b;
+  --border: #2a3157;
+  --input: #333b66;
+  --ring: #8fb0dd;
 
-  --gradient-hero: linear-gradient(135deg, #a3141a 0%, #0c1620 100%);
-  --gradient-navy: linear-gradient(150deg, #16283a 0%, #0a141d 100%);
+  --sidebar: #10152c;
+  --sidebar-foreground: #e8ecf7;
+  --sidebar-primary: #8fb0dd;
+  --sidebar-primary-foreground: #0e1226;
+  --sidebar-accent: #1c2344;
+  --sidebar-accent-foreground: #e8ecf7;
+  --sidebar-border: #2a3157;
+  --sidebar-ring: #8fb0dd;
+
+  --gradient-hero: linear-gradient(135deg, #a30e17 0%, #2d3a6b 55%, #0e1226 100%);
+  --gradient-navy: linear-gradient(150deg, #1f2850 0%, #0b0f20 100%);
 
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
   --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
   --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
-  --surface-glass: rgb(12 22 32 / 0.72);
+  --surface-glass: rgb(14 18 38 / 0.72);
+}
+
+/* ========================================================================== *
+ *  PALETAS ALTERNATIVAS
+ * ==========================================================================
+ *
+ * El usuario elige DOS cosas por separado, en Mi cuenta:
+ *
+ *   1. Modo   -> claro / oscuro   (la clase `.dark` en <html>)
+ *   2. Paleta -> marca / slate / teal / indigo  (`data-palette` en <html>)
+ *
+ * Son independientes: 4 paletas x 2 modos = 8 combinaciones. Por eso cada
+ * paleta define DOS bloques, uno claro y otro oscuro, y el oscuro se escribe
+ * como `.dark[data-palette="x"]` para ganarle en especificidad al `.dark` de
+ * arriba (0,2,0 contra 0,1,0).
+ *
+ * La paleta "marca" NO está acá: es la de arriba, la que aplica cuando no hay
+ * `data-palette` o vale "marca". Es el default y la identidad del producto.
+ *
+ * ---------------------------------------------------------------------------
+ * QUÉ HAY QUE REDEFINIR EN CADA UNA (y qué no)
+ * ---------------------------------------------------------------------------
+ *
+ * SÍ: los colores. NO: `--radius`, las fuentes, los tamaños ni los espaciados.
+ * Cambiar de paleta cambia el color y NADA MÁS — la tipografía es la misma en
+ * las cuatro, a propósito.
+ *
+ * `--on-brand` se queda en blanco SIEMPRE, en las cuatro paletas y en los dos
+ * modos. Los gradientes de marca son oscuros siempre, así que el texto que va
+ * encima es claro siempre. (Ver el comentario de `--on-brand` más arriba: usar
+ * `--primary-foreground` para eso es lo que dejaba texto negro sobre navy.)
+ *
+ * `--brand-red` / `--brand-blue` / `--brand-navy` tampoco cambian: son los
+ * colores del LOGO, no del tema. El logo es el mismo se elija lo que se elija.
+ * ========================================================================== */
+
+/* -------------------------------------------------------------------------- *
+ *  SLATE — gris azulado neutro
+ *  El de GitHub y Linear. La opción sobria: no compite con el contenido, que
+ *  en una pantalla de datos es exactamente lo que se busca.
+ * -------------------------------------------------------------------------- */
+[data-palette="slate"] {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+
+  --primary: #334155;
+  --primary-foreground: #ffffff;
+  --primary-soft: #e7ecf3;
+
+  --secondary: #eef2f7;
+  --secondary-foreground: #0f172a;
+
+  --muted: #eef2f7;
+  --muted-foreground: #5a6b82;
+
+  --accent: #eef2f7;
+  --accent-foreground: #0f172a;
+
+  --destructive: #d1121c;
+  --destructive-foreground: #ffffff;
+
+  --border: #dde4ed;
+  --input: #dde4ed;
+  --ring: #64748b;
+
+  --sidebar: #f8fafc;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #334155;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eef2f7;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #dde4ed;
+  --sidebar-ring: #64748b;
+
+  --gradient-hero: linear-gradient(135deg, #475569 0%, #1e293b 100%);
+  --gradient-navy: linear-gradient(150deg, #334155 0%, #0f172a 100%);
+
+  --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.06), 0 8px 20px -14px rgb(15 23 42 / 0.18);
+  --shadow-card: 0 1px 3px rgb(15 23 42 / 0.05), 0 12px 28px -20px rgb(15 23 42 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(51 65 85 / 0.45);
+  --surface-glass: rgb(248 250 252 / 0.72);
+}
+
+.dark[data-palette="slate"] {
+  --background: #0b1220;
+  --foreground: #e6edf6;
+
+  --card: #131c2b;
+  --card-foreground: #e6edf6;
+  --popover: #131c2b;
+  --popover-foreground: #e6edf6;
+
+  /* Claro sobre oscuro: el #334155 del modo claro acá sería invisible. */
+  --primary: #94a9c4;
+  --primary-foreground: #0b1220;
+  --primary-soft: #1c2739;
+
+  --secondary: #1a2333;
+  --secondary-foreground: #e6edf6;
+
+  --muted: #1a2333;
+  --muted-foreground: #9aa8bd;
+
+  --accent: #202b3d;
+  --accent-foreground: #e6edf6;
+
+  --destructive: #ff5a5f;
+  --destructive-foreground: #2a0508;
+
+  --border: #26324a;
+  --input: #2f3c56;
+  --ring: #94a9c4;
+
+  --sidebar: #0d1523;
+  --sidebar-foreground: #e6edf6;
+  --sidebar-primary: #94a9c4;
+  --sidebar-primary-foreground: #0b1220;
+  --sidebar-accent: #1a2333;
+  --sidebar-accent-foreground: #e6edf6;
+  --sidebar-border: #26324a;
+  --sidebar-ring: #94a9c4;
+
+  --gradient-hero: linear-gradient(135deg, #334155 0%, #0b1220 100%);
+  --gradient-navy: linear-gradient(150deg, #1e293b 0%, #080d17 100%);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
+  --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
+  --surface-glass: rgb(11 18 32 / 0.72);
+}
+
+/* -------------------------------------------------------------------------- *
+ *  TEAL — verde azulado
+ *  La más descansada para jornadas largas: el verde-azul está en el medio del
+ *  espectro visible y el ojo lo enfoca sin esfuerzo, a diferencia del azul
+ *  puro o el rojo, que obligan a corregir el foco.
+ * -------------------------------------------------------------------------- */
+[data-palette="teal"] {
+  --background: #f4faf9;
+  --foreground: #0d2b2b;
+
+  --card: #ffffff;
+  --card-foreground: #0d2b2b;
+  --popover: #ffffff;
+  --popover-foreground: #0d2b2b;
+
+  --primary: #0f6f6c;
+  --primary-foreground: #ffffff;
+  --primary-soft: #dcf0ee;
+
+  --secondary: #e4f2f0;
+  --secondary-foreground: #0d2b2b;
+
+  --muted: #e4f2f0;
+  --muted-foreground: #4f6f6e;
+
+  --accent: #e4f2f0;
+  --accent-foreground: #0d2b2b;
+
+  --destructive: #c62828;
+  --destructive-foreground: #ffffff;
+
+  --border: #d0e6e3;
+  --input: #d0e6e3;
+  --ring: #0f6f6c;
+
+  --sidebar: #f4faf9;
+  --sidebar-foreground: #0d2b2b;
+  --sidebar-primary: #0f6f6c;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e4f2f0;
+  --sidebar-accent-foreground: #0d2b2b;
+  --sidebar-border: #d0e6e3;
+  --sidebar-ring: #0f6f6c;
+
+  --gradient-hero: linear-gradient(135deg, #14857f 0%, #0b3b3f 100%);
+  --gradient-navy: linear-gradient(150deg, #0f5f5e 0%, #072a2d 100%);
+
+  --shadow-soft: 0 1px 2px rgb(13 43 43 / 0.06), 0 8px 20px -14px rgb(13 43 43 / 0.18);
+  --shadow-card: 0 1px 3px rgb(13 43 43 / 0.05), 0 12px 28px -20px rgb(13 43 43 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(15 111 108 / 0.45);
+  --surface-glass: rgb(244 250 249 / 0.72);
+}
+
+.dark[data-palette="teal"] {
+  --background: #071a1c;
+  --foreground: #dff1ef;
+
+  --card: #0e2628;
+  --card-foreground: #dff1ef;
+  --popover: #0e2628;
+  --popover-foreground: #dff1ef;
+
+  --primary: #4fd1c5;
+  --primary-foreground: #04211f;
+  --primary-soft: #123634;
+
+  --secondary: #122e30;
+  --secondary-foreground: #dff1ef;
+
+  --muted: #122e30;
+  --muted-foreground: #8fb3b1;
+
+  --accent: #173a3c;
+  --accent-foreground: #dff1ef;
+
+  --destructive: #ff5a5f;
+  --destructive-foreground: #2a0508;
+
+  --border: #1d4245;
+  --input: #245054;
+  --ring: #4fd1c5;
+
+  --sidebar: #061d1f;
+  --sidebar-foreground: #dff1ef;
+  --sidebar-primary: #4fd1c5;
+  --sidebar-primary-foreground: #04211f;
+  --sidebar-accent: #122e30;
+  --sidebar-accent-foreground: #dff1ef;
+  --sidebar-border: #1d4245;
+  --sidebar-ring: #4fd1c5;
+
+  --gradient-hero: linear-gradient(135deg, #0f6f6c 0%, #071a1c 100%);
+  --gradient-navy: linear-gradient(150deg, #0d4a4c 0%, #041416 100%);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
+  --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
+  --surface-glass: rgb(7 26 28 / 0.72);
+}
+
+/* -------------------------------------------------------------------------- *
+ *  ÍNDIGO — azul violeta
+ *  El de Stripe y Notion. La más "de producto moderno" de las tres, y la más
+ *  cercana al navy de la marca: es el cambio menos brusco viniendo del default.
+ * -------------------------------------------------------------------------- */
+[data-palette="indigo"] {
+  --background: #f7f8fd;
+  --foreground: #1b1c3a;
+
+  --card: #ffffff;
+  --card-foreground: #1b1c3a;
+  --popover: #ffffff;
+  --popover-foreground: #1b1c3a;
+
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --primary-soft: #e7e6fc;
+
+  --secondary: #ecebfa;
+  --secondary-foreground: #1b1c3a;
+
+  --muted: #ecebfa;
+  --muted-foreground: #5f5f85;
+
+  --accent: #ecebfa;
+  --accent-foreground: #1b1c3a;
+
+  --destructive: #d1121c;
+  --destructive-foreground: #ffffff;
+
+  --border: #dedcf5;
+  --input: #dedcf5;
+  --ring: #4f46e5;
+
+  --sidebar: #f7f8fd;
+  --sidebar-foreground: #1b1c3a;
+  --sidebar-primary: #4f46e5;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ecebfa;
+  --sidebar-accent-foreground: #1b1c3a;
+  --sidebar-border: #dedcf5;
+  --sidebar-ring: #4f46e5;
+
+  --gradient-hero: linear-gradient(135deg, #6366f1 0%, #312e81 100%);
+  --gradient-navy: linear-gradient(150deg, #4338ca 0%, #1e1b4b 100%);
+
+  --shadow-soft: 0 1px 2px rgb(27 28 58 / 0.06), 0 8px 20px -14px rgb(27 28 58 / 0.18);
+  --shadow-card: 0 1px 3px rgb(27 28 58 / 0.05), 0 12px 28px -20px rgb(27 28 58 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(79 70 229 / 0.45);
+  --surface-glass: rgb(247 248 253 / 0.72);
+}
+
+.dark[data-palette="indigo"] {
+  --background: #0d0d1f;
+  --foreground: #e8e7f8;
+
+  --card: #16162e;
+  --card-foreground: #e8e7f8;
+  --popover: #16162e;
+  --popover-foreground: #e8e7f8;
+
+  --primary: #a5b4fc;
+  --primary-foreground: #0d0d1f;
+  --primary-soft: #1f1f45;
+
+  --secondary: #1b1b38;
+  --secondary-foreground: #e8e7f8;
+
+  --muted: #1b1b38;
+  --muted-foreground: #a0a0c0;
+
+  --accent: #222246;
+  --accent-foreground: #e8e7f8;
+
+  --destructive: #ff5a5f;
+  --destructive-foreground: #2a0508;
+
+  --border: #2a2a52;
+  --input: #333363;
+  --ring: #a5b4fc;
+
+  --sidebar: #0f0f26;
+  --sidebar-foreground: #e8e7f8;
+  --sidebar-primary: #a5b4fc;
+  --sidebar-primary-foreground: #0d0d1f;
+  --sidebar-accent: #1b1b38;
+  --sidebar-accent-foreground: #e8e7f8;
+  --sidebar-border: #2a2a52;
+  --sidebar-ring: #a5b4fc;
+
+  --gradient-hero: linear-gradient(135deg, #4338ca 0%, #0d0d1f 100%);
+  --gradient-navy: linear-gradient(150deg, #312e81 0%, #0a0a18 100%);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
+  --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
+  --surface-glass: rgb(13 13 31 / 0.72);
+}
+
+/* -------------------------------------------------------------------------- *
+ *  AZUL — el azul corporativo
+ *  El color más usado en software de gestión, y por algo: es el que la gente
+ *  asocia con "confiable". Tipo Office, Salesforce, LinkedIn.
+ * -------------------------------------------------------------------------- */
+[data-palette="azul"] {
+  --background: #f5f9ff;
+  --foreground: #10243d;
+
+  --card: #ffffff;
+  --card-foreground: #10243d;
+  --popover: #ffffff;
+  --popover-foreground: #10243d;
+
+  --primary: #1d4ed8;
+  --primary-foreground: #ffffff;
+  --primary-soft: #e2ecfd;
+
+  --secondary: #e8f0fd;
+  --secondary-foreground: #10243d;
+
+  --muted: #e8f0fd;
+  --muted-foreground: #556e8d;
+
+  --accent: #e8f0fd;
+  --accent-foreground: #10243d;
+
+  --destructive: #d1121c;
+  --destructive-foreground: #ffffff;
+
+  --border: #d5e2f5;
+  --input: #d5e2f5;
+  --ring: #1d4ed8;
+
+  --sidebar: #f5f9ff;
+  --sidebar-foreground: #10243d;
+  --sidebar-primary: #1d4ed8;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e8f0fd;
+  --sidebar-accent-foreground: #10243d;
+  --sidebar-border: #d5e2f5;
+  --sidebar-ring: #1d4ed8;
+
+  --gradient-hero: linear-gradient(135deg, #2563eb 0%, #17325c 100%);
+  --gradient-navy: linear-gradient(150deg, #1e40af 0%, #0d1f3d 100%);
+
+  --shadow-soft: 0 1px 2px rgb(16 36 61 / 0.06), 0 8px 20px -14px rgb(16 36 61 / 0.18);
+  --shadow-card: 0 1px 3px rgb(16 36 61 / 0.05), 0 12px 28px -20px rgb(16 36 61 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(29 78 216 / 0.45);
+  --surface-glass: rgb(245 249 255 / 0.72);
+}
+
+.dark[data-palette="azul"] {
+  --background: #0a1424;
+  --foreground: #e3ecf9;
+
+  --card: #122036;
+  --card-foreground: #e3ecf9;
+  --popover: #122036;
+  --popover-foreground: #e3ecf9;
+
+  --primary: #7cadf5;
+  --primary-foreground: #06101f;
+  --primary-soft: #172b4a;
+
+  --secondary: #16273f;
+  --secondary-foreground: #e3ecf9;
+
+  --muted: #16273f;
+  --muted-foreground: #93a9c7;
+
+  --accent: #1c3050;
+  --accent-foreground: #e3ecf9;
+
+  --destructive: #ff5a5f;
+  --destructive-foreground: #2a0508;
+
+  --border: #23375a;
+  --input: #2c4470;
+  --ring: #7cadf5;
+
+  --sidebar: #0c1829;
+  --sidebar-foreground: #e3ecf9;
+  --sidebar-primary: #7cadf5;
+  --sidebar-primary-foreground: #06101f;
+  --sidebar-accent: #16273f;
+  --sidebar-accent-foreground: #e3ecf9;
+  --sidebar-border: #23375a;
+  --sidebar-ring: #7cadf5;
+
+  --gradient-hero: linear-gradient(135deg, #1e40af 0%, #0a1424 100%);
+  --gradient-navy: linear-gradient(150deg, #17325c 0%, #060e1a 100%);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
+  --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
+  --surface-glass: rgb(10 20 36 / 0.72);
+}
+
+/* -------------------------------------------------------------------------- *
+ *  VERDE — el de finanzas y contabilidad
+ *  Lectura inmediata de "en orden", "aprobado". Tipo QuickBooks o Xero.
+ *  OJO: en una app donde el verde ya significa "éxito" en los mensajes, esta
+ *  paleta le quita ese contraste. Está igual porque es de las más pedidas.
+ * -------------------------------------------------------------------------- */
+[data-palette="verde"] {
+  --background: #f4faf5;
+  --foreground: #102a19;
+
+  --card: #ffffff;
+  --card-foreground: #102a19;
+  --popover: #ffffff;
+  --popover-foreground: #102a19;
+
+  --primary: #15803d;
+  --primary-foreground: #ffffff;
+  --primary-soft: #dcf0e2;
+
+  --secondary: #e4f2e8;
+  --secondary-foreground: #102a19;
+
+  --muted: #e4f2e8;
+  --muted-foreground: #4f6f59;
+
+  --accent: #e4f2e8;
+  --accent-foreground: #102a19;
+
+  /* Más rojo que el default: al lado del verde primario tiene que separarse. */
+  --destructive: #c0111a;
+  --destructive-foreground: #ffffff;
+
+  --border: #d0e6d7;
+  --input: #d0e6d7;
+  --ring: #15803d;
+
+  --sidebar: #f4faf5;
+  --sidebar-foreground: #102a19;
+  --sidebar-primary: #15803d;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e4f2e8;
+  --sidebar-accent-foreground: #102a19;
+  --sidebar-border: #d0e6d7;
+  --sidebar-ring: #15803d;
+
+  --gradient-hero: linear-gradient(135deg, #16a34a 0%, #0d3b21 100%);
+  --gradient-navy: linear-gradient(150deg, #15803d 0%, #082a16 100%);
+
+  --shadow-soft: 0 1px 2px rgb(16 42 25 / 0.06), 0 8px 20px -14px rgb(16 42 25 / 0.18);
+  --shadow-card: 0 1px 3px rgb(16 42 25 / 0.05), 0 12px 28px -20px rgb(16 42 25 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(21 128 61 / 0.45);
+  --surface-glass: rgb(244 250 245 / 0.72);
+}
+
+.dark[data-palette="verde"] {
+  --background: #071a0f;
+  --foreground: #dff1e5;
+
+  --card: #0e2618;
+  --card-foreground: #dff1e5;
+  --popover: #0e2618;
+  --popover-foreground: #dff1e5;
+
+  --primary: #5fd68b;
+  --primary-foreground: #04210f;
+  --primary-soft: #12361f;
+
+  --secondary: #122e1c;
+  --secondary-foreground: #dff1e5;
+
+  --muted: #122e1c;
+  --muted-foreground: #8fb39c;
+
+  --accent: #173a24;
+  --accent-foreground: #dff1e5;
+
+  --destructive: #ff5a5f;
+  --destructive-foreground: #2a0508;
+
+  --border: #1d4229;
+  --input: #245033;
+  --ring: #5fd68b;
+
+  --sidebar: #061d11;
+  --sidebar-foreground: #dff1e5;
+  --sidebar-primary: #5fd68b;
+  --sidebar-primary-foreground: #04210f;
+  --sidebar-accent: #122e1c;
+  --sidebar-accent-foreground: #dff1e5;
+  --sidebar-border: #1d4229;
+  --sidebar-ring: #5fd68b;
+
+  --gradient-hero: linear-gradient(135deg, #15803d 0%, #071a0f 100%);
+  --gradient-navy: linear-gradient(150deg, #0d4a26 0%, #04140a 100%);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
+  --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
+  --surface-glass: rgb(7 26 15 / 0.72);
+}
+
+/* -------------------------------------------------------------------------- *
+ *  VIOLETA — el expresivo
+ *  Tipo Twitch o Figma. El más "de producto joven" del set.
+ * -------------------------------------------------------------------------- */
+[data-palette="violeta"] {
+  --background: #faf7fe;
+  --foreground: #2a1840;
+
+  --card: #ffffff;
+  --card-foreground: #2a1840;
+  --popover: #ffffff;
+  --popover-foreground: #2a1840;
+
+  --primary: #7c3aed;
+  --primary-foreground: #ffffff;
+  --primary-soft: #eee6fd;
+
+  --secondary: #f0e9fd;
+  --secondary-foreground: #2a1840;
+
+  --muted: #f0e9fd;
+  --muted-foreground: #6b5b85;
+
+  --accent: #f0e9fd;
+  --accent-foreground: #2a1840;
+
+  --destructive: #d1121c;
+  --destructive-foreground: #ffffff;
+
+  --border: #e5daf8;
+  --input: #e5daf8;
+  --ring: #7c3aed;
+
+  --sidebar: #faf7fe;
+  --sidebar-foreground: #2a1840;
+  --sidebar-primary: #7c3aed;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f0e9fd;
+  --sidebar-accent-foreground: #2a1840;
+  --sidebar-border: #e5daf8;
+  --sidebar-ring: #7c3aed;
+
+  --gradient-hero: linear-gradient(135deg, #9333ea 0%, #3b1a67 100%);
+  --gradient-navy: linear-gradient(150deg, #6d28d9 0%, #2a1052 100%);
+
+  --shadow-soft: 0 1px 2px rgb(42 24 64 / 0.06), 0 8px 20px -14px rgb(42 24 64 / 0.18);
+  --shadow-card: 0 1px 3px rgb(42 24 64 / 0.05), 0 12px 28px -20px rgb(42 24 64 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(124 58 237 / 0.45);
+  --surface-glass: rgb(250 247 254 / 0.72);
+}
+
+.dark[data-palette="violeta"] {
+  --background: #140d24;
+  --foreground: #ece4fa;
+
+  --card: #1e1436;
+  --card-foreground: #ece4fa;
+  --popover: #1e1436;
+  --popover-foreground: #ece4fa;
+
+  --primary: #c4a5fd;
+  --primary-foreground: #140d24;
+  --primary-soft: #2a1a4d;
+
+  --secondary: #221741;
+  --secondary-foreground: #ece4fa;
+
+  --muted: #221741;
+  --muted-foreground: #a898c4;
+
+  --accent: #2b1e50;
+  --accent-foreground: #ece4fa;
+
+  --destructive: #ff5a5f;
+  --destructive-foreground: #2a0508;
+
+  --border: #33245c;
+  --input: #3f2d70;
+  --ring: #c4a5fd;
+
+  --sidebar: #170f29;
+  --sidebar-foreground: #ece4fa;
+  --sidebar-primary: #c4a5fd;
+  --sidebar-primary-foreground: #140d24;
+  --sidebar-accent: #221741;
+  --sidebar-accent-foreground: #ece4fa;
+  --sidebar-border: #33245c;
+  --sidebar-ring: #c4a5fd;
+
+  --gradient-hero: linear-gradient(135deg, #6d28d9 0%, #140d24 100%);
+  --gradient-navy: linear-gradient(150deg, #4c1d95 0%, #0f0a1b 100%);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
+  --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
+  --surface-glass: rgb(20 13 36 / 0.72);
+}
+
+/* -------------------------------------------------------------------------- *
+ *  ROSA — magenta
+ *  El acento de Material Design y de muchas apps de consumo. Sorprende lo
+ *  bien que funciona en interfaces de datos: el magenta oscuro tiene el mismo
+ *  contraste que un azul, pero no se confunde con los links.
+ * -------------------------------------------------------------------------- */
+[data-palette="rosa"] {
+  --background: #fef6f9;
+  --foreground: #3d1027;
+
+  --card: #ffffff;
+  --card-foreground: #3d1027;
+  --popover: #ffffff;
+  --popover-foreground: #3d1027;
+
+  --primary: #be185d;
+  --primary-foreground: #ffffff;
+  --primary-soft: #fce4ee;
+
+  --secondary: #fce7f0;
+  --secondary-foreground: #3d1027;
+
+  --muted: #fce7f0;
+  --muted-foreground: #85566c;
+
+  --accent: #fce7f0;
+  --accent-foreground: #3d1027;
+
+  /* Naranja rojizo: un rojo puro al lado del magenta no se distingue. */
+  --destructive: #c2410c;
+  --destructive-foreground: #ffffff;
+
+  --border: #f5d6e3;
+  --input: #f5d6e3;
+  --ring: #be185d;
+
+  --sidebar: #fef6f9;
+  --sidebar-foreground: #3d1027;
+  --sidebar-primary: #be185d;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fce7f0;
+  --sidebar-accent-foreground: #3d1027;
+  --sidebar-border: #f5d6e3;
+  --sidebar-ring: #be185d;
+
+  --gradient-hero: linear-gradient(135deg, #db2777 0%, #500724 100%);
+  --gradient-navy: linear-gradient(150deg, #9d174d 0%, #3f0519 100%);
+
+  --shadow-soft: 0 1px 2px rgb(61 16 39 / 0.06), 0 8px 20px -14px rgb(61 16 39 / 0.18);
+  --shadow-card: 0 1px 3px rgb(61 16 39 / 0.05), 0 12px 28px -20px rgb(61 16 39 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(190 24 93 / 0.45);
+  --surface-glass: rgb(254 246 249 / 0.72);
+}
+
+.dark[data-palette="rosa"] {
+  --background: #1c0a14;
+  --foreground: #fae3ee;
+
+  --card: #2a1120;
+  --card-foreground: #fae3ee;
+  --popover: #2a1120;
+  --popover-foreground: #fae3ee;
+
+  --primary: #f9a8d4;
+  --primary-foreground: #1c0a14;
+  --primary-soft: #3d1628;
+
+  --secondary: #2f1425;
+  --secondary-foreground: #fae3ee;
+
+  --muted: #2f1425;
+  --muted-foreground: #c497ac;
+
+  --accent: #3a1a2e;
+  --accent-foreground: #fae3ee;
+
+  --destructive: #fb7185;
+  --destructive-foreground: #2a0508;
+
+  --border: #4a2136;
+  --input: #5c2a43;
+  --ring: #f9a8d4;
+
+  --sidebar: #200c17;
+  --sidebar-foreground: #fae3ee;
+  --sidebar-primary: #f9a8d4;
+  --sidebar-primary-foreground: #1c0a14;
+  --sidebar-accent: #2f1425;
+  --sidebar-accent-foreground: #fae3ee;
+  --sidebar-border: #4a2136;
+  --sidebar-ring: #f9a8d4;
+
+  --gradient-hero: linear-gradient(135deg, #9d174d 0%, #1c0a14 100%);
+  --gradient-navy: linear-gradient(150deg, #701a37 0%, #150710 100%);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
+  --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
+  --surface-glass: rgb(28 10 20 / 0.72);
+}
+
+/* -------------------------------------------------------------------------- *
+ *  NARANJA — cálido y enérgico
+ *  El de las apps de logística y delivery. En modo claro es el que más
+ *  "despierta" del set.
+ * -------------------------------------------------------------------------- */
+[data-palette="naranja"] {
+  --background: #fff9f4;
+  --foreground: #3d1f0a;
+
+  --card: #ffffff;
+  --card-foreground: #3d1f0a;
+  --popover: #ffffff;
+  --popover-foreground: #3d1f0a;
+
+  /* c2410c y no un naranja brillante: el naranja claro sobre blanco no llega
+     a 4.5:1 y un botón primario tiene que ser legible, no solo vistoso. */
+  --primary: #c2410c;
+  --primary-foreground: #ffffff;
+  --primary-soft: #fdeade;
+
+  --secondary: #fdeee2;
+  --secondary-foreground: #3d1f0a;
+
+  --muted: #fdeee2;
+  --muted-foreground: #85614a;
+
+  --accent: #fdeee2;
+  --accent-foreground: #3d1f0a;
+
+  /* Rojo frío, para que no se confunda con el naranja primario. */
+  --destructive: #be123c;
+  --destructive-foreground: #ffffff;
+
+  --border: #f7ddc9;
+  --input: #f7ddc9;
+  --ring: #c2410c;
+
+  --sidebar: #fff9f4;
+  --sidebar-foreground: #3d1f0a;
+  --sidebar-primary: #c2410c;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fdeee2;
+  --sidebar-accent-foreground: #3d1f0a;
+  --sidebar-border: #f7ddc9;
+  --sidebar-ring: #c2410c;
+
+  --gradient-hero: linear-gradient(135deg, #ea580c 0%, #5c2308 100%);
+  --gradient-navy: linear-gradient(150deg, #9a3412 0%, #431a06 100%);
+
+  --shadow-soft: 0 1px 2px rgb(61 31 10 / 0.06), 0 8px 20px -14px rgb(61 31 10 / 0.18);
+  --shadow-card: 0 1px 3px rgb(61 31 10 / 0.05), 0 12px 28px -20px rgb(61 31 10 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(194 65 12 / 0.45);
+  --surface-glass: rgb(255 249 244 / 0.72);
+}
+
+.dark[data-palette="naranja"] {
+  --background: #1c1008;
+  --foreground: #fae8dc;
+
+  --card: #2a1a0f;
+  --card-foreground: #fae8dc;
+  --popover: #2a1a0f;
+  --popover-foreground: #fae8dc;
+
+  --primary: #fdba74;
+  --primary-foreground: #1c1008;
+  --primary-soft: #3d2413;
+
+  --secondary: #2f1e11;
+  --secondary-foreground: #fae8dc;
+
+  --muted: #2f1e11;
+  --muted-foreground: #c4a189;
+
+  --accent: #3a2616;
+  --accent-foreground: #fae8dc;
+
+  --destructive: #fb7185;
+  --destructive-foreground: #2a0508;
+
+  --border: #4a301b;
+  --input: #5c3c22;
+  --ring: #fdba74;
+
+  --sidebar: #20130a;
+  --sidebar-foreground: #fae8dc;
+  --sidebar-primary: #fdba74;
+  --sidebar-primary-foreground: #1c1008;
+  --sidebar-accent: #2f1e11;
+  --sidebar-accent-foreground: #fae8dc;
+  --sidebar-border: #4a301b;
+  --sidebar-ring: #fdba74;
+
+  --gradient-hero: linear-gradient(135deg, #9a3412 0%, #1c1008 100%);
+  --gradient-navy: linear-gradient(150deg, #7c2d12 0%, #150c06 100%);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
+  --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
+  --surface-glass: rgb(28 16 8 / 0.72);
+}
+
+/* -------------------------------------------------------------------------- *
+ *  ÁMBAR — sepia, cálida
+ *  La opción "papel". Cómoda de noche porque baja la proporción de azul, que
+ *  es la parte del espectro que más despabila.
+ * -------------------------------------------------------------------------- */
+[data-palette="ambar"] {
+  --background: #fdfaf3;
+  --foreground: #33270f;
+
+  --card: #ffffff;
+  --card-foreground: #33270f;
+  --popover: #ffffff;
+  --popover-foreground: #33270f;
+
+  --primary: #a16207;
+  --primary-foreground: #ffffff;
+  --primary-soft: #fbf0d9;
+
+  --secondary: #f8f0de;
+  --secondary-foreground: #33270f;
+
+  --muted: #f8f0de;
+  --muted-foreground: #7a6844;
+
+  --accent: #f8f0de;
+  --accent-foreground: #33270f;
+
+  --destructive: #be123c;
+  --destructive-foreground: #ffffff;
+
+  --border: #ebe0c6;
+  --input: #ebe0c6;
+  --ring: #a16207;
+
+  --sidebar: #fdfaf3;
+  --sidebar-foreground: #33270f;
+  --sidebar-primary: #a16207;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f8f0de;
+  --sidebar-accent-foreground: #33270f;
+  --sidebar-border: #ebe0c6;
+  --sidebar-ring: #a16207;
+
+  --gradient-hero: linear-gradient(135deg, #ca8a04 0%, #452c05 100%);
+  --gradient-navy: linear-gradient(150deg, #854d0e 0%, #362104 100%);
+
+  --shadow-soft: 0 1px 2px rgb(51 39 15 / 0.06), 0 8px 20px -14px rgb(51 39 15 / 0.18);
+  --shadow-card: 0 1px 3px rgb(51 39 15 / 0.05), 0 12px 28px -20px rgb(51 39 15 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(161 98 7 / 0.45);
+  --surface-glass: rgb(253 250 243 / 0.72);
+}
+
+.dark[data-palette="ambar"] {
+  --background: #191307;
+  --foreground: #f7ecd6;
+
+  --card: #261e0e;
+  --card-foreground: #f7ecd6;
+  --popover: #261e0e;
+  --popover-foreground: #f7ecd6;
+
+  --primary: #fcd34d;
+  --primary-foreground: #191307;
+  --primary-soft: #3a2c11;
+
+  --secondary: #2b2210;
+  --secondary-foreground: #f7ecd6;
+
+  --muted: #2b2210;
+  --muted-foreground: #c0ab84;
+
+  --accent: #362b15;
+  --accent-foreground: #f7ecd6;
+
+  --destructive: #fb7185;
+  --destructive-foreground: #2a0508;
+
+  --border: #46381a;
+  --input: #574621;
+  --ring: #fcd34d;
+
+  --sidebar: #1d160a;
+  --sidebar-foreground: #f7ecd6;
+  --sidebar-primary: #fcd34d;
+  --sidebar-primary-foreground: #191307;
+  --sidebar-accent: #2b2210;
+  --sidebar-accent-foreground: #f7ecd6;
+  --sidebar-border: #46381a;
+  --sidebar-ring: #fcd34d;
+
+  --gradient-hero: linear-gradient(135deg, #854d0e 0%, #191307 100%);
+  --gradient-navy: linear-gradient(150deg, #713f12 0%, #130e05 100%);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
+  --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
+  --surface-glass: rgb(25 19 7 / 0.72);
+}
+
+/* -------------------------------------------------------------------------- *
+ *  GRAFITO — gris neutro puro
+ *  Sin tinte de color, a diferencia de Slate (que es gris AZULADO). La opción
+ *  de máximo contraste: cuando los datos de la pantalla ya tienen colores
+ *  propios (estados, gráficos), una interfaz sin color los deja hablar.
+ * -------------------------------------------------------------------------- */
+[data-palette="grafito"] {
+  --background: #fafafa;
+  --foreground: #18181b;
+
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+
+  --primary: #27272a;
+  --primary-foreground: #ffffff;
+  --primary-soft: #ececee;
+
+  --secondary: #f1f1f2;
+  --secondary-foreground: #18181b;
+
+  --muted: #f1f1f2;
+  --muted-foreground: #63636b;
+
+  --accent: #f1f1f2;
+  --accent-foreground: #18181b;
+
+  --destructive: #d1121c;
+  --destructive-foreground: #ffffff;
+
+  --border: #e2e2e5;
+  --input: #e2e2e5;
+  --ring: #71717a;
+
+  --sidebar: #fafafa;
+  --sidebar-foreground: #18181b;
+  --sidebar-primary: #27272a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f1f2;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e2e2e5;
+  --sidebar-ring: #71717a;
+
+  --gradient-hero: linear-gradient(135deg, #52525b 0%, #18181b 100%);
+  --gradient-navy: linear-gradient(150deg, #3f3f46 0%, #111113 100%);
+
+  --shadow-soft: 0 1px 2px rgb(24 24 27 / 0.06), 0 8px 20px -14px rgb(24 24 27 / 0.18);
+  --shadow-card: 0 1px 3px rgb(24 24 27 / 0.05), 0 12px 28px -20px rgb(24 24 27 / 0.22);
+  --shadow-elegant: 0 16px 40px -24px rgb(39 39 42 / 0.45);
+  --surface-glass: rgb(250 250 250 / 0.72);
+}
+
+.dark[data-palette="grafito"] {
+  --background: #0c0c0e;
+  --foreground: #ededf0;
+
+  --card: #17171a;
+  --card-foreground: #ededf0;
+  --popover: #17171a;
+  --popover-foreground: #ededf0;
+
+  --primary: #d4d4d8;
+  --primary-foreground: #0c0c0e;
+  --primary-soft: #212125;
+
+  --secondary: #1c1c20;
+  --secondary-foreground: #ededf0;
+
+  --muted: #1c1c20;
+  --muted-foreground: #a1a1aa;
+
+  --accent: #26262b;
+  --accent-foreground: #ededf0;
+
+  --destructive: #ff5a5f;
+  --destructive-foreground: #2a0508;
+
+  --border: #2e2e34;
+  --input: #3a3a42;
+  --ring: #d4d4d8;
+
+  --sidebar: #0f0f11;
+  --sidebar-foreground: #ededf0;
+  --sidebar-primary: #d4d4d8;
+  --sidebar-primary-foreground: #0c0c0e;
+  --sidebar-accent: #1c1c20;
+  --sidebar-accent-foreground: #ededf0;
+  --sidebar-border: #2e2e34;
+  --sidebar-ring: #d4d4d8;
+
+  --gradient-hero: linear-gradient(135deg, #3f3f46 0%, #0c0c0e 100%);
+  --gradient-navy: linear-gradient(150deg, #27272a 0%, #08080a 100%);
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -14px rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 28px -20px rgb(0 0 0 / 0.7);
+  --shadow-elegant: 0 16px 40px -24px rgb(0 0 0 / 0.75);
+  --surface-glass: rgb(12 12 14 / 0.72);
 }
 
 @layer base {

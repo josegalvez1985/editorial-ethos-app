@@ -65,13 +65,16 @@ export function AppHeader() {
           </button>
         ) : null}
 
-        {/* El logo es solo del celular: en escritorio ya está en la sidebar. */}
+        {/*
+          El logo es solo del celular: en escritorio ya está en la sidebar.
+          Sin `bg-white` ni padding — el logo trae su propio fondo azul.
+        */}
         <Link
           to="/home"
-          aria-label="Editorial Ethos"
-          className="tap shrink-0 rounded-xl bg-white p-1 shadow-soft lg:hidden"
+          aria-label="Juventud con Valores"
+          className="tap shrink-0 overflow-hidden rounded-xl shadow-soft lg:hidden"
         >
-          <img src={asset("logo.png")} alt="Editorial Ethos" className="size-8 rounded-lg" />
+          <img src={asset("logo.png")} alt="Juventud con Valores" className="size-9" />
         </Link>
 
         {/* Mientras revalidamos el token no sabemos el nombre: barra en gris en vez
@@ -90,7 +93,7 @@ export function AppHeader() {
               Hola, <span className="font-semibold">{user.name}</span>
             </p>
             <p className="font-display hidden truncate text-lg leading-tight font-bold lg:block">
-              {modulo?.label ?? "Editorial Ethos"}
+              {modulo?.label ?? "Juventud con Valores"}
             </p>
             <p className="mt-0.5 truncate text-[11.5px] leading-tight text-muted-foreground">
               <span className="lg:hidden">{fecha}</span>

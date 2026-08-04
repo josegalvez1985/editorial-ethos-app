@@ -386,11 +386,62 @@ export function calificacionDeConteo(marcadas: number): Calificacion | null {
 /* -------------------------------------------------------------------------- */
 
 /**
+ * Formatea un nombre propio: "jose galvez" -> "Jose Galvez".
+ *
+ * `evaluado_por` es texto tipeado a mano y venía como saliera —"JOSE GALVEZ",
+ * "jose galvez", "Jose galvez"—, así que la misma persona se veía distinta en
+ * cada evaluación. Esto lo deja siempre igual.
+ *
+ * ## Lo que hace
+ *
+ * - Primera letra de cada palabra en mayúscula, el resto en minúscula. Eso
+ *   ARREGLA el texto en MAYÚSCULAS, que es el caso más común (tecla de bloqueo
+ *   puesta) y el que peor se lee.
+ * - Acepta **varios evaluadores** separados por coma: "jose galvez, elena baez"
+ *   -> "Jose Galvez, Elena Baez". Se normaliza el espaciado alrededor de la
+ *   coma, que es lo que hace que dos listas iguales se vean distintas.
+ * - Colapsa los espacios de más y recorta las puntas.
+ *
+ * ## Lo que NO hace
+ *
+ * - **No toca las partículas** ("de", "del", "la", "van"). "Maria de la Cruz"
+ *   queda "Maria De La Cruz". Es feo pero es lo correcto acá: la lista de
+ *   partículas cambia según el apellido y el país, y equivocarse escribiendo
+ *   mal un apellido ajeno es peor que una mayúscula de más. Si algún día se
+ *   quiere, la lista va en una constante y se saltea cuando la palabra NO es la
+ *   primera del nombre.
+ * - No corrige la ortografía ni agrega tildes: "jose" queda "Jose", no "José".
+ *   No hay forma de saber si la persona lleva tilde.
+ *
+ * Los acentos que el usuario SÍ escribió se respetan: `toLocaleUpperCase("es")`
+ * mantiene "ángela" -> "Ángela".
+ */
+export function formatearNombre(valor: string): string {
+  return valor
+    .split(",")
+    .map((parte) =>
+      parte
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((p) => p.charAt(0).toLocaleUpperCase("es") + p.slice(1).toLocaleLowerCase("es"))
+        .join(" "),
+    )
+    .filter(Boolean)
+    .join(", ");
+}
+
+/**
  * Identifica a qué evaluación pertenece una fila.
  *
  * Es lo único que hay: la tabla no tiene columna de cabecera (ver la cabecera de
  * este archivo). `evaluado_por` se normaliza porque es texto tipeado a mano y
  * "Jose Galvez" y "jose galvez " tienen que caer en el mismo grupo.
+ *
+ * Sigue normalizando con `toLowerCase()` y NO con `formatearNombre()`, a
+ * propósito: las evaluaciones ya guardadas tienen el texto como se tipeó
+ * entonces, y agrupar por el formato lindo partiría en dos los grupos que
+ * mezclan filas viejas y nuevas.
  *
  * NO incluye `id_ciudad` ni los aspectos: la ciudad se deriva de la institución
  * y los aspectos son texto largo que no aporta a la identidad del grupo.
@@ -511,7 +562,15 @@ export async function obtenerEvaluacionAgrupada(id: number): Promise<EvaluacionA
 /* Guardar una evaluación completa                                            */
 /* -------------------------------------------------------------------------- */
 
-/** Arma el payload de una fila combinando la cabecera con uno de sus detalles. */
+/**
+ * Arma el payload de una fila combinando la cabecera con uno de sus detalles.
+ *
+ * `evaluado_por` pasa por `formatearNombre()` ACÁ y no en el `onChange` del
+ * input: formatear mientras se tipea pelea con el cursor —al escribir " " la
+ * palabra anterior se capitaliza y el cursor salta— y además impide escribir un
+ * apellido que de verdad lleve dos mayúsculas. Se normaliza al guardar, que es
+ * cuando importa que quede parejo en la base.
+ */
 function filaInput(cab: Cabecera, d: Detalle): EvaluacionInput {
   return {
     id_facilitador: cab.id_facilitador,
@@ -519,7 +578,7 @@ function filaInput(cab: Cabecera, d: Detalle): EvaluacionInput {
     id_ciudad: cab.id_ciudad,
     fecha_desde: cab.fecha_desde,
     fecha_hasta: cab.fecha_hasta,
-    evaluado_por: cab.evaluado_por.trim(),
+    evaluado_por: formatearNombre(cab.evaluado_por),
     id_area: d.id_area,
     id_evaluacion: d.id_evaluacion,
     // 1 o null, nunca 0: el CHECK solo acepta 1..5 o NULL, y la FK a

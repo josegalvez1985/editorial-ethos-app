@@ -32,7 +32,7 @@ import {
 export const Route = createFileRoute("/evaluaciones/")({
   head: () => ({
     meta: [
-      { title: "Evaluaciones — Editorial Ethos" },
+      { title: "Evaluaciones — Juventud con Valores" },
       { name: "description", content: "Evaluaciones de facilitadores." },
     ],
   }),

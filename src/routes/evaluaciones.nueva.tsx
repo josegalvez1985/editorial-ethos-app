@@ -8,7 +8,7 @@ import { guardarEvaluacion, type Cabecera, type Detalle } from "@/lib/evaluacion
 
 export const Route = createFileRoute("/evaluaciones/nueva")({
   head: () => ({
-    meta: [{ title: "Nueva evaluación — Editorial Ethos" }],
+    meta: [{ title: "Nueva evaluación — Juventud con Valores" }],
   }),
   component: NuevaPage,
 });
