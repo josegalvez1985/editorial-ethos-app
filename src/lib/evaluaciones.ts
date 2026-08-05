@@ -660,61 +660,6 @@ export async function listarDirectores(id_institucion: number): Promise<Director
 }
 
 /* -------------------------------------------------------------------------- */
-/* Índices de manuales                                                        */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Una entrada del catálogo `INDICES_MANUALES`: qué contenido se dio en la clase.
- *
- * **No sale de la postulación.** Esa tabla no tiene relación con `POSTULACIONES`
- * —ni FK en un sentido ni en el otro—, así que el índice no se deduce de la
- * clase: lo elige el evaluador. Por eso `ID_INDICE` vive en
- * `EVALUACIONES_FACILITADORES` y no en la postulación.
- */
-export type Indice = {
-  id_indice: number;
-  nro_indice: number;
-  titulo: string;
-  manual: string;
-};
-
-/**
- * Los manuales, sin repetir.
- *
- * `MANUAL` es un `VARCHAR2` de la propia fila de `INDICES_MANUALES`: **no hay
- * tabla de manuales**. El `DISTINCT` del backend ES el catálogo, y por eso esto
- * devuelve strings y no ids.
- */
-export async function listarManuales(): Promise<string[]> {
-  const r = (await authFetch("listas/manuales")) as { data?: Record<string, unknown>[] };
-  return (r.data ?? []).map((row) => String(row.manual ?? "")).filter(Boolean);
-}
-
-/**
- * Los índices de un manual, en el orden del manual impreso (`NRO_INDICE`).
- *
- * Sin `manual` devuelve los de todos, que sirve para buscar pero no para la
- * cascada: quien la use debería pasar siempre el manual elegido.
- */
-export async function listarIndices(manual?: string | null): Promise<Indice[]> {
-  const r = (await authFetch(`listas/indices${qs({ manual: manual ?? undefined })}`)) as {
-    data?: Record<string, unknown>[];
-  };
-
-  return (r.data ?? []).map((row) => ({
-    id_indice: Number(row.id_indice),
-    nro_indice: Number(row.nro_indice),
-    titulo: String(row.titulo ?? ""),
-    manual: String(row.manual ?? ""),
-  }));
-}
-
-/** "3. Los valores en la familia" — como se lee en el manual. */
-export function textoIndice(i: Pick<Indice, "nro_indice" | "titulo">) {
-  return `${i.nro_indice}. ${i.titulo}`;
-}
-
-/* -------------------------------------------------------------------------- */
 /* Escala de calificación                                                     */
 /* -------------------------------------------------------------------------- */
 

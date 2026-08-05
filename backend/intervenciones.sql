@@ -57,40 +57,39 @@
 -- un SELECT. Con el CASE, esas filas salen con NULL y las demas se devuelven.
 --
 --------------------------------------------------------------------------------
--- EL FILTRO DE MES: EL PROBLEMA MAS MOLESTO DE ESTE SCRIPT
+-- EL FILTRO DE MES: LA COLUMNA `MES` NO SIRVE, Y ES UNA TRAMPA
 --------------------------------------------------------------------------------
 --
--- Ninguna de las dos columnas obvias sirve directamente:
+-- **NO COMPARAR NUNCA CONTRA LA COLUMNA MES.** Se hizo, costo medio dia de
+-- diagnostico el 05/08/2026, y este es el motivo:
 --
---   * MES es TEXTO y no se sabe con que grafia esta cargado ('Agosto',
---     'AGOSTO', 'agosto', 'AGO'...). La consulta de referencia tenia comentado
---     `UPPER(MES) = 'Agosto'`, que **nunca hubiera matcheado**: UPPER() devuelve
---     'AGOSTO' y eso no es igual a 'Agosto'. Comparar contra un nombre fijo es
---     exactamente el bug que dejaba el grafico vacio.
+--   La vista la arma con TO_CHAR(fecha_hora,'Month') SIN NLS_DATE_LANGUAGE, o
+--   sea que **hereda el idioma de la sesion que consulta**. Y ahi esta la
+--   trampa: las dos sesiones no son la misma.
 --
---   * FECHA **no es un DATE** en esta vista: viene formateada como texto. Un
---     EXTRACT(MONTH FROM fecha) tira ORA-30076 y el paquete no compila. (Se
---     intento y fallo — 05/08/2026.)
+--     * SQL Workshop (APEX) esta en ESPAÑOL  -> 'Agosto'
+--     * La sesion de ORDS  esta en INGLES    -> 'August   '
 --
--- LA SALIDA: comparar contra el NOMBRE DEL MES, pero generandolo desde Oracle en
--- vez de escribirlo a mano, y normalizando los dos lados.
+--   Entonces la misma consulta corrida a mano devolvia 'Agosto' y parecia sana,
+--   mientras el endpoint comparaba contra 'August   ' y no matcheaba ni una
+--   fila. El filtro se apagaba en silencio y los graficos salian vacios sin un
+--   solo error en el log. Ojo tambien con los ESPACIOS DE RELLENO: 'Month'
+--   rellena a 9 caracteres.
 --
---   UPPER(TRIM(mes)) LIKE UPPER(nombre_del_mes) || '%'
+-- LA SALIDA: sacar el mes de FECHA_HORA, que la vista tambien expone y **si es
+-- un DATE de verdad**:
 --
--- Con `nombre_del_mes` sacado de TO_CHAR(fecha_del_mes, 'MONTH'). Tres detalles
--- que hacen que esto aguante lo que la vista tenga cargado:
+--   EXTRACT(MONTH FROM fecha_hora) = 8
 --
---   1. Los DOS lados van en UPPER: inmune a la capitalizacion.
---   2. LIKE con '%' al final: matchea igual si la vista guarda abreviaturas
---      ('AGO' no matchea 'AGOSTO', pero 'AGOSTO' si matchea 'AGO%'... por eso el
---      patron se arma con el mas corto — ver f_patron_mes).
---   3. El nombre se genera con NLS_DATE_LANGUAGE='SPANISH' explicito, no
---      heredado de la sesion: en ORDS no esta garantizado, y el dia que viniera
---      en ingles el filtro dejaria de matchear en silencio.
+-- Un numero: sin idioma, sin capitalizacion, sin espacios, sin LIKE. Inmune a
+-- que cambie el NLS de cualquiera de las dos sesiones.
 --
--- SI AUN ASI NO MATCHEA, mirar que hay cargado de verdad:
---   SELECT DISTINCT mes FROM v_historial_intervenciones;
--- y ajustar f_patron_mes.
+-- (El comentario viejo decia que EXTRACT tiraba ORA-30076. Era cierto sobre la
+-- columna FECHA —esa si es texto formateado— pero no sobre FECHA_HORA, que es
+-- otra columna y es DATE. Confundirlas fue parte del problema.)
+--
+-- `f_mes` solo traduce lo que mande el front —un numero o un nombre en
+-- español— a ese 1..12. La columna MES ya no se usa para filtrar nada.
 --
 --------------------------------------------------------------------------------
 
@@ -160,15 +159,18 @@ CREATE OR REPLACE PACKAGE PKG_INTERVENCIONES_ETHOS AS
       p_lat1 IN NUMBER, p_lon1 IN NUMBER,
       p_lat2 IN NUMBER, p_lon2 IN NUMBER) RETURN NUMBER DETERMINISTIC;
 
+
   -- El historial de marcaciones.
   --
-  -- p_anio: 'YYYY'. Sin el, el año en curso. 'TODOS' apaga el filtro.
-  -- p_mes:  1..12. Sin el, todo el año.
+  -- p_anio: 'YYYY' como TEXTO ('2026'). Sin el, el año en curso. 'TODOS' apaga
+  --         el filtro.
+  -- p_mes:  EL NOMBRE DEL MES como TEXTO ('Agosto'), no un numero. Sin el, todo
+  --         el año. Ver la nota de arriba sobre el filtro de mes.
   -- p_id_facilitador: opcional, para ver el de una sola persona.
   PROCEDURE listar(
       p_token          IN VARCHAR2,
       p_anio           IN VARCHAR2 DEFAULT NULL,
-      p_mes            IN NUMBER   DEFAULT NULL,
+      p_mes            IN VARCHAR2 DEFAULT NULL,
       p_id_facilitador IN NUMBER   DEFAULT NULL,
       p_limite         IN NUMBER   DEFAULT NULL);
 
@@ -180,13 +182,13 @@ CREATE OR REPLACE PACKAGE PKG_INTERVENCIONES_ETHOS AS
   -- intervenciones, no solo las desviadas — son dos preguntas distintas sobre la
   -- misma tabla y mezclarlas daria un grafico que miente.
   --
-  -- p_anio: 'YYYY'. Sin el, el año en curso.
-  -- p_mes:  1..12. Sin el, el mes en curso.
+  -- p_anio: 'YYYY' como TEXTO ('2026'). Sin el, el año en curso.
+  -- p_mes:  EL NOMBRE DEL MES como TEXTO ('Agosto'). Sin el, el mes en curso.
   ------------------------------------------------------------------------------
   PROCEDURE por_dia(
       p_token IN VARCHAR2,
       p_anio  IN VARCHAR2 DEFAULT NULL,
-      p_mes   IN NUMBER   DEFAULT NULL);
+      p_mes   IN VARCHAR2 DEFAULT NULL);
 
 END PKG_INTERVENCIONES_ETHOS;
 /
@@ -414,47 +416,60 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
   END f_distancia;
 
   ------------------------------------------------------------------------------
-  -- El patron para comparar contra la columna MES (que es TEXTO).
+  -- EL NUMERO DE MES (1..12) A PARTIR DE LO QUE MANDE EL FRONT.
   --
-  -- Devuelve las TRES primeras letras del nombre del mes en español y en
-  -- mayusculas, con '%' al final: 'AGO%', 'SET%', 'DIC%'...
+  -- ============================================================================
+  -- POR QUE NO SE COMPARA CONTRA LA COLUMNA MES: VIENE EN INGLES
+  -- ============================================================================
   --
-  -- Tres letras y no el nombre entero a proposito: asi matchea tanto 'AGOSTO'
-  -- como 'Agosto' como una eventual abreviatura 'Ago'. El unico caso que se
-  -- pierde es 'SETIEMBRE' vs 'SEPTIEMBRE' — las dos empiezan con 'SE', pero la
-  -- tercera letra difiere ('T' vs 'P'), asi que ese mes se trata aparte.
+  -- La vista arma MES con TO_CHAR(fecha_hora,'Month') SIN NLS_DATE_LANGUAGE, o
+  -- sea que hereda el idioma de la sesion. Y la sesion de ORDS **esta en
+  -- ingles**: devuelve 'August   ' —con espacios de relleno—, no 'Agosto'.
   --
-  -- El nombre se genera con NLS_DATE_LANGUAGE explicito y NO se hereda de la
-  -- sesion: en ORDS no esta garantizado, y con la sesion en ingles esto
-  -- devolveria 'AUG%' y no matchearia nada, en silencio.
+  -- Verificado el 05/08/2026 contra el endpoint en produccion. Es lo que dejaba
+  -- los graficos vacios, y lo que hacia tan dificil de ver: en SQL Workshop la
+  -- sesion SI esta en español, asi que la misma consulta corrida a mano devuelve
+  -- 'Agosto' y parece que todo funciona. El idioma dependia de QUIEN preguntaba.
+  --
+  -- LA SALIDA: no comparar contra esa columna nunca mas. La vista tambien expone
+  -- FECHA_HORA, que es un DATE de verdad, y de ahi sale el mes con EXTRACT: un
+  -- numero, sin idioma, sin capitalizacion y sin espacios de relleno.
+  --
+  -- Esta funcion solo traduce lo que mande el front a ese numero. Acepta las dos
+  -- formas para no depender de una version puntual del front:
+  --
+  --   * Un NUMERO ya hecho: '8'.
+  --   * El NOMBRE en español: 'Agosto', 'agosto', 'SETIEMBRE'/'SEPTIEMBRE'.
+  --
+  -- NULL apaga el filtro y devuelve el año entero.
   ------------------------------------------------------------------------------
-  FUNCTION f_patron_mes(p_mes IN NUMBER) RETURN VARCHAR2 IS
+  FUNCTION f_mes(p_mes IN VARCHAR2) RETURN NUMBER DETERMINISTIC IS
+    l_txt VARCHAR2(30) := UPPER(TRIM(p_mes));
+    l_num NUMBER;
   BEGIN
-    IF p_mes IS NULL OR p_mes NOT BETWEEN 1 AND 12 THEN
-      RETURN NULL; -- no filtra por mes
-    END IF;
-    ----------------------------------------------------------------------------
-    -- LOS NOMBRES VAN CABLEADOS, NO GENERADOS CON TO_CHAR.
-    --
-    -- Antes esto salia de TO_CHAR(fecha,'MONTH','NLS_DATE_LANGUAGE=SPANISH').
-    -- Dependia de que la sesion de ORDS aceptara ese NLS y de que el TO_DATE del
-    -- literal no chocara con el NLS_DATE_FORMAT — y si algo de eso fallaba, el
-    -- EXCEPTION que habia devolvia NULL EN SILENCIO. Con el patron en NULL el
-    -- filtro se apaga y la consulta trae otra cosa, sin ningun error visible.
-    --
-    -- Tres letras y LIKE: matchea 'AGOSTO', 'Agosto', 'agosto' y una eventual
-    -- abreviatura 'Ago'. Setiembre va con dos ('SE%') porque circulan las dos
-    -- grafias y difieren en la tercera letra.
-    ----------------------------------------------------------------------------
-    RETURN CASE p_mes
-             WHEN  1 THEN 'ENE%'  WHEN  2 THEN 'FEB%'
-             WHEN  3 THEN 'MAR%'  WHEN  4 THEN 'ABR%'
-             WHEN  5 THEN 'MAY%'  WHEN  6 THEN 'JUN%'
-             WHEN  7 THEN 'JUL%'  WHEN  8 THEN 'AGO%'
-             WHEN  9 THEN 'SE%'   WHEN 10 THEN 'OCT%'
-             WHEN 11 THEN 'NOV%'  WHEN 12 THEN 'DIC%'
+    IF l_txt IS NULL THEN RETURN NULL; END IF;
+
+    -- Si ya es un numero, se usa tal cual. El TO_NUMBER va dentro de su propio
+    -- bloque porque un texto como 'AGOSTO' lo hace fallar, y eso es normal aca:
+    -- significa que el front mando el nombre y hay que seguir al CASE.
+    BEGIN
+      l_num := TO_NUMBER(l_txt);
+      RETURN CASE WHEN l_num BETWEEN 1 AND 12 THEN l_num END;
+    EXCEPTION
+      WHEN OTHERS THEN NULL; -- no era un numero: sigue abajo
+    END;
+
+    -- SETIEMBRE y SEPTIEMBRE: las dos grafias circulan y las dos son correctas.
+    RETURN CASE l_txt
+             WHEN 'ENERO'      THEN  1  WHEN 'FEBRERO'    THEN  2
+             WHEN 'MARZO'      THEN  3  WHEN 'ABRIL'      THEN  4
+             WHEN 'MAYO'       THEN  5  WHEN 'JUNIO'      THEN  6
+             WHEN 'JULIO'      THEN  7  WHEN 'AGOSTO'     THEN  8
+             WHEN 'SETIEMBRE'  THEN  9  WHEN 'SEPTIEMBRE' THEN  9
+             WHEN 'OCTUBRE'    THEN 10  WHEN 'NOVIEMBRE'  THEN 11
+             WHEN 'DICIEMBRE'  THEN 12
            END;
-  END f_patron_mes;
+  END f_mes;
 
   ------------------------------------------------------------------------------
   -- LISTAR
@@ -462,14 +477,14 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
   PROCEDURE listar(
       p_token          IN VARCHAR2,
       p_anio           IN VARCHAR2 DEFAULT NULL,
-      p_mes            IN NUMBER   DEFAULT NULL,
+      p_mes            IN VARCHAR2 DEFAULT NULL,
       p_id_facilitador IN NUMBER   DEFAULT NULL,
       p_limite         IN NUMBER   DEFAULT NULL
   ) IS
-    l_usuario VARCHAR2(255);
-    l_anio    VARCHAR2(4);
-    l_patron  VARCHAR2(20);
-    l_tope    PLS_INTEGER;
+    l_usuario  VARCHAR2(255);
+    l_anio     VARCHAR2(4);
+    l_mes      NUMBER;
+    l_tope     PLS_INTEGER;
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -490,188 +505,198 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
       l_anio := TO_CHAR(SYSDATE, 'YYYY');
     END IF;
 
-    l_patron := f_patron_mes(p_mes);
-    l_tope   := LEAST(NVL(p_limite, c_limite_defecto), c_limite_maximo);
+    l_mes  := f_mes(p_mes);
+    l_tope := LEAST(NVL(p_limite, c_limite_defecto), c_limite_maximo);
 
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('anio',    l_anio);
-    APEX_JSON.WRITE('mes',     p_mes);
-    -- Para poder diagnosticar sin adivinar: si el grafico sale vacio, esto dice
-    -- contra que se comparo la columna MES.
-    APEX_JSON.WRITE('patron_mes', l_patron);
+    -- El mes TAL COMO SE COMPARO ('AGOSTO'), no como lo mando el front
+    -- ('Agosto'). Si el grafico sale vacio, esto dice contra que se comparo.
+    APEX_JSON.WRITE('mes',     l_mes);
     APEX_JSON.WRITE('umbral_minutos', c_umbral_minutos);
     APEX_JSON.WRITE('umbral_metros',  c_umbral_metros);
     APEX_JSON.WRITE('limite',  l_tope);
+    -- Cuantas filas hay a cada lado del filtro. Sin esto, un resultado vacio no
+    -- distingue "no hay datos" de "el filtro no matchea", que es exactamente la
+    -- duda que costo medio dia el 05/08/2026.
+    DECLARE
+      l_solo_anio PLS_INTEGER;
+      l_solo_mes  PLS_INTEGER;
+    BEGIN
+      SELECT COUNT(*) INTO l_solo_anio
+        FROM v_historial_intervenciones
+       WHERE l_anio IS NULL OR anio = l_anio;
+      SELECT COUNT(*) INTO l_solo_mes
+        FROM v_historial_intervenciones
+       WHERE l_mes IS NULL
+          OR EXTRACT(MONTH FROM fecha_hora) = l_mes;
+      APEX_JSON.WRITE('filas_del_anio', l_solo_anio);
+      APEX_JSON.WRITE('filas_del_mes',  l_solo_mes);
+    EXCEPTION
+      WHEN OTHERS THEN NULL; -- el diagnostico no puede tumbar la respuesta
+    END;
     APEX_JSON.OPEN_ARRAY('data');
 
     FOR r IN (
+        ----------------------------------------------------------------------
+        -- LA DISTANCIA SE CALCULA UNA SOLA VEZ, ACA.
+        --
+        -- Antes se calculaba DOS veces por fila: una en el SELECT y otra en el
+        -- WHERE, cada una con su f_distancia y sus dos f_coord. Como f_coord es
+        -- PL/SQL llamada desde SQL, cada invocacion es un context switch entre
+        -- los dos motores — el costo real de esta consulta no era la haversine
+        -- sino los saltos.
+        --
+        -- Con el WITH se calcula una vez por fila y despues se filtra sobre la
+        -- columna ya calculada. Mismo resultado, la mitad de llamadas.
+        --
+        -- Las medianas de `ref` siguen calculandose sobre TODA la historia
+        -- (71.198 filas al 05/08/2026). Eso es lo proximo a atacar, con una
+        -- tabla materializada: la ubicacion de un colegio no cambia entre dos
+        -- pedidos y hoy se recalcula en cada uno.
+        ----------------------------------------------------------------------
+        WITH ref AS (
+            SELECT id_institucion,
+                   MEDIAN(f_coord(latitud  || ',0', 1)) AS lat,
+                   MEDIAN(f_coord(longitud || ',0', 1)) AS lon
+              FROM v_historial_intervenciones
+             WHERE f_coord(latitud  || ',0', 1) IS NOT NULL
+               AND f_coord(longitud || ',0', 1) IS NOT NULL
+               -- (0,0) es lo que escribe TRG_INTERV_UBICACION cuando el
+               -- facilitador tiene IND_UBICACION_POSTULACION = 'NO'. Meterlo en
+               -- la mediana arrastraria el centro al Golfo de Guinea.
+               AND NOT (f_coord(latitud  || ',0', 1) = 0
+                    AND f_coord(longitud || ',0', 1) = 0)
+             GROUP BY id_institucion
+        ),
+        base AS (
+            SELECT v.*,
+                   ref.lat AS inst_lat,
+                   ref.lon AS inst_lon,
+                   -- UNA sola llamada. El WHERE de abajo filtra sobre esto.
+                   f_distancia(f_coord(v.latitud  || ',0', 1),
+                               f_coord(v.longitud || ',0', 1),
+                               ref.lat, ref.lon) AS dist_m,
+                   -- Idem: el desvio en MINUTOS, calculado una vez. El CASE
+                   -- evita el ORA-01858 de una hora vacia o con basura.
+                   CASE
+                     WHEN REGEXP_LIKE(TRIM(v.hora),       '^\d{1,2}:\d{2}$')
+                      AND REGEXP_LIKE(TRIM(v.hora_desde), '^\d{1,2}:\d{2}$')
+                     THEN ROUND((TO_DATE(TRIM(v.hora_desde), 'HH24:MI')
+                               - TO_DATE(TRIM(v.hora),       'HH24:MI')) * 24 * 60, 0)
+                   END AS desvio_min
+              FROM v_historial_intervenciones v
+              LEFT JOIN ref ON ref.id_institucion = v.id_institucion
+             WHERE (l_anio IS NULL OR v.anio = l_anio)
+               ----------------------------------------------------------------
+               -- EL MES SALE DE FECHA_HORA, **NO** DE LA COLUMNA MES.
+               --
+               -- MES es texto generado por la vista con TO_CHAR(...,'Month') sin
+               -- NLS, asi que su idioma es el de QUIEN CONSULTA: en la sesion de
+               -- ORDS dice 'August   ' y en SQL Workshop 'Agosto'. Comparar
+               -- contra eso es comparar contra algo que cambia solo.
+               --
+               -- FECHA_HORA es un DATE de verdad. EXTRACT devuelve un numero:
+               -- sin idioma, sin capitalizacion, sin espacios de relleno.
+               ----------------------------------------------------------------
+               AND (l_mes IS NULL
+                    OR EXTRACT(MONTH FROM v.fecha_hora) = l_mes)
+               AND (p_id_facilitador IS NULL OR v.id_facilitador = p_id_facilitador)
+        )
         SELECT fecha,
                manual,
                observacion,
                motivo_desarrollo,
                id_indice,
                si_no,
-               -- Calificado: `ref` tambien tiene id_institucion (ORA-00918).
-               v.id_institucion,
+               id_institucion,
                nombre,
                turno,
-               LISTAGG(grado, ', ') WITHIN GROUP (ORDER BY grado) AS grado,
+               ----------------------------------------------------------------
+               -- ON OVERFLOW TRUNCATE: LO QUE EVITA QUE UN MES GRANDE SE CAIGA.
+               --
+               -- LISTAGG devuelve VARCHAR2(4000) y al pasarse tira ORA-01489,
+               -- que aca adentro NO se puede atrapar: tumba la consulta entera
+               -- cuando la respuesta JSON ya esta abierta, y el front lo ve como
+               -- "sin datos" en vez de como un error. Un mes chico anda y uno
+               -- grande no, sin ninguna pista de por que.
+               --
+               -- OJO: NO se puede poner DISTINCT junto con ON OVERFLOW —Oracle
+               -- no acepta las dos cosas en la misma llamada—. Los grados
+               -- repetidos se sacan antes, con el DISTINCT del SELECT de `base`.
+               ----------------------------------------------------------------
+               LISTAGG(grado, ', ' ON OVERFLOW TRUNCATE '...' WITHOUT COUNT)
+                 WITHIN GROUP (ORDER BY grado) AS grado,
                seccion,
                id_enfasis,
                descripcion,
                id_facilitador,
                nombre_facilitador,
                mes,
-               MAX(id_intervencion) AS id_intervencion,
+               MAX(id_intervencion) AS max_id_intervencion,
                hora,
                hora_desde,
                hora_hasta,
-               -- La cuenta de la consulta de referencia, con sus dos rarezas
-               -- intactas: signo invertido (positivo = llego antes) y dividida
-               -- por 60, o sea en HORAS pese al nombre. Ver el encabezado.
+               -- El desvio ya calculado en `base`, devuelto CON SUS DOS RAREZAS
+               -- INTACTAS para no romper el contrato con el front: signo
+               -- invertido (positivo = llego antes) y dividido por 60, o sea en
+               -- HORAS pese al nombre. Ver el encabezado y `desvioMinutos()`.
                --
-               -- El CASE evita el ORA-01858 de una hora vacia o con basura:
-               -- adentro de un SELECT no hay donde atrapar esa excepcion, y sin
-               -- esto una sola fila mala tumba la consulta entera.
-               CASE
-                 WHEN REGEXP_LIKE(TRIM(hora),       '^\d{1,2}:\d{2}$')
-                  AND REGEXP_LIKE(TRIM(hora_desde), '^\d{1,2}:\d{2}$')
-                 THEN ROUND((TO_DATE(TRIM(hora_desde), 'HH24:MI')
-                           - TO_DATE(TRIM(hora),       'HH24:MI')) * 24 * 60, 0) / 60
-               END AS diferencia_minutos,
+               -- El /60 va aca y no en `base` a proposito: adentro se compara
+               -- contra c_umbral_minutos, que esta en minutos.
+               desvio_min / 60 AS diferencia_minutos,
                REPLACE(latitud,  ',', '.') AS latitud,
                REPLACE(longitud, ',', '.') AS longitud,
                ubicacion_insitutcion,
-               -- Las coordenadas de la institucion, DEDUCIDAS. Ver `ref`.
-               MAX(ref.lat) AS inst_latitud,
-               MAX(ref.lon) AS inst_longitud,
-               --------------------------------------------------------------
-               -- DISTANCIA en METROS entre donde marco y donde debia marcar.
-               --
-               -- NULL si falta alguna de las cuatro coordenadas: es "no se
-               -- sabe", y un 0 diria "marco en el lugar exacto", que es una
-               -- afirmacion que el dato no respalda.
-               --------------------------------------------------------------
-               -- Las coordenadas de la marcacion pasan por f_coord, que valida
-               -- el formato antes de convertir. Un TO_NUMBER crudo sobre
-               -- LATITUD tumbaria la consulta entera con una sola fila que
-               -- tenga texto. Se le pasa "lat,lng" armado para reusar el parseo.
-               f_distancia(
-                   f_coord(latitud || ',0', 1),
-                   f_coord(longitud || ',0', 1),
-                   MAX(ref.lat), MAX(ref.lon)) AS distancia_metros,
+               -- Ya vienen de `base`: una fila del grupo alcanza, son iguales
+               -- para toda la institucion.
+               MAX(inst_lat) AS inst_latitud,
+               MAX(inst_lon) AS inst_longitud,
+               -- La distancia YA calculada en `base`. Antes se recalculaba aca
+               -- con otra llamada a f_distancia + dos a f_coord.
+               MAX(dist_m)   AS distancia_metros,
                anio
-          FROM v_historial_intervenciones v
-          ------------------------------------------------------------------
-          -- LA UBICACION DE CADA INSTITUCION, DEDUCIDA DE SUS PROPIAS
-          -- MARCACIONES.
-          --
-          -- POR QUE NO SE LEE DE UNA COLUMNA: UBICACION_INSITUTCION guarda
-          -- URLs de Google Maps acortadas ("goo.gl/maps/13AsVP8dTyfy6xgg6") y
-          -- hasta links que no son mapas ("datos.mec.gov.py/..."). Son
-          -- identificadores OPACOS: las coordenadas las resuelve el servidor de
-          -- Google al seguir la redireccion, no estan en el texto. Y
-          -- INSTITUCIONES.UBICACION es otro VARCHAR2 del mismo tipo, sin
-          -- LATITUD/LONGITUD (verificado el 05/08/2026).
-          --
-          -- LA SALIDA: el punto de referencia es la MEDIANA de las coordenadas
-          -- de todas las marcaciones de esa institucion. Si la mayoria marca en
-          -- el colegio —y los datos lo confirman: dos marcaciones del mismo
-          -- colegio caen a 0 y 23 metros una de otra— esa mediana ES el
-          -- colegio, y quien se aleje un kilometro salta solo.
-          --
-          -- MEDIANA Y NO PROMEDIO, que es la decision que hace que esto
-          -- funcione: un facilitador que marca a 40 km corre el promedio varios
-          -- kilometros y termina tapando su propia infraccion. La mediana lo
-          -- ignora mientras sea minoria.
-          --
-          -- SE CALCULA SOBRE TODA LA HISTORIA, no sobre el mes filtrado: mas
-          -- muestras dan un centro mas estable, y la ubicacion de un colegio no
-          -- cambia mes a mes.
-          --
-          -- LIMITE CONOCIDO: una institucion con UNA sola marcacion tiene
-          -- mediana igual a esa marcacion, o sea distancia 0. No se puede
-          -- detectar nada ahi, y es correcto: con un solo punto no hay
-          -- referencia contra la cual comparar. Se vuelve util solo cuando hay
-          -- varias.
-          ------------------------------------------------------------------
-          LEFT JOIN (
-              SELECT id_institucion,
-                     MEDIAN(f_coord(latitud  || ',0', 1)) AS lat,
-                     MEDIAN(f_coord(longitud || ',0', 1)) AS lon
-                FROM v_historial_intervenciones
-               WHERE f_coord(latitud  || ',0', 1) IS NOT NULL
-                 AND f_coord(longitud || ',0', 1) IS NOT NULL
-                 -- (0,0) es lo que escribe TRG_INTERV_UBICACION cuando el
-                 -- facilitador tiene IND_UBICACION_POSTULACION = 'NO'. Meterlo
-                 -- en la mediana arrastraria el centro al Golfo de Guinea.
-                 AND NOT (f_coord(latitud  || ',0', 1) = 0
-                      AND f_coord(longitud || ',0', 1) = 0)
-               GROUP BY id_institucion
-          ) ref ON ref.id_institucion = v.id_institucion
-         WHERE (l_anio IS NULL OR anio = l_anio)
-           ------------------------------------------------------------------
-           -- EL MES ENTERO, del dia 1 al ultimo.
-           --
-           -- Se compara contra el TEXTO de la columna MES, asi que TODAS las
-           -- filas de ese mes entran sin importar el dia: no hay ningun corte
-           -- por fecha en esta consulta.
-           --
-           -- No se puede usar EXTRACT(MONTH FROM fecha) —FECHA no es DATE en
-           -- esta vista y tira ORA-30076—, y por eso tampoco se arma un rango
-           -- BETWEEN primer_dia AND ultimo_dia: no habria con que compararlo.
-           ------------------------------------------------------------------
-           AND (l_patron IS NULL OR UPPER(TRIM(mes)) LIKE l_patron)
-           AND (p_id_facilitador IS NULL OR id_facilitador = p_id_facilitador)
-           ------------------------------------------------------------------
-           -- SOLO LAS MARCACIONES CON ALGUN DESVIO. Dos clases, y basta UNA:
-           --
-           --   a) HORARIO: se aparta c_umbral_minutos o mas de la hora de
-           --      clase, en valor ABSOLUTO (tarde o anticipada).
-           --   b) UBICACION: marco a mas de c_umbral_metros de la institucion.
-           --
-           -- Es un OR y no un AND: los dos graficos del inicio se alimentan de
-           -- esta misma consulta, y con AND el de ubicacion solo veria a quien
-           -- ademas llego tarde. Cada fila trae los dos datos y cada grafico
-           -- filtra el suyo.
-           --
-           -- El *60 del inciso (a) deshace el /60 de DIFERENCIA_MINUTOS, que
-           -- pese al nombre esta en HORAS (ver el encabezado). Sin eso,
-           -- comparar contra 15 exigiria 15 HORAS de desvio.
-           --
-           -- Las filas sin hora calculable, o sin coordenadas, dan NULL en su
-           -- lado del OR y no entran por ahi: de esas no se sabe si hubo
-           -- desvio, y afirmarlo seria inventar.
-           ------------------------------------------------------------------
-           AND (
-                 ABS(
-                   CASE
-                     WHEN REGEXP_LIKE(TRIM(hora),       '^\d{1,2}:\d{2}$')
-                      AND REGEXP_LIKE(TRIM(hora_desde), '^\d{1,2}:\d{2}$')
-                     THEN ROUND((TO_DATE(TRIM(hora_desde), 'HH24:MI')
-                               - TO_DATE(TRIM(hora),       'HH24:MI')) * 24 * 60, 0)
-                   END
-                 ) >= c_umbral_minutos
-                 OR f_distancia(
-                      f_coord(v.latitud  || ',0', 1),
-                      f_coord(v.longitud || ',0', 1),
-                      ref.lat, ref.lon) > c_umbral_metros
-               )
-         -- Todo calificado con `v.`: `id_institucion` existe tambien en `ref` y
-         -- sin el alias Oracle no sabe cual es (ORA-00918, columna ambigua).
-         GROUP BY v.fecha, v.manual, v.observacion, v.motivo_desarrollo,
-                  v.id_indice, v.si_no, v.id_institucion, v.nombre, v.seccion,
-                  v.id_enfasis, v.descripcion, v.id_facilitador, v.mes, v.hora,
-                  v.nombre_facilitador, v.latitud, v.longitud,
-                  v.ubicacion_insitutcion, v.hora_desde, v.hora_hasta, v.anio,
-                  v.turno
-         ORDER BY id_intervencion DESC
+          FROM base
+         ----------------------------------------------------------------------
+         -- SOLO LAS MARCACIONES CON ALGUN DESVIO. Dos clases, y basta UNA:
+         --
+         --   a) HORARIO: se aparta c_umbral_minutos o mas de la hora de clase,
+         --      en valor ABSOLUTO (tarde o anticipada).
+         --   b) UBICACION: marco a mas de c_umbral_metros de la institucion.
+         --
+         -- Es un OR y no un AND: los dos graficos del inicio se alimentan de
+         -- esta misma consulta, y con AND el de ubicacion solo veria a quien
+         -- ademas llego tarde. Cada fila trae los dos datos y cada grafico
+         -- filtra el suyo.
+         --
+         -- Las dos columnas vienen de `base`, ya calculadas. `desvio_min` esta
+         -- en MINUTOS ahi adentro, asi que se compara directo contra el umbral
+         -- sin el *60 que hacia falta antes.
+         --
+         -- Las filas sin hora calculable, o sin coordenadas, dan NULL en su lado
+         -- del OR y no entran por ahi: de esas no se sabe si hubo desvio, y
+         -- afirmarlo seria inventar.
+         ----------------------------------------------------------------------
+         WHERE ABS(desvio_min) >= c_umbral_minutos
+            OR dist_m > c_umbral_metros
+         GROUP BY fecha, manual, observacion, motivo_desarrollo,
+                  id_indice, si_no, id_institucion, nombre, seccion,
+                  id_enfasis, descripcion, id_facilitador, mes, hora,
+                  nombre_facilitador, latitud, longitud,
+                  ubicacion_insitutcion, hora_desde, hora_hasta, anio,
+                  turno, desvio_min
+         -- Por el ALIAS del agregado, no repitiendo el MAX(): envolver una
+         -- funcion de grupo en otra da ORA-00935 ("demasiados niveles de
+         -- anidamiento"). Y el alias se llama `max_id_intervencion` y no
+         -- `id_intervencion` justamente para que no se confunda con la columna
+         -- cruda que `base` ya trae con ese nombre.
+         ORDER BY max_id_intervencion DESC
          FETCH FIRST l_tope ROWS ONLY
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
-      APEX_JSON.WRITE('id_intervencion',   r.id_intervencion);
+      APEX_JSON.WRITE('id_intervencion',   r.max_id_intervencion);
       APEX_JSON.WRITE('fecha',             r.fecha);
       APEX_JSON.WRITE('hora',              r.hora);
       APEX_JSON.WRITE('hora_desde',        r.hora_desde);
@@ -741,11 +766,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
   PROCEDURE por_dia(
       p_token IN VARCHAR2,
       p_anio  IN VARCHAR2 DEFAULT NULL,
-      p_mes   IN NUMBER   DEFAULT NULL
+      p_mes   IN VARCHAR2 DEFAULT NULL
   ) IS
-    l_usuario VARCHAR2(255);
-    l_anio    VARCHAR2(4);
-    l_patron  VARCHAR2(20);
+    l_usuario  VARCHAR2(255);
+    l_anio     VARCHAR2(4);
+    l_mes      NUMBER;
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -765,17 +790,20 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
 
     -- Sin mes explicito, el mes en curso: un grafico "por dia" de un año entero
     -- tendria 365 barras y no significaria nada.
-    l_patron := f_patron_mes(NVL(p_mes, EXTRACT(MONTH FROM SYSDATE)));
+    --
+    -- El default sale de EXTRACT sobre SYSDATE: un numero, sin pasar por ningun
+    -- nombre de mes ni por el NLS de la sesion.
+    l_mes := NVL(f_mes(p_mes), EXTRACT(MONTH FROM SYSDATE));
 
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('anio',    l_anio);
-    APEX_JSON.WRITE('mes',     NVL(p_mes, EXTRACT(MONTH FROM SYSDATE)));
+    -- El mes TAL COMO SE COMPARO ('AGOSTO'), no como lo mando el front.
+    APEX_JSON.WRITE('mes',     l_mes);
     -- Contra que se comparo, y cuantas filas hay de cada lado del filtro. Sin
     -- esto, un resultado vacio no distingue "no hay datos" de "el filtro no
     -- matchea", y hay que ir a la base a adivinar cual de las dos es.
-    APEX_JSON.WRITE('patron_mes', l_patron);
     DECLARE
       l_solo_anio PLS_INTEGER;
       l_solo_mes  PLS_INTEGER;
@@ -785,7 +813,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
        WHERE l_anio IS NULL OR anio = l_anio;
       SELECT COUNT(*) INTO l_solo_mes
         FROM v_historial_intervenciones
-       WHERE l_patron IS NULL OR UPPER(TRIM(mes)) LIKE l_patron;
+       WHERE l_mes IS NULL
+          OR EXTRACT(MONTH FROM fecha_hora) = l_mes;
       APEX_JSON.WRITE('filas_del_anio', l_solo_anio);
       APEX_JSON.WRITE('filas_del_mes',  l_solo_mes);
     EXCEPTION
@@ -797,8 +826,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
         SELECT TO_NUMBER(TO_CHAR(TO_DATE(fecha, 'DD/MM/YYYY'), 'DD')) AS dia,
                COUNT(*) AS cantidad
           FROM v_historial_intervenciones
-         WHERE (l_anio   IS NULL OR anio = l_anio)
-           AND (l_patron IS NULL OR UPPER(TRIM(mes)) LIKE l_patron)
+         WHERE (l_anio IS NULL OR anio = l_anio)
+           -- Desde FECHA_HORA, igual que en `listar`: los tres graficos tienen
+           -- que mirar el mismo periodo o el tablero se contradice a si mismo.
+           AND (l_mes IS NULL
+                OR EXTRACT(MONTH FROM fecha_hora) = l_mes)
            -- Descarta las fechas mal cargadas ANTES del TO_DATE: adentro de un
            -- SELECT no hay donde atrapar el ORA-01843, y una sola fila con
            -- basura tumbaria la consulta entera.
@@ -871,7 +903,9 @@ BEGIN
     PKG_INTERVENCIONES_ETHOS.LISTAR(
         p_token          => l_token,
         p_anio           => :anio,
-        p_mes            => TO_NUMBER(:mes),
+        -- El mes viaja como TEXTO ('Agosto'), sin TO_NUMBER: la columna MES de
+        -- la vista es texto y se compara contra ella directo.
+        p_mes            => :mes,
         p_id_facilitador => TO_NUMBER(:id_facilitador),
         p_limite         => TO_NUMBER(:limite));
 END;
@@ -921,7 +955,8 @@ BEGIN
     PKG_INTERVENCIONES_ETHOS.POR_DIA(
         p_token => l_token,
         p_anio  => :anio,
-        p_mes   => TO_NUMBER(:mes));
+        -- Idem `listar`: el mes es TEXTO ('Agosto').
+        p_mes   => :mes);
 END;
 ~');
 
@@ -1002,10 +1037,20 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Que grafias de MES hay cargadas de verdad. Es LA pregunta cuando el grafico
-  -- sale vacio: el filtro compara contra texto y hay que ver contra que.
+  ------------------------------------------------------------------------------
+  -- EN QUE IDIOMA VE LA COLUMNA MES **ESTA** SESION.
+  --
+  -- Es la linea que hubiera ahorrado medio dia el 05/08/2026. La vista genera
+  -- MES sin NLS, asi que su idioma es el de quien pregunta: corriendo este
+  -- script desde SQL Workshop probablemente diga 'Agosto', y el mismo dato leido
+  -- por ORDS decia 'August   '.
+  --
+  -- Si abajo ves nombres en ingles, NO es un problema — el paquete ya no usa esa
+  -- columna para filtrar, justamente por esto. Se imprime como recordatorio de
+  -- que ese texto no es confiable.
+  ------------------------------------------------------------------------------
   DBMS_OUTPUT.PUT_LINE('');
-  DBMS_OUTPUT.PUT_LINE('       Valores de MES en la vista:');
+  DBMS_OUTPUT.PUT_LINE('       Columna MES tal como la ve ESTA sesion (informativo):');
   FOR r IN (
       SELECT anio, mes, COUNT(*) AS n
         FROM v_historial_intervenciones
@@ -1016,6 +1061,8 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('         ' || r.anio || '  ' || RPAD(NVL(r.mes, '(null)'), 14)
                          || r.n || ' filas');
   END LOOP;
+  DBMS_OUTPUT.PUT_LINE('       (el paquete NO filtra por esta columna: usa'
+                       || ' EXTRACT(MONTH FROM fecha_hora))');
 
   -- Cuantas superan el umbral en el mes en curso. Si da 0, el grafico va a
   -- salir vacio y NO es un bug: o no hay marcaciones, o todas fueron puntuales.
@@ -1023,8 +1070,10 @@ BEGIN
     SELECT COUNT(*) INTO l_filas
       FROM v_historial_intervenciones
      WHERE anio = TO_CHAR(SYSDATE, 'YYYY')
-       AND UPPER(TRIM(mes)) LIKE
-           UPPER(SUBSTR(TO_CHAR(SYSDATE, 'MONTH', 'NLS_DATE_LANGUAGE=SPANISH'), 1, 3)) || '%'
+       -- Por FECHA_HORA, igual que el paquete. Filtrar aca por la columna MES
+       -- haria que este chequeo mienta: daria OK en SQL Workshop (español) sobre
+       -- un filtro que en ORDS (ingles) no matchea nada.
+       AND EXTRACT(MONTH FROM fecha_hora) = EXTRACT(MONTH FROM SYSDATE)
        AND ABS(
              CASE
                WHEN REGEXP_LIKE(TRIM(hora),       '^\d{1,2}:\d{2}$')
@@ -1038,9 +1087,9 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('       Marcaciones del mes en curso con 15+ min de desvio: ' || l_filas);
     IF l_filas = 0 THEN
       DBMS_OUTPUT.PUT_LINE('       [AVISO] El grafico va a salir vacio para este mes.');
-      DBMS_OUTPUT.PUT_LINE('               Puede ser que no haya datos, que la grafia de MES');
-      DBMS_OUTPUT.PUT_LINE('               no matchee (mirar la lista de arriba), o que todas');
-      DBMS_OUTPUT.PUT_LINE('               las marcaciones hayan sido puntuales.');
+      DBMS_OUTPUT.PUT_LINE('               O no hay marcaciones cargadas, o todas cayeron');
+      DBMS_OUTPUT.PUT_LINE('               dentro de los 15 minutos. Ya NO puede ser la');
+      DBMS_OUTPUT.PUT_LINE('               grafia de MES: el filtro va por FECHA_HORA.');
     END IF;
   EXCEPTION
     WHEN OTHERS THEN

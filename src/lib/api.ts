@@ -332,26 +332,14 @@ export async function logout(): Promise<void> {
   cerrarSesion();
 }
 
-/**
- * Revalida la sesión guardada contra el backend. `null` si el token ya no sirve.
+/*
+ * Aca vivia `revalidar()`, que preguntaba `GET auth/me` para saber si el token
+ * guardado seguia vivo. Se fue con la persistencia de la sesion: como el token
+ * ahora vive SOLO en memoria, no hay sesion guardada que revalidar al arrancar
+ * —cada arranque pasa por el login— y nadie la llamaba.
  *
- * **Sin red devuelve la sesión guardada tal cual.** No se puede saber si el token
- * sigue vivo sin preguntar, y asumir que murió expulsaría al usuario cada vez que
- * abre la app sin señal. Si el token estaba vencido, la primera llamada con red lo
- * va a rechazar y ahí sí cae la sesión, por el camino de `handleUnauthorized`.
+ * El endpoint `auth/me` sigue publicado en ORDS por si vuelve a hacer falta.
  */
-export async function revalidar(): Promise<Sesion | null> {
-  const s = getSesion();
-  if (!s) return null;
-  try {
-    const data = (await authFetch("auth/me")) as { data?: Record<string, unknown> };
-    const d = data?.data ?? {};
-    return { ...s, ...normalizar({ ...d, token: s.token }, s.usuario) };
-  } catch (e) {
-    if (esSinConexion(e)) return s;
-    return null;
-  }
-}
 
 /** USAR EN TODA LLAMADA PROTEGIDA. Nunca un fetch con Authorization suelto. */
 export async function authFetch(path: string, init: RequestInit = {}) {

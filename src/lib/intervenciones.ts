@@ -145,14 +145,16 @@ export function desvioMinutos(i: Intervencion): number | null {
  * El historial del período. **Es la única llamada del módulo.**
  *
  * @param anio `"YYYY"`. Sin él, el año en curso. `"TODOS"` lo apaga.
- * @param mes  1–12. Sin él, todo el año.
+ * @param mes  1–12. Sin él, todo el año. Viaja como NOMBRE — ver `nombreMes`.
  */
 export async function listarIntervenciones(
   anio?: string,
   mes?: number,
   id_facilitador?: number,
 ): Promise<Intervencion[]> {
-  const r = (await authFetch(`intervenciones${qs({ anio, mes, id_facilitador })}`)) as {
+  const r = (await authFetch(
+    `intervenciones${qs({ anio, mes: nombreMes(mes), id_facilitador })}`,
+  )) as {
     data?: Record<string, unknown>[];
   };
 
@@ -290,7 +292,7 @@ export type ActividadDia = {
  * es un cero que haya que dibujar. Ver `rellenarDias` si se los quiere igual.
  */
 export async function actividadPorDia(anio?: string, mes?: number): Promise<ActividadDia[]> {
-  const r = (await authFetch(`intervenciones/por-dia${qs({ anio, mes })}`)) as {
+  const r = (await authFetch(`intervenciones/por-dia${qs({ anio, mes: nombreMes(mes) })}`)) as {
     data?: Record<string, unknown>[];
   };
 
@@ -416,9 +418,22 @@ function qs(params: Record<string, unknown>) {
 }
 
 /**
- * Los meses, para el selector. El VALOR es el número: el backend filtra por
- * `EXTRACT(MONTH FROM FECHA)`, no por el texto de la columna `MES` —que es
- * `VARCHAR2` y no se sabe con qué capitalización está cargado—.
+ * Los meses, para el selector **y para mandarle el filtro al backend**.
+ *
+ * ## EL MES VIAJA COMO NOMBRE, NO COMO NÚMERO
+ *
+ * `?mes=Agosto`, no `?mes=8`. Es así porque la columna `MES` de
+ * `V_HISTORIAL_INTERVENCIONES` es **texto** (`'Agosto'`): mandando el nombre, el
+ * backend compara texto contra texto sin traducir nada en el medio.
+ *
+ * Antes se mandaba el número y el backend lo convertía a un patrón `'AGO%'` con
+ * una tabla cableada, comparando con `LIKE`. Eran tres pasos donde ahora hay
+ * uno, y esa tabla se desincronizaba en silencio si la vista cambiaba de grafía.
+ *
+ * **OJO: septiembre.** Acá dice "Setiembre" y la base carga "Septiembre"
+ * (verificado el 05/08/2026). No es un problema: el backend acepta las dos
+ * grafías —ver `f_mes_alt` en `intervenciones.sql`—. Si algún día se toca este
+ * texto, esa función es la que hay que mirar.
  */
 export const MESES = [
   "Enero",
@@ -434,6 +449,15 @@ export const MESES = [
   "Noviembre",
   "Diciembre",
 ] as const;
+
+/**
+ * El nombre del mes que espera el backend, a partir del número 1–12 que usa la
+ * UI. `undefined` si el número no es válido, y ahí el filtro no viaja.
+ */
+function nombreMes(mes?: number): string | undefined {
+  if (mes === undefined || mes < 1 || mes > 12) return undefined;
+  return MESES[mes - 1];
+}
 
 /**
  * "18 min", "1 h 5 min". Los minutos sueltos se leen mal arriba de 60.
