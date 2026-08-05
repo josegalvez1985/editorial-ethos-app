@@ -16,6 +16,17 @@
  * distintas.
  *
  * ============================================================================
+ * EL BACKEND YA FILTRA: SOLO VIENEN LOS DESVÍOS DE 15+ MINUTOS
+ * ============================================================================
+ *
+ * No llegan todas las marcaciones del mes, sino **solo las que se apartan 15
+ * minutos o más del horario**, en cualquier dirección (tarde o antes).
+ *
+ * Es la diferencia que cambia cómo se lee todo lo de abajo: el promedio no es
+ * "cuánto se atrasa en promedio", es "cuánto se desvía cuando se desvía". Un
+ * facilitador puntual **no aparece**, en vez de aparecer con una barra en cero.
+ *
+ * ============================================================================
  * `diferencia_minutos`: LEER ESTO ANTES DE USARLA
  * ============================================================================
  *
@@ -29,8 +40,8 @@
  *    marcó. Entonces **positivo = llegó ANTES**, negativo = llegó tarde.
  * 2. **Está en HORAS, no en minutos**, por el `/ 60` final.
  *
- * Por eso este módulo no la usa directo: `atrasoMinutos()` la convierte a
- * "minutos de atraso" con el signo derecho, que es lo que la UI muestra.
+ * Por eso este módulo no la usa directo: `desvioMinutos()` la convierte a
+ * minutos con el signo natural (positivo = tarde), que es lo que la UI muestra.
  */
 
 import { authFetch } from "@/lib/api";
@@ -55,7 +66,7 @@ export type Intervencion = {
   hora_hasta: string | null;
   /**
    * **En horas y con el signo invertido** (positivo = llegó antes). Tal cual la
-   * consulta original. Usar `atrasoMinutos()` en vez de esto.
+   * consulta original. Usar `desvioMinutos()` en vez de esto.
    *
    * `null` si alguna de las dos horas falta o no parsea: ahí no se puede
    * calcular, y un 0 diría "llegó puntual", que el dato no respalda.
@@ -82,26 +93,52 @@ export type Intervencion = {
   motivo_desarrollo: string | null;
   mes: string | null;
   anio: string | null;
-  /** Ya normalizadas con punto decimal por el backend. */
+  /** Donde marcó. Ya normalizadas con punto decimal por el backend. */
   latitud: string | null;
   longitud: string | null;
+  /**
+   * La URL de Google Maps de la institución, tal como está en la base.
+   *
+   * **No sirve para calcular**: son links acortados (`goo.gl/maps/…`) cuyas
+   * coordenadas solo resuelve Google al abrirlos. Se devuelve por si algún día
+   * se quiere mostrar el link tal cual.
+   */
   ubicacion_institucion: string | null;
+  /**
+   * El punto de referencia de la institución, **deducido** por el backend: la
+   * mediana de las coordenadas de todas sus marcaciones históricas.
+   *
+   * No sale de `ubicacion_institucion` — ver arriba. `null` si esa institución
+   * no tiene ninguna marcación con coordenadas válidas.
+   */
+  inst_latitud: number | null;
+  inst_longitud: number | null;
+  /**
+   * Metros entre donde marcó y donde debía marcar.
+   *
+   * `null` cuando **no se sabe**, que no es lo mismo que cero: falta alguna
+   * coordenada, la ubicación de la institución no está cargada, o la marcación
+   * quedó en (0,0) —lo que escribe `TRG_INTERV_UBICACION` cuando el facilitador
+   * tiene `IND_UBICACION_POSTULACION = 'NO'`—.
+   */
+  distancia_metros: number | null;
 };
 
 /**
- * Los minutos de ATRASO de una marcación: positivo = llegó tarde.
+ * El desvío de una marcación en minutos: **positivo = llegó tarde**, negativo =
+ * llegó antes.
  *
  * Invierte el signo de `diferencia_minutos` y la vuelve a minutos (viene en
  * horas). Ver el encabezado del módulo.
  *
- * **Los adelantos cuentan como 0.** Llegar 5 minutos antes no compensa llegar 5
- * tarde otro día: si se promediaran juntos, alguien irregular daría ~0 y
- * parecería puntual.
+ * Conserva el signo a propósito: el backend solo manda las marcaciones que se
+ * apartan 15+ minutos **en cualquier dirección**, así que distinguir "llegó
+ * tarde" de "llegó mucho antes" es justamente lo que hay que mostrar.
  */
-export function atrasoMinutos(i: Intervencion): number | null {
+export function desvioMinutos(i: Intervencion): number | null {
   if (i.diferencia_minutos === null) return null;
   // × −60: invierte el signo y deshace el `/ 60` del SQL.
-  return Math.max(Math.round(i.diferencia_minutos * -60), 0);
+  return Math.round(i.diferencia_minutos * -60);
 }
 
 /**
@@ -145,6 +182,9 @@ export async function listarIntervenciones(
     latitud: (row.latitud as string) ?? null,
     longitud: (row.longitud as string) ?? null,
     ubicacion_institucion: (row.ubicacion_institucion as string) ?? null,
+    inst_latitud: row.inst_latitud == null ? null : Number(row.inst_latitud),
+    inst_longitud: row.inst_longitud == null ? null : Number(row.inst_longitud),
+    distancia_metros: row.distancia_metros == null ? null : Number(row.distancia_metros),
   }));
 }
 
@@ -152,31 +192,45 @@ export async function listarIntervenciones(
 /* El agrupado para el gráfico                                                */
 /* -------------------------------------------------------------------------- */
 
-/** Una barra del gráfico: un facilitador con su atraso promedio. */
+/** Una barra del gráfico: un facilitador con su total de tiempo fuera de horario. */
 export type ResumenFacilitador = {
   id_facilitador: number;
   nombre_facilitador: string;
-  /** Minutos de atraso promedio por marcación. Es el valor de la barra. */
-  promedio: number;
-  /** El peor atraso del período. */
+  /**
+   * **El TOTAL de minutos marcados fuera del horario** en el período, sumando
+   * todas las marcaciones desviadas. Es el valor de la barra.
+   *
+   * Se suma la MAGNITUD: llegar 20 tarde y marcar 20 antes son los dos 20
+   * minutos fuera de horario. Sumarlos con signo los cancelaría a 0 y el
+   * facilitador desaparecería del gráfico justamente por ser irregular.
+   */
+  total: number;
+  /** El peor desvío individual del período, en magnitud. */
   peor: number;
-  /** Cuántas marcaciones se contaron (las que tienen hora calculable). */
+  /** Cuántas marcaciones desviadas se contaron. */
   marcaciones: number;
-  /** De esas, cuántas fueron tarde de verdad. */
-  con_atraso: number;
+  /** De esas, cuántas fueron TARDE (las otras fueron adelantos). */
+  tarde: number;
   /** Las filas de ese facilitador, para el modal. */
   filas: Intervencion[];
 };
 
 /**
- * Agrupa las marcaciones por facilitador, **ordenado de mayor a menor atraso**.
+ * Agrupa las marcaciones por facilitador, **ordenado de mayor a menor total**.
  *
- * El promedio se calcula solo sobre las marcaciones con hora calculable: las que
- * no la tienen se guardan en `filas` (el modal las muestra) pero no entran en la
- * cuenta. Contarlas como 0 diría "llegó puntual", que el dato no respalda.
+ * ## QUÉ SUMA, EXACTAMENTE
  *
- * Los facilitadores sin ninguna marcación calculable quedan fuera del gráfico:
- * una barra en 0 diría que fue puntual, no que no se sabe.
+ * El backend solo manda las marcaciones que se apartan **15+ minutos del
+ * horario**, en cualquier dirección. Esto suma esos desvíos: el resultado es
+ * **cuánto tiempo en total marcó fuera del horario establecido** en el período.
+ *
+ * Es una SUMA y no un promedio a pedido (05/08/2026). La diferencia importa al
+ * leer el gráfico: quien tiene muchas clases acumula más aunque cada desvío sea
+ * chico, así que la barra mide impacto acumulado, no severidad por clase. Para
+ * lo segundo está `peor`, y `marcaciones` da el contexto de cuántas fueron.
+ *
+ * Un facilitador sin desvíos **no aparece en el gráfico**, en vez de aparecer
+ * con una barra en cero: la lista es de quienes tienen algo que revisar.
  */
 export function agruparPorFacilitador(filas: Intervencion[]): ResumenFacilitador[] {
   const porId = new Map<number, Intervencion[]>();
@@ -191,23 +245,159 @@ export function agruparPorFacilitador(filas: Intervencion[]): ResumenFacilitador
   const salida: ResumenFacilitador[] = [];
 
   for (const [id, suyas] of porId) {
-    const atrasos = suyas.map(atrasoMinutos).filter((m): m is number => m !== null);
+    const desvios = suyas.map(desvioMinutos).filter((m): m is number => m !== null);
 
-    if (!atrasos.length) continue; // ninguna hora calculable: no se grafica
+    if (!desvios.length) continue; // ninguna hora calculable: no se grafica
+
+    const magnitudes = desvios.map(Math.abs);
 
     salida.push({
       id_facilitador: id,
       nombre_facilitador:
         suyas.find((f) => f.nombre_facilitador)?.nombre_facilitador ?? `Facilitador #${id}`,
-      promedio: Math.round((atrasos.reduce((a, b) => a + b, 0) / atrasos.length) * 10) / 10,
-      peor: Math.max(...atrasos),
-      marcaciones: atrasos.length,
-      con_atraso: atrasos.filter((m) => m > 0).length,
+      // La SUMA de las magnitudes: el total de tiempo fuera de horario.
+      total: magnitudes.reduce((a, b) => a + b, 0),
+      peor: Math.max(...magnitudes),
+      marcaciones: desvios.length,
+      tarde: desvios.filter((m) => m > 0).length,
       filas: suyas,
     });
   }
 
-  return salida.sort((a, b) => b.promedio - a.promedio || b.marcaciones - a.marcaciones);
+  return salida.sort((a, b) => b.total - a.total || b.marcaciones - a.marcaciones);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Actividad diaria                                                           */
+/* -------------------------------------------------------------------------- */
+
+/** Cuántas intervenciones hubo un día del mes. */
+export type ActividadDia = {
+  /** El día del mes, 1–31. Es el eje X. */
+  dia: number;
+  /** Cuántas intervenciones se registraron ese día. Es el eje Y. */
+  cantidad: number;
+};
+
+/**
+ * La actividad día por día del mes.
+ *
+ * **Cuenta TODAS las intervenciones**, no solo las desviadas: es la diferencia
+ * con `listarIntervenciones`. Este gráfico responde "cuánta actividad hubo", no
+ * "quién se portó mal", y por eso es un endpoint aparte.
+ *
+ * Los días sin actividad **no vienen** en la respuesta: un sábado sin clases no
+ * es un cero que haya que dibujar. Ver `rellenarDias` si se los quiere igual.
+ */
+export async function actividadPorDia(anio?: string, mes?: number): Promise<ActividadDia[]> {
+  const r = (await authFetch(`intervenciones/por-dia${qs({ anio, mes })}`)) as {
+    data?: Record<string, unknown>[];
+  };
+
+  return (r.data ?? []).map((row) => ({
+    dia: Number(row.dia),
+    cantidad: Number(row.cantidad ?? 0),
+  }));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Marcaciones fuera de ubicación                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Metros a partir de los cuales una marcación cuenta como "fuera de rango".
+ *
+ * **Tiene que coincidir con `c_umbral_metros` del backend**, que ya filtró con
+ * ese mismo número. Está acá para poder separar, dentro de las filas que
+ * llegaron, cuáles vinieron por ubicación y cuáles por horario.
+ */
+export const UMBRAL_METROS = 1000;
+
+/** Si esta marcación se hizo a más de 1 km de la institución. */
+export function fueraDeRango(i: Intervencion): boolean {
+  return i.distancia_metros !== null && i.distancia_metros > UMBRAL_METROS;
+}
+
+/** Una barra del gráfico de ubicación. */
+export type ResumenUbicacion = {
+  id_facilitador: number;
+  nombre_facilitador: string;
+  /** Cuántas veces marcó a más de 1 km. Es el valor de la barra. */
+  fuera: number;
+  /** La distancia más grande del período, en metros. */
+  peor: number;
+  /** Solo las marcaciones fuera de rango, para el modal. */
+  filas: Intervencion[];
+};
+
+/**
+ * Agrupa por facilitador **solo las marcaciones fuera de rango**, de mayor a
+ * menor cantidad.
+ *
+ * Las filas sin distancia calculable no cuentan: ver `distancia_metros`. Un
+ * facilitador sin ninguna marcación lejana no aparece, en vez de aparecer con
+ * una barra en cero.
+ */
+export function agruparPorUbicacion(filas: Intervencion[]): ResumenUbicacion[] {
+  const porId = new Map<number, Intervencion[]>();
+
+  for (const f of filas) {
+    if (f.id_facilitador == null || !fueraDeRango(f)) continue;
+    const ya = porId.get(f.id_facilitador);
+    if (ya) ya.push(f);
+    else porId.set(f.id_facilitador, [f]);
+  }
+
+  const salida: ResumenUbicacion[] = [];
+
+  for (const [id, suyas] of porId) {
+    const distancias = suyas.map((f) => f.distancia_metros!);
+    salida.push({
+      id_facilitador: id,
+      nombre_facilitador:
+        suyas.find((f) => f.nombre_facilitador)?.nombre_facilitador ?? `Facilitador #${id}`,
+      fuera: suyas.length,
+      peor: Math.max(...distancias),
+      filas: suyas.sort((a, b) => (b.distancia_metros ?? 0) - (a.distancia_metros ?? 0)),
+    });
+  }
+
+  return salida.sort((a, b) => b.fuera - a.fuera || b.peor - a.peor);
+}
+
+/** "850 m", "3,2 km". Abajo del kilómetro los metros se leen mejor. */
+export function formatearDistancia(metros: number | null): string {
+  if (metros === null) return "—";
+  if (metros < 1000) return `${Math.round(metros)} m`;
+  return `${(metros / 1000).toFixed(1).replace(".", ",")} km`;
+}
+
+/**
+ * El link de Google Maps que muestra las DOS ubicaciones a la vez.
+ *
+ * Se usa el modo *directions* (origen → destino) y no dos pines sueltos: es la
+ * única forma con una URL simple de que Maps encuadre los dos puntos juntos y
+ * muestre cuánto hay entre ellos, que es justo lo que se quiere verificar.
+ *
+ * `travelmode=walking` porque la ruta en auto puede dar una vuelta larga y
+ * confundir; a pie la línea es más directa y se entiende la separación real.
+ *
+ * `null` si falta alguna de las cuatro coordenadas: sin las dos puntas no hay
+ * nada que comparar, y un link a medias llevaría a un mapa equivocado.
+ */
+export function linkMapaComparativo(i: Intervencion): string | null {
+  if (!i.latitud || !i.longitud || i.inst_latitud === null || i.inst_longitud === null) {
+    return null;
+  }
+  const marco = `${i.latitud},${i.longitud}`;
+  const institucion = `${i.inst_latitud},${i.inst_longitud}`;
+  return `https://www.google.com/maps/dir/?api=1&origin=${institucion}&destination=${marco}&travelmode=walking`;
+}
+
+/** Un pin suelto en Google Maps, para ver una sola de las dos ubicaciones. */
+export function linkMapaPunto(lat: string | number | null, lng: string | number | null) {
+  if (lat === null || lng === null || lat === "" || lng === "") return null;
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -245,15 +435,23 @@ export const MESES = [
   "Diciembre",
 ] as const;
 
-/** "8 min", "1 h 5 min". Los minutos sueltos se leen mal arriba de 60. */
+/**
+ * "18 min", "1 h 5 min". Los minutos sueltos se leen mal arriba de 60.
+ *
+ * Toma la MAGNITUD: el signo no se escribe acá porque un "−20 min" no se
+ * entiende solo. Quien muestra el dato pone la palabra ("tarde" / "antes"), que
+ * es lo que hace la diferencia legible.
+ */
 export function formatearAtraso(minutos: number | null): string {
   if (minutos === null) return "—";
-  if (minutos < 60) return `${minutos} min`;
-  const h = Math.floor(minutos / 60);
-  const m = Math.round(minutos % 60);
+  const abs = Math.abs(minutos);
+  if (abs < 60) return `${abs} min`;
+  const h = Math.floor(abs / 60);
+  const m = Math.round(abs % 60);
   return m ? `${h} h ${m} min` : `${h} h`;
 }
 
 export const keysIntervenciones = {
   historial: (anio: string, mes: number) => ["intervenciones", anio, mes] as const,
+  porDia: (anio: string, mes: number) => ["intervenciones-por-dia", anio, mes] as const,
 };

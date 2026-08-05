@@ -3,14 +3,20 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
+import { ActividadChart } from "@/components/actividad-chart";
 import { PuntualidadChart } from "@/components/puntualidad-chart";
 import { PuntualidadModal } from "@/components/puntualidad-modal";
+import { UbicacionChart } from "@/components/ubicacion-chart";
+import { UbicacionModal } from "@/components/ubicacion-modal";
 import {
+  actividadPorDia,
   agruparPorFacilitador,
+  agruparPorUbicacion,
   keysIntervenciones,
   listarIntervenciones,
   MESES,
   type ResumenFacilitador,
+  type ResumenUbicacion,
 } from "@/lib/intervenciones";
 
 export const Route = createFileRoute("/home")({
@@ -66,13 +72,16 @@ function Puntualidad() {
   const ahora = new Date();
   const [anio, setAnio] = useState(String(ahora.getFullYear()));
   const [mes, setMes] = useState(ahora.getMonth() + 1);
-  // Qué barra se tocó. `null` = modal cerrado.
+  // Qué barra se tocó en cada gráfico. `null` = ese modal está cerrado.
   const [elegido, setElegido] = useState<ResumenFacilitador | null>(null);
+  const [elegidoUbi, setElegidoUbi] = useState<ResumenUbicacion | null>(null);
 
   /*
-   * UNA sola llamada: el historial del período completo. El agrupado por
-   * facilitador —lo que dibuja las barras— se hace en memoria, y el modal usa
-   * las mismas filas sin volver a pedir nada.
+   * UNA sola llamada para LOS DOS gráficos.
+   *
+   * El backend devuelve las marcaciones desviadas del período —por horario o
+   * por ubicación— y cada agrupado se queda con lo suyo. Pedir dos veces lo
+   * mismo con distinto filtro sería una llamada de más por cada cambio de mes.
    */
   const { data, isLoading, isError } = useQuery({
     queryKey: keysIntervenciones.historial(anio, mes),
@@ -80,22 +89,38 @@ function Puntualidad() {
   });
 
   const resumen = data ? agruparPorFacilitador(data) : [];
+  const ubicacion = data ? agruparPorUbicacion(data) : [];
+
+  /*
+   * La actividad diaria va en SU PROPIA consulta, y no se deriva de `data`.
+   *
+   * La de arriba trae solo las marcaciones DESVIADAS —las que se apartan del
+   * horario o de la ubicación—, así que contar sus filas por día daría un
+   * gráfico de infracciones con nombre de actividad. Este endpoint cuenta
+   * todas.
+   */
+  const {
+    data: dias,
+    isLoading: cargandoDias,
+    isError: errorDias,
+  } = useQuery({
+    queryKey: keysIntervenciones.porDia(anio, mes),
+    queryFn: () => actividadPorDia(anio, mes),
+  });
 
   // Los últimos cinco años, del actual hacia atrás: no hay tabla de años para
   // este módulo y pedirla sería una consulta más para llenar un combo.
   const anios = Array.from({ length: 5 }, (_, i) => String(ahora.getFullYear() - i));
 
   return (
-    <section className="mt-7">
-      <div className="mb-3 flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="font-display text-xl font-bold">Puntualidad</h2>
-          <p className="text-xs text-muted-foreground">Atraso promedio por facilitador</p>
-        </div>
-      </div>
-
-      {/* Los filtros, en una fila arriba del gráfico. */}
-      <div className="mb-3 flex gap-2">
+    <>
+      {/*
+        Los filtros mandan sobre LOS DOS gráficos, así que van una sola vez y
+        arriba de todo. Duplicarlos por gráfico dejaría cambiar el mes en uno y
+        no en el otro, y dos tableros del mismo período mostrando meses
+        distintos es la peor forma de leer esto.
+      */}
+      <div className="mt-7 mb-3 flex gap-2">
         <select
           value={mes}
           onChange={(e) => setMes(Number(e.target.value))}
@@ -122,26 +147,114 @@ function Puntualidad() {
         </select>
       </div>
 
-      <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
-        {isLoading ? (
-          <div className="h-40 animate-pulse rounded-xl bg-muted" />
-        ) : isError ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No se pudo cargar la puntualidad.
+      {/* ── Gráfico 1: horarios ──────────────────────────────────────────── */}
+      <section>
+        <div className="mb-3">
+          <h2 className="font-display text-xl font-bold">Puntualidad</h2>
+          {/*
+            "Fuera de horario" y no "atraso": el backend manda las marcaciones
+            que se apartan 15+ min EN CUALQUIER DIRECCIÓN, así que en el total
+            también entran las marcaciones muy anticipadas.
+          */}
+          <p className="text-xs text-muted-foreground">
+            Total marcado fuera de horario · desvíos de 15 min o más
           </p>
-        ) : !resumen.length ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No hay marcaciones registradas en {MESES[mes - 1]} de {anio}.
-          </p>
-        ) : (
-          <>
-            <PuntualidadChart datos={resumen} onSeleccionar={setElegido} />
-            <p className="mt-3 border-t border-border/60 pt-2.5 text-center text-[11px] text-muted-foreground">
-              Tocá una barra para ver el detalle de las marcaciones
+        </div>
+
+        <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
+          {isLoading ? (
+            <div className="h-40 animate-pulse rounded-xl bg-muted" />
+          ) : isError ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No se pudo cargar la puntualidad.
             </p>
-          </>
-        )}
-      </div>
+          ) : !resumen.length ? (
+            /*
+              Dos causas posibles y el texto no las separa a propósito: o no hay
+              marcaciones cargadas, o todas cayeron dentro de los 15 minutos.
+              Las dos son "no hay nada que revisar".
+            */
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Sin desvíos de 15 minutos o más en {MESES[mes - 1]} de {anio}.
+            </p>
+          ) : (
+            <>
+              <PuntualidadChart datos={resumen} onSeleccionar={setElegido} />
+              <p className="mt-3 border-t border-border/60 pt-2.5 text-center text-[11px] text-muted-foreground">
+                Tocá una barra para ver el detalle
+              </p>
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* ── Gráfico 2: ubicación ─────────────────────────────────────────── */}
+      <section className="mt-7">
+        <div className="mb-3">
+          <h2 className="font-display text-xl font-bold">Ubicación</h2>
+          <p className="text-xs text-muted-foreground">
+            Marcaciones a más de 1 km de la institución
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
+          {isLoading ? (
+            <div className="h-40 animate-pulse rounded-xl bg-muted" />
+          ) : isError ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No se pudo cargar la ubicación.
+            </p>
+          ) : !ubicacion.length ? (
+            /*
+              El texto dice "sin marcaciones fuera de rango" y NO "todos
+              marcaron donde debían", porque también cae acá el caso de que no
+              haya con qué comparar: una institución con una sola marcación
+              histórica tiene su punto de referencia sobre esa misma marcación,
+              así que la distancia da 0 y nunca aparece. Ver el join `ref` en
+              `intervenciones.sql`.
+            */
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Sin marcaciones fuera de rango en {MESES[mes - 1]} de {anio}.
+            </p>
+          ) : (
+            <>
+              <UbicacionChart datos={ubicacion} onSeleccionar={setElegidoUbi} />
+              <p className="mt-3 border-t border-border/60 pt-2.5 text-center text-[11px] text-muted-foreground">
+                Tocá una barra para ver el detalle y el mapa
+              </p>
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* ── Gráfico 3: actividad diaria ──────────────────────────────────── */}
+      <section className="mt-7">
+        <div className="mb-3">
+          <h2 className="font-display text-xl font-bold">Actividad</h2>
+          {/*
+            "Todas" es el dato que evita el malentendido: los dos gráficos de
+            arriba muestran solo desvíos, y sin esta aclaración se leería como
+            si estas barras también fueran problemas.
+          */}
+          <p className="text-xs text-muted-foreground">Todas las intervenciones, por día del mes</p>
+        </div>
+
+        <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
+          {cargandoDias ? (
+            <div className="h-40 animate-pulse rounded-xl bg-muted" />
+          ) : errorDias ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No se pudo cargar la actividad.
+            </p>
+          ) : !dias?.length ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Sin intervenciones registradas en {MESES[mes - 1]} de {anio}.
+            </p>
+          ) : (
+            <ActividadChart datos={dias} />
+          )}
+        </div>
+      </section>
 
       <PuntualidadModal
         facilitador={elegido}
@@ -149,6 +262,12 @@ function Puntualidad() {
         mes={mes}
         onClose={() => setElegido(null)}
       />
-    </section>
+      <UbicacionModal
+        facilitador={elegidoUbi}
+        anio={anio}
+        mes={mes}
+        onClose={() => setElegidoUbi(null)}
+      />
+    </>
   );
 }

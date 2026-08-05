@@ -12,7 +12,7 @@
 
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
-import { Clock, MapPin } from "lucide-react";
+import { Clock } from "lucide-react";
 
 import {
   Dialog,
@@ -21,9 +21,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { nombreTurno } from "@/lib/evaluaciones";
 import {
-  atrasoMinutos,
+  desvioMinutos,
   formatearAtraso,
   MESES,
   type Intervencion,
@@ -42,24 +41,27 @@ const fecha = (iso: string | null) => {
 };
 
 /**
- * El color del atraso. Es **estado**, no serie: por eso usa los tokens de
+ * El color del desvío. Es **estado**, no serie: por eso usa los tokens de
  * destructive/foreground y no un color de gráfico.
  *
- * Nunca va solo — al lado siempre está el número en texto, así que la
- * información no depende del color.
+ * Nunca va solo — al lado siempre está el número Y la palabra ("tarde" /
+ * "antes"), así que la información no depende del color.
+ *
+ * Solo el ATRASO se marca en rojo. Llegar antes es un desvío del horario y por
+ * eso aparece en la lista, pero no es una falta: pintarlo igual que una llegada
+ * tarde daría una lectura equivocada de un vistazo.
  */
-function tonoAtraso(min: number | null) {
+function tonoDesvio(min: number | null) {
   if (min === null) return "text-muted-foreground";
-  if (min === 0) return "text-muted-foreground";
-  if (min >= 15) return "text-destructive";
-  return "text-foreground";
+  if (min >= 30) return "text-destructive";
+  if (min > 0) return "text-foreground";
+  return "text-muted-foreground"; // llegó antes
 }
 
 function Fila({ i }: { i: Intervencion }) {
-  const turno = nombreTurno(i.turno);
-  // La conversión vive en `atrasoMinutos`: la columna del backend viene en horas
-  // y con el signo invertido. Ver `lib/intervenciones.ts`.
-  const atraso = atrasoMinutos(i);
+  // La conversión vive en `desvioMinutos`: la columna del backend viene en horas
+  // y con el signo invertido. Positivo = tarde. Ver `lib/intervenciones.ts`.
+  const desvio = desvioMinutos(i);
 
   return (
     <div className="rounded-xl border border-border/60 bg-card p-3">
@@ -74,13 +76,10 @@ function Fila({ i }: { i: Intervencion }) {
           </p>
         </div>
 
-        {/* El atraso, que es el dato que se vino a ver. */}
+        {/* El desvío, que es el dato que se vino a ver. */}
         <div className="shrink-0 text-right">
-          <p className={`text-[15px] leading-none font-bold ${tonoAtraso(atraso)}`}>
-            {formatearAtraso(atraso)}
-          </p>
-          <p className="mt-1 text-[10px] text-muted-foreground">
-            {atraso === 0 ? "en horario" : atraso === null ? "sin hora" : "de atraso"}
+          <p className={`text-[15px] leading-none font-bold ${tonoDesvio(desvio)}`}>
+            {formatearAtraso(desvio)}
           </p>
         </div>
       </div>
@@ -98,20 +97,12 @@ function Fila({ i }: { i: Intervencion }) {
         <span>
           Marcó <span className="font-semibold text-foreground">{i.hora ?? "—"}</span>
         </span>
-        {turno && <span>{turno}</span>}
       </div>
 
       {/* El motivo solo existe cuando el índice NO se desarrolló. */}
       {i.motivo_desarrollo && (
         <p className="mt-2 rounded-lg bg-muted/60 px-2.5 py-1.5 text-[11px] leading-snug text-muted-foreground">
           <span className="font-semibold">No se desarrolló:</span> {i.motivo_desarrollo}
-        </p>
-      )}
-
-      {i.ubicacion_institucion && (
-        <p className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-          <MapPin className="size-3 shrink-0" />
-          <span className="min-w-0 truncate">{i.ubicacion_institucion}</span>
         </p>
       )}
     </div>
@@ -148,11 +139,19 @@ export function PuntualidadModal({
           <DialogTitle className="font-display text-xl">
             {facilitador?.nombre_facilitador ?? ""}
           </DialogTitle>
+          {/*
+            Dice "desviadas" y no "clases": el backend solo manda las que se
+            apartan 15+ min del horario, así que este número NO es el total de
+            clases del mes. Nombrarlo mal haría leer el total como si fuera
+            sobre todas.
+          */}
           <DialogDescription className="text-xs">
             {MESES[mes - 1]} {anio}
             {facilitador &&
-              ` · ${formatearAtraso(facilitador.promedio)} de atraso promedio en ` +
-                `${facilitador.marcaciones} ${facilitador.marcaciones === 1 ? "clase" : "clases"}`}
+              ` · ${formatearAtraso(facilitador.total)} fuera de horario en ` +
+                `${facilitador.marcaciones} ${
+                  facilitador.marcaciones === 1 ? "marcación" : "marcaciones"
+                }`}
           </DialogDescription>
         </DialogHeader>
 
