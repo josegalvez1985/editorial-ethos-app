@@ -253,6 +253,16 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
     OWA_UTIL.HTTP_HEADER_CLOSE;
   END abrir_json;
 
+  ------------------------------------------------------------------------------
+  -- OJO: SOLO SE PUEDE LLAMAR **ANTES** DE HABER ABIERTO LA RESPUESTA.
+  --
+  -- Emite los headers, asi que si el procedimiento ya hizo `abrir_json` esto los
+  -- emite POR SEGUNDA VEZ y la respuesta sale corrupta: el cliente recibe algo
+  -- que no es JSON valido y lo ve como "sin datos", ocultando el error real.
+  --
+  -- Por eso los EXCEPTION de `listar` y `por_dia` NO llaman aca cuando ya
+  -- empezaron a escribir: usan `p_error_tardio`, que cierra el JSON abierto.
+  ------------------------------------------------------------------------------
   PROCEDURE p_error(p_status IN NUMBER, p_titulo IN VARCHAR2, p_detalle IN VARCHAR2) IS
   BEGIN
     OWA_UTIL.STATUS_LINE(p_status, p_titulo, FALSE);
@@ -262,6 +272,26 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
     APEX_JSON.WRITE('message', p_detalle);
     APEX_JSON.CLOSE_OBJECT;
   END p_error;
+
+  ------------------------------------------------------------------------------
+  -- El error cuando la respuesta YA se abrio y hay un array a medio escribir.
+  --
+  -- No toca los headers —ya salieron— y cierra lo que quedo abierto para que el
+  -- JSON sea parseable. `success` va en false y `message` trae el ORA real, que
+  -- es lo unico que permite diagnosticar sin adivinar.
+  --
+  -- Se cierra el array primero y el objeto despues, en ese orden: al reves
+  -- APEX_JSON emite llaves cruzadas y el JSON tampoco parsea.
+  ------------------------------------------------------------------------------
+  PROCEDURE p_error_tardio(p_detalle IN VARCHAR2) IS
+  BEGIN
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.WRITE('success', FALSE);
+    APEX_JSON.WRITE('message', p_detalle);
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN NULL; -- si ni eso se puede, no hay nada mas que hacer
+  END p_error_tardio;
 
   -- El usuario del token, o NULL. Delega en PKG_AUTH_ETHOS: la validacion vive
   -- en UN solo lugar.
@@ -403,18 +433,27 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
     IF p_mes IS NULL OR p_mes NOT BETWEEN 1 AND 12 THEN
       RETURN NULL; -- no filtra por mes
     END IF;
-    -- Setiembre/Septiembre: las dos grafias circulan y difieren en la 3a letra.
-    -- Se corta en dos ('SE%') para que matcheen las dos.
-    IF p_mes = 9 THEN
-      RETURN 'SE%';
-    END IF;
-    RETURN UPPER(SUBSTR(
-             TO_CHAR(TO_DATE('2000-' || LPAD(p_mes, 2, '0') || '-01', 'YYYY-MM-DD'),
-                     'MONTH',
-                     'NLS_DATE_LANGUAGE=SPANISH'),
-             1, 3)) || '%';
-  EXCEPTION
-    WHEN OTHERS THEN RETURN NULL; -- ante la duda, no filtrar por mes
+    ----------------------------------------------------------------------------
+    -- LOS NOMBRES VAN CABLEADOS, NO GENERADOS CON TO_CHAR.
+    --
+    -- Antes esto salia de TO_CHAR(fecha,'MONTH','NLS_DATE_LANGUAGE=SPANISH').
+    -- Dependia de que la sesion de ORDS aceptara ese NLS y de que el TO_DATE del
+    -- literal no chocara con el NLS_DATE_FORMAT — y si algo de eso fallaba, el
+    -- EXCEPTION que habia devolvia NULL EN SILENCIO. Con el patron en NULL el
+    -- filtro se apaga y la consulta trae otra cosa, sin ningun error visible.
+    --
+    -- Tres letras y LIKE: matchea 'AGOSTO', 'Agosto', 'agosto' y una eventual
+    -- abreviatura 'Ago'. Setiembre va con dos ('SE%') porque circulan las dos
+    -- grafias y difieren en la tercera letra.
+    ----------------------------------------------------------------------------
+    RETURN CASE p_mes
+             WHEN  1 THEN 'ENE%'  WHEN  2 THEN 'FEB%'
+             WHEN  3 THEN 'MAR%'  WHEN  4 THEN 'ABR%'
+             WHEN  5 THEN 'MAY%'  WHEN  6 THEN 'JUN%'
+             WHEN  7 THEN 'JUL%'  WHEN  8 THEN 'AGO%'
+             WHEN  9 THEN 'SE%'   WHEN 10 THEN 'OCT%'
+             WHEN 11 THEN 'NOV%'  WHEN 12 THEN 'DIC%'
+           END;
   END f_patron_mes;
 
   ------------------------------------------------------------------------------
@@ -669,7 +708,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION
     WHEN OTHERS THEN
-      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+      -- `p_error_tardio` y NO `p_error`: la respuesta ya se abrio mas arriba, y
+      -- emitir los headers de nuevo la dejaria ilegible — el front lo veria como
+      -- "sin datos" en vez de mostrar el error.
+      p_error_tardio('Error: ' || SQLERRM);
   END listar;
 
   ------------------------------------------------------------------------------
@@ -730,6 +772,25 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('anio',    l_anio);
     APEX_JSON.WRITE('mes',     NVL(p_mes, EXTRACT(MONTH FROM SYSDATE)));
+    -- Contra que se comparo, y cuantas filas hay de cada lado del filtro. Sin
+    -- esto, un resultado vacio no distingue "no hay datos" de "el filtro no
+    -- matchea", y hay que ir a la base a adivinar cual de las dos es.
+    APEX_JSON.WRITE('patron_mes', l_patron);
+    DECLARE
+      l_solo_anio PLS_INTEGER;
+      l_solo_mes  PLS_INTEGER;
+    BEGIN
+      SELECT COUNT(*) INTO l_solo_anio
+        FROM v_historial_intervenciones
+       WHERE l_anio IS NULL OR anio = l_anio;
+      SELECT COUNT(*) INTO l_solo_mes
+        FROM v_historial_intervenciones
+       WHERE l_patron IS NULL OR UPPER(TRIM(mes)) LIKE l_patron;
+      APEX_JSON.WRITE('filas_del_anio', l_solo_anio);
+      APEX_JSON.WRITE('filas_del_mes',  l_solo_mes);
+    EXCEPTION
+      WHEN OTHERS THEN NULL; -- el diagnostico no puede tumbar la respuesta
+    END;
     APEX_JSON.OPEN_ARRAY('data');
 
     FOR r IN (
@@ -755,7 +816,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION
     WHEN OTHERS THEN
-      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+      -- Mismo motivo que en `listar`: la respuesta ya esta abierta.
+      p_error_tardio('Error: ' || SQLERRM);
   END por_dia;
 
 END PKG_INTERVENCIONES_ETHOS;
