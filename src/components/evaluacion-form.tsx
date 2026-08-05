@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, Lock, MapPin, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
+import { DirectorCard } from "@/components/director-card";
 import { PickerModal } from "@/components/picker-modal";
 import { PostulacionPicker } from "@/components/postulacion-picker";
 import { CalificacionDisplay, StarToggle } from "@/components/star-rating";
@@ -474,6 +475,18 @@ export function EvaluacionForm({
               }}
             />
           )}
+
+          {/*
+            La dirección de la institución. Va justo después de la institución de
+            la que sale, y antes de la postulación, porque se lee en el orden en
+            que aparece el dato.
+
+            NO es un campo: no se elige ni se guarda, así que tampoco importa que
+            el `fieldset disabled` lo alcance —no tiene controles que bloquear— y
+            se sigue viendo en las evaluaciones cerradas, que es lo correcto para
+            un dato de contacto.
+          */}
+          <DirectorCard idInstitucion={cab.id_institucion} />
 
           {/*
             Las postulaciones del facilitador en esta institución. Va acá, al

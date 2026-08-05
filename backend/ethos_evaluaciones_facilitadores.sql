@@ -32,6 +32,10 @@
 --            las trae todas; ?dia=3 fuerza el miercoles.
 --     GET    listas/manuales        ?buscar=&limite=
 --     GET    listas/indices         ?manual=&buscar=&limite=
+--     GET    listas/directores      ?id_institucion=&estado=&limite=
+--            La direccion de UNA institucion (id_institucion OBLIGATORIO).
+--            Por defecto solo ESTADO='A'; ?estado=TODOS trae el historico.
+--            Es informativa: NO se guarda nada de esto en la evaluacion.
 --
 --   Todos protegidos: Authorization: Bearer <token> de auth/login.
 --
@@ -714,20 +718,21 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
   ----------------------------------------------------------------------------
 
   -- Un solo punto de entrada. p_nombre: facilitadores | instituciones | areas |
-  -- evaluaciones | ciudades | postulaciones. Cada lista usa los parametros que
-  -- le sirven e ignora el resto.
+  -- evaluaciones | ciudades | postulaciones | directores. Cada lista usa los
+  -- parametros que le sirven e ignora el resto.
   PROCEDURE lista(
       p_token      IN VARCHAR2,
       p_nombre     IN VARCHAR2,
       p_buscar     IN VARCHAR2 DEFAULT NULL,
       p_id_area    IN NUMBER   DEFAULT NULL,
       p_activo     IN VARCHAR2 DEFAULT NULL,
+      -- `directores`: 'A' (por defecto) / 'TODOS' / el valor crudo.
       p_estado     IN VARCHAR2 DEFAULT NULL,
       p_incluir_id IN NUMBER   DEFAULT NULL,
       -- `instituciones`: las del facilitador, via POSTULACIONES.
       -- `postulaciones`: junto con p_id_institucion, las que se muestran.
       p_id_facilitador IN NUMBER   DEFAULT NULL,
-      -- Solo `postulaciones`.
+      -- `postulaciones` y `directores`: la institucion. Obligatoria en las dos.
       p_id_institucion IN NUMBER   DEFAULT NULL,
       -- Solo `postulaciones`: dia de la semana (1=lunes..5=viernes). Sin el
       -- parametro usa HOY; 'TODOS' lo apaga.
@@ -1865,6 +1870,73 @@ BEGIN
 END lov_ciudades;
 
 ------------------------------------------------------------------------------
+-- La direccion de UNA institucion: quien la dirige, con su cargo y telefono.
+--
+-- Es 100% INFORMATIVO. No se guarda nada en EVALUACIONES_FACILITADORES: la
+-- tarjeta del formulario lo muestra para que el evaluador sepa con quien hablar
+-- al llegar. Por eso no hay FK ni columna ID_DIRECTOR en la evaluacion.
+--
+-- DEVUELVE TODAS LAS FILAS ACTIVAS, NO UNA.
+--   INSTITUCIONES_DIRECTORES tiene una fila por PERIODO + NIVEL + TURNO, y una
+--   institucion puede tener a la vez un director de la manana en Escolar Basica
+--   y otro de la tarde en Media, los dos con ESTADO = 'A'. Quedarse con uno solo
+--   escondia al que si correspondia, sin avisar. El front las lista todas.
+--
+-- p_estado: 'A' por defecto (el dominio de ESTADO es texto libre VARCHAR2(20),
+--   pero los datos usan 'A' = activo). 'TODOS' lo apaga, para ver el historico.
+--
+-- NO filtra por PERIODO. PERIODO es un VARCHAR2(50) sin dominio —no es el año
+-- lectivo ni tiene FK a ANIOS_LECTIVOS—, asi que no hay forma segura de decir
+-- cual es "el actual". El ESTADO es lo unico confiable, y por eso es el filtro.
+-- El PERIODO viaja igual, para que la tarjeta lo pueda mostrar.
+--
+-- ORDER BY: el periodo mas reciente primero (DESC, alfabetico sobre el texto),
+-- y dentro de el por nombre. Asi lo vigente queda arriba aunque se pidan todos.
+--
+-- El telefono sale de la fila de INSTITUCIONES_DIRECTORES —es el de esa persona
+-- EN ESA institucion— y cae al de DIRECTORES cuando no esta cargado: la ficha
+-- del director es el respaldo, no al reves.
+------------------------------------------------------------------------------
+PROCEDURE lov_directores(
+    p_id_institucion IN NUMBER,
+    p_estado         IN VARCHAR2,
+    p_tope           IN PLS_INTEGER
+) IS
+    l_estado VARCHAR2(20) := CASE
+                               WHEN p_estado IS NULL THEN 'A'
+                               WHEN UPPER(TRIM(p_estado)) = 'TODOS' THEN NULL
+                               ELSE UPPER(TRIM(p_estado))
+                             END;
+BEGIN
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT idr.id_periodo, idr.periodo, idr.id_director,
+               d.nombre_apellido, idr.cargo, idr.nivel, idr.turno, idr.estado,
+               -- El de la institucion manda; el de la ficha es el respaldo.
+               NVL(idr.nro_telefono, d.nro_telefono) AS nro_telefono
+          FROM instituciones_directores idr
+          JOIN directores d ON d.id_director = idr.id_director
+         WHERE idr.id_institucion = p_id_institucion
+           AND (l_estado IS NULL OR UPPER(TRIM(idr.estado)) = l_estado)
+         ORDER BY idr.periodo DESC, d.nombre_apellido
+         FETCH FIRST p_tope ROWS ONLY
+    ) LOOP
+        APEX_JSON.OPEN_OBJECT;
+        APEX_JSON.WRITE('id_periodo',      r.id_periodo);
+        APEX_JSON.WRITE('periodo',         r.periodo);
+        APEX_JSON.WRITE('id_director',     r.id_director);
+        APEX_JSON.WRITE('nombre_apellido', r.nombre_apellido);
+        APEX_JSON.WRITE('cargo',           r.cargo);
+        APEX_JSON.WRITE('nivel',           r.nivel);
+        APEX_JSON.WRITE('turno',           r.turno);
+        APEX_JSON.WRITE('estado',          r.estado);
+        APEX_JSON.WRITE('nro_telefono',    r.nro_telefono);
+        APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+END lov_directores;
+
+------------------------------------------------------------------------------
 -- Los manuales, sin repetir. Es el primer combo de la cascada Manual -> Indice.
 --
 -- INDICES_MANUALES no tiene tabla de manuales: MANUAL es un VARCHAR2(100) de la
@@ -2161,11 +2233,13 @@ BEGIN
     -- vacio se colaria hasta el CASE de abajo para morir con CASE_NOT_FOUND (500).
     IF l_clave IS NULL
        OR l_clave NOT IN ('facilitadores', 'instituciones', 'areas', 'evaluaciones',
-                          'ciudades', 'postulaciones', 'manuales', 'indices')
+                          'ciudades', 'postulaciones', 'manuales', 'indices',
+                          'directores')
     THEN
         p_error(400, 'Bad Request',
                 'Lista desconocida. Validas: facilitadores, instituciones, '
-                || 'areas, evaluaciones, ciudades, postulaciones, manuales, indices');
+                || 'areas, evaluaciones, ciudades, postulaciones, manuales, '
+                || 'indices, directores');
         RETURN;
     END IF;
 
@@ -2178,6 +2252,14 @@ BEGIN
     THEN
         p_error(400, 'Bad Request',
                 'listas/postulaciones requiere id_facilitador e id_institucion');
+        RETURN;
+    END IF;
+
+    -- `directores` exige la institucion, por el mismo motivo: la direccion de
+    -- todas las instituciones juntas no es una lista que nadie pida, y sin
+    -- filtro se llevaria el tope entero de filas.
+    IF l_clave = 'directores' AND p_id_institucion IS NULL THEN
+        p_error(400, 'Bad Request', 'listas/directores requiere id_institucion');
         RETURN;
     END IF;
 
@@ -2206,6 +2288,9 @@ BEGIN
         lov_postulaciones(p_id_facilitador, p_id_institucion, p_anio, p_dia, l_tope);
       WHEN 'manuales'      THEN lov_manuales(l_patron, l_tope);
       WHEN 'indices'       THEN lov_indices(l_patron, p_manual, l_tope);
+      WHEN 'directores'    THEN
+        -- Sin l_patron: son una o dos por institucion y se muestran todas.
+        lov_directores(p_id_institucion, p_estado, l_tope);
     END CASE;
 
     APEX_JSON.CLOSE_OBJECT;
@@ -2482,6 +2567,11 @@ END;
   --   listas/ciudades      ?buscar=&limite=
   --   listas/postulaciones ?id_facilitador=&id_institucion=&anio=   (los dos ids
   --                        son OBLIGATORIOS: sin ellos responde 400)
+  --   listas/directores    ?id_institucion=&estado=&limite=   (id_institucion
+  --                        OBLIGATORIO: sin el responde 400)
+  --
+  -- Los binds ya estan todos declarados abajo: la lista nueva usa
+  -- :id_institucion y :estado, que existian para instituciones/postulaciones.
   ----------------------------------------------------------------------------
   BEGIN
     ORDS.DEFINE_TEMPLATE(

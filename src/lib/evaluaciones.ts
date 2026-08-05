@@ -508,6 +508,73 @@ export async function listarPostulaciones(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Directores                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Quién dirige una institución. **Es un dato informativo y nada más.**
+ *
+ * No se guarda en la evaluación: no hay `id_director` en
+ * `EVALUACIONES_FACILITADORES` ni va en el JSON del POST/PUT. Está para que el
+ * evaluador sepa con quién hablar al llegar a la institución.
+ *
+ * Sale de `INSTITUCIONES_DIRECTORES` (una fila por período + nivel + turno)
+ * unida a `DIRECTORES` (la ficha de la persona). Como no viaja en la evaluación,
+ * siempre se lee fresco de la base: si cambia el director, la tarjeta lo refleja
+ * sin tocar nada de lo ya cargado.
+ *
+ * Todo es opcional salvo el nombre porque en la base todo es NULLABLE salvo eso.
+ */
+export type Director = {
+  /** PK de la fila de `INSTITUCIONES_DIRECTORES`, no del director. */
+  id_periodo: number;
+  /** `VARCHAR2(50)` sin dominio: no es el año lectivo ni tiene FK. Ver el SQL. */
+  periodo: string | null;
+  id_director: number;
+  nombre_apellido: string;
+  /** "Directora", "Coordinador"… texto libre. */
+  cargo: string | null;
+  /** "Escolar Básica", "Media"… texto libre. */
+  nivel: string | null;
+  /**
+   * Texto libre, NO el número 1/2/3 de `POSTULACIONES.TURNO`. Son dos dominios
+   * distintos que se llaman igual: acá NO se puede usar `nombreTurno()`.
+   */
+  turno: string | null;
+  estado: string | null;
+  /** El de la institución; el backend cae al de la ficha si no está cargado. */
+  nro_telefono: string | null;
+};
+
+/**
+ * La dirección de una institución. **Devuelve TODAS las filas activas**, no una.
+ *
+ * Una institución puede tener a la vez un director de la mañana en Escolar
+ * Básica y otro de la tarde en Media, los dos con `ESTADO = 'A'`. Quedarse con
+ * uno escondería al que sí corresponde, así que la tarjeta las lista todas.
+ *
+ * `id_institucion` es obligatorio en el backend (400 sin él): la llamada no debe
+ * hacerse hasta tenerlo, y el `enabled` de la query es de quien la usa.
+ */
+export async function listarDirectores(id_institucion: number): Promise<Director[]> {
+  const r = (await authFetch(`listas/directores${qs({ id_institucion })}`)) as {
+    data?: Record<string, unknown>[];
+  };
+
+  return (r.data ?? []).map((row) => ({
+    id_periodo: Number(row.id_periodo),
+    periodo: (row.periodo as string) ?? null,
+    id_director: Number(row.id_director),
+    nombre_apellido: String(row.nombre_apellido ?? ""),
+    cargo: (row.cargo as string) ?? null,
+    nivel: (row.nivel as string) ?? null,
+    turno: (row.turno as string) ?? null,
+    estado: (row.estado as string) ?? null,
+    nro_telefono: (row.nro_telefono as string) ?? null,
+  }));
+}
+
+/* -------------------------------------------------------------------------- */
 /* Índices de manuales                                                        */
 /* -------------------------------------------------------------------------- */
 

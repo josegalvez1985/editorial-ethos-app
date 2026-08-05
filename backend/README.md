@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | **[`ethos_auth.sql`](ethos_auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
 | **[`ethos_anios_lectivos.sql`](ethos_anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` | 2º |
-| **[`ethos_evaluaciones_facilitadores.sql`](ethos_evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
+| **[`ethos_evaluaciones_facilitadores.sql`](ethos_evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos y de la tarjeta de dirección (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
 
 Los tres son idempotentes. El tercero **no** define el módulo ni habilita el esquema:
 agrega handlers al módulo `ethos` que creó el primero.
@@ -86,6 +86,36 @@ Listas de valores (`limite` máx. 500, por defecto 100):
 | `areas` | `buscar` | `id_area`, `descripcion` |
 | `evaluaciones` | `id_area`, `buscar` | `id_evaluacion`, `id_area`, `descripcion` |
 | `ciudades` | `buscar` | `id_ciudad`, `nombre` |
+| `postulaciones` | **`id_facilitador` + `id_institucion` obligatorios**, `dia`, `anio` | `id_postulacion`, `grado`, `seccion`, `turno`, `docente`, `horario`… |
+| `manuales` | `buscar` | `manual` (el texto es el id: no hay tabla de manuales) |
+| `indices` | `manual`, `buscar` | `id_indice`, `nro_indice`, `titulo`, `manual` |
+| `directores` | **`id_institucion` obligatorio**, `estado` | `id_periodo`, `periodo`, `id_director`, `nombre_apellido`, `cargo`, `nivel`, `turno`, `estado`, `nro_telefono` |
+
+### `directores`: informativa, y devuelve varias filas
+
+Alimenta la tarjeta que el formulario muestra al elegir institución, para que el
+evaluador sepa con quién hablar al llegar. **No se guarda nada de esto en la
+evaluación**: no hay `ID_DIRECTOR` en `EVALUACIONES_FACILITADORES` ni viaja en el
+POST/PUT. Se lee fresco siempre, así que un cambio de director se refleja solo.
+
+**Devuelve todas las filas activas, no una.** `INSTITUCIONES_DIRECTORES` tiene una
+fila por `PERIODO` + `NIVEL` + `TURNO`, así que una institución puede tener a la
+vez un director de la mañana en Escolar Básica y otro de la tarde en Media, los
+dos con `ESTADO = 'A'`. Quedarse con uno escondía al que sí correspondía.
+
+Dos cosas que conviene saber antes de tocarla:
+
+- **No filtra por `PERIODO`.** Es un `VARCHAR2(50)` sin dominio: no es el año
+  lectivo, no tiene FK a `ANIOS_LECTIVOS` y no hay forma segura de decir cuál es
+  "el actual". El `ESTADO` es lo único confiable, y por eso es el filtro. El
+  período viaja igual, para mostrarlo. Por defecto `'A'`; `?estado=TODOS` trae el
+  histórico.
+- **`TURNO` acá es texto libre**, no el `NUMBER` 1/2/3 de `POSTULACIONES.TURNO`.
+  Dos dominios distintos con el mismo nombre: no se pueden cruzar ni traducir con
+  la misma tabla.
+
+El teléfono sale de `INSTITUCIONES_DIRECTORES.NRO_TELEFONO` —el de esa persona en
+esa institución— y cae al de `DIRECTORES` cuando no está cargado.
 
 ### El filtro por año lectivo
 
