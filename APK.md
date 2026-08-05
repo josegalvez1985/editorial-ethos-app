@@ -1,11 +1,16 @@
-# Generar el APK de Editorial Ethos (Capacitor)
+# Generar el APK de Juventud con Valores (Capacitor)
 
 El APK **empaqueta el sitio web adentro**: Capacitor copia `dist/client` a los assets nativos y
 la WebView carga esos archivos locales. Config en [`capacitor.config.ts`](capacitor.config.ts)
 (`webDir: "dist/client"`, sin `server.url`).
 
-> Como la web viaja dentro del APK, **SÍ** hay que regenerar el APK ante cualquier cambio del
-> front (páginas, lógica, estilos, bugfixes). No hay actualización remota del contenido.
+> **YA NO HACE FALTA REGENERAR EL APK POR CADA CAMBIO DEL FRONT.** Desde el 05/08/2026 hay
+> actualización OTA: un cambio de pantalla, formulario, lógica o estilos llega a los teléfonos
+> con un `git push`, sin compilar nada. **Ver [`OTA.md`](OTA.md).**
+>
+> Este documento sigue siendo el que manda para lo que OTA **no** puede actualizar: plugins
+> nativos, ícono, splash, nombre visible, permisos del manifest y `versionCode`. Para eso sí
+> hay que compilar y repartir un APK.
 
 ## Lo que este proyecto hace distinto
 
@@ -193,26 +198,54 @@ API.
 ## Versión
 
 [`android/app/build.gradle`](android/app/build.gradle) → `versionCode` / `versionName`
-(actualmente `1` / `"1.0"`). Subirlos antes de repartir una versión nueva; Android se niega a
-instalar encima un `versionCode` menor o igual.
+(actualmente **`10` / `"1.7.1"`**). Subirlos antes de repartir una versión nueva; Android se
+niega a instalar encima un `versionCode` menor o igual.
+
+## Identidad de la app
+
+| Qué | Valor | ¿Se puede cambiar? |
+| --- | --- | --- |
+| Nombre visible | "Juventud con Valores" | Sí, `res/values/strings.xml` |
+| `applicationId` | `com.editorialethos.app` | **No** sin romper la actualización |
+
+**El `applicationId` sigue diciendo `editorialethos` a propósito.** Es la identidad de la app
+para Android: si se cambia, el sistema la toma como una app distinta, no se instala encima de
+la que ya está en los teléfonos, queda duplicada y el usuario pierde lo que tuviera guardado.
+El nombre visible se cambia cuando se quiera; el id, no sin migrar.
 
 ## Ícono de la app
 
-Ya está el de la marca: los `mipmap-*`, el adaptive icon y el splash se generaron desde
-[`assets/icon.png`](assets/) (1024×1024, el mismo que usa la app Expo) y **están commiteados** en
-`android/app/src/main/res/`. No hay que hacer nada en cada build.
+Ya es el de la marca. Se regeneró el **04/08/2026** desde `public/logo.png` (512×512) en las
+seis densidades, y **está commiteado** en `android/app/src/main/res/`. No hay que hacer nada
+en cada build.
 
-Para volver a generarlos —si cambia el logo— reemplazá `assets/icon.png` y corré:
+| Archivo | Qué es |
+| --- | --- |
+| `ic_launcher.png` | Legacy cuadrado (Android < 8), a sangre |
+| `ic_launcher_round.png` | Legacy redondo, recortado a círculo |
+| `ic_launcher_background.png` | Capa de atrás del adaptativo: azul `#7095CC` liso |
+| `ic_launcher_foreground.png` | Capa de adelante: el logo al 62%, centrado |
+| `splash.png` (×26) | Portrait/landscape × densidades × `-night` |
 
-```powershell
-npx @capacitor/assets generate --android --iconBackgroundColor "#ffffff" --splashBackgroundColor "#ffffff"
-```
+### Dos cosas que hay que respetar si se regenera
 
-**Con `npx`, no como dependencia del proyecto.** `@capacitor/assets` estuvo un rato en
-`devDependencies` y hubo que sacarlo: arrastra un `@capacitor/cli@5.7.8` viejo además del 8.4.1
-real —lo que rompía `npm ci` en GitHub Actions con `Missing: lru-cache@11.5.2 from lock file`— y
-un `sharp@0.32.6` nativo que el runner tenía que compilar con `node-gyp` para nada, porque los
-íconos ya están generados. Es una herramienta de un solo uso, no una dependencia de build.
+1. **El adaptativo va sin `inset` en el XML.** El template traía
+   `<inset android:inset="16.7%">` en las dos capas; con eso, el recorte del launcher dejaba
+   un borde transparente alrededor del azul. El margen está **dentro del PNG** (el logo
+   dibujado al 62%), que es lo que evita que "Juventud con Valores" quede cortado.
+2. **Los splash `-night` van sobre navy `#0E1226`**, no sobre el azul claro: si no, el
+   arranque destella celeste antes de entrar a una app en modo oscuro.
+
+### Cómo se regeneraron
+
+**Sin instalar nada.** Se usó `System.Drawing` de .NET vía PowerShell, que ya viene con
+Windows. Los scripts quedaron en el scratchpad de la sesión, pero son cortos: leen el PNG,
+lo redimensionan con `HighQualityBicubic` y lo guardan.
+
+Antes se usaba `npx @capacitor/assets`. **No volver a ponerlo en `devDependencies`:** arrastra
+un `@capacitor/cli@5.7.8` viejo además del 8.4.1 real —lo que rompía `npm ci` en GitHub Actions
+con `Missing: lru-cache@11.5.2 from lock file`— y un `sharp@0.32.6` nativo que el runner tenía
+que compilar con `node-gyp` para nada. Es una herramienta de un solo uso, no una dependencia.
 
 Después de regenerarlos, hay que recompilar el APK.
 

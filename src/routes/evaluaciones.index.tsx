@@ -7,6 +7,7 @@ import {
   CalendarRange,
   ChevronRight,
   Loader2,
+  Lock,
   MapPin,
   Plus,
   RotateCcw,
@@ -265,6 +266,14 @@ function Tarjeta({ g }: { g: EvaluacionAgrupada }) {
           <h3 className="font-display truncate text-[17px] leading-snug font-bold">
             {g.facilitador ?? `Facilitador #${g.id_facilitador}`}
           </h3>
+          {/* Cerrada se avisa acá para no tener que entrar a descubrirlo. El
+              candado real está en el backend; esto es solo la señal. */}
+          {g.cerrada && (
+            <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+              <Lock className="size-3" />
+              Cerrada
+            </span>
+          )}
           <p className="mt-1 flex items-center gap-1.5 text-[13px] text-muted-foreground">
             <Building2 className="size-3.5 shrink-0" />
             <span className="truncate">{g.institucion ?? `#${g.id_institucion}`}</span>

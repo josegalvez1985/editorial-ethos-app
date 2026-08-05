@@ -45,6 +45,7 @@ npm run dev
 | `npm run preview` | Sirve el build |
 | `npm run lint` | ESLint |
 | `npm run apk` | APK de Android con esta misma web dentro — ver [`APK.md`](APK.md) |
+| `npm run ota` | Bundle de actualización remota del APK — ver [`OTA.md`](OTA.md) |
 
 **En producción el sitio se sirve en <https://www.ethospy.online/> desde GitHub Pages** (el
 `github.io` responde un `301` hacia el dominio), que es hosting estático: el proxy **no** corre y
@@ -149,4 +150,9 @@ Lo que bloquea hoy, **en este orden** (el segundo script no compila sin el prime
    El API de evaluaciones está caído hasta que se aplique.
 
 El APK ya compila: `npm run apk` (ver [`APK.md`](APK.md)). **Antes de repartir uno nuevo**
-hay que subir `versionCode` en `android/app/build.gradle` — hoy va en `10` / `"1.7.1"`.
+hay que subir `versionCode` en `android/app/build.gradle` — hoy va en `11` / `"1.8"`.
+
+**Pero repartir un APK ya casi nunca hace falta.** Desde el 05/08/2026 el contenido web del
+APK se actualiza solo: `git push` a `main` publica el sitio y un bundle que los teléfonos
+levantan al reabrir la app. Solo los cambios **nativos** (plugin, ícono, splash, permisos)
+piden un APK nuevo. Ver [`OTA.md`](OTA.md).

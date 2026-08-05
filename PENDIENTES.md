@@ -1,6 +1,6 @@
 # Pendientes
 
-Estado al **30/07/2026**. Ordenado por lo que bloquea a lo que puede esperar.
+Estado al **04/08/2026**. Ordenado por lo que bloquea a lo que puede esperar.
 
 Cada punto dice **por qué** quedó pendiente, no solo qué falta: la mayoría son decisiones
 tomadas a conciencia, no olvidos.
@@ -9,18 +9,39 @@ tomadas a conciencia, no olvidos.
 
 ## 🔴 Bloqueantes
 
-### 1. Correr el script del backend en APEX
+### 1. Correr los scripts del backend en APEX, **en este orden**
 
-**Sin esto el API de evaluaciones está caído.** La tabla cambió (se eliminó `CALIFICACION`,
-`CALIFICACION_ESTRELLAS` pasó a `ESCALA`) y el paquete PL/SQL ya está adaptado en el repo,
-pero **los scripts no se aplican solos**.
+**Sin esto el API de evaluaciones está caído.** Los scripts no se aplican solos.
 
 ```
-SQL Workshop → SQL Scripts → Upload → backend/ethos_evaluaciones_facilitadores.sql → Run
+SQL Workshop → SQL Scripts → Upload → Run, uno por uno:
+
+  1. backend/ethos_anios_lectivos.sql
+  2. (cargar la fila del año lectivo activo, ver abajo)
+  3. backend/ethos_evaluaciones_facilitadores.sql
 ```
 
-Hasta que se corra, `GET`, `POST` y `PUT` de `evaluaciones-facilitadores` fallan porque
+**El orden no es opcional:** el paquete de evaluaciones llama a
+`FN_ANIO_LECTIVO_ACTUAL()`, que crea el primer script. Sin ella no compila.
+
+El primero además crea `ANIOS_LECTIVOS`. Después de correrlo hay que **cargar el año**, o
+los combos no filtran por año lectivo (no se rompen, pero muestran de más):
+
+```sql
+INSERT INTO anios_lectivos (anio, descripcion, estado, fecha_desde, fecha_hasta)
+VALUES (2026, 'Año lectivo 2026', 'A', DATE '2026-02-01', DATE '2026-11-30');
+COMMIT;
+```
+
+El tercero es el de siempre: la tabla cambió (se eliminó `CALIFICACION`,
+`CALIFICACION_ESTRELLAS` pasó a `ESCALA`) y el paquete ya está adaptado en el repo. Hasta
+que se corra, `GET`, `POST` y `PUT` de `evaluaciones-facilitadores` fallan porque
 `PKG_EVAL_FACILITADORES_ETHOS` no compila contra la estructura vieja.
+
+**Ojo con `FN_ANIO_LECTIVO_ACTUAL`:** ya existía en la base pero su fuente no estaba en el
+repo. El script la versiona con `CREATE OR REPLACE`, o sea que **pisa la anterior** y su
+criterio (año con `ESTADO = 'A'`) pasa a valer también para el trigger
+`TRG_POSTULACIONES_SET_ANIO`. Ver [`backend/README.md`](backend/README.md).
 
 ### ~~2. Instalar el Android SDK~~ ✅ RESUELTO (30/07/2026)
 
@@ -84,7 +105,9 @@ caché de react-query persistida). Falta:
 ### 5. Service worker para la web
 
 Sin él, la web instalada como PWA no abre sin conexión: muestra la pantalla de error del
-navegador. El APK **no lo necesita** (sus assets ya viajan adentro).
+navegador. El APK **no lo necesita** (sus assets ya viajan adentro, y el OTA mantiene esa
+propiedad: el bundle descargado se guarda en el teléfono, no se pide en cada arranque —
+ver [`OTA.md`](OTA.md)).
 
 `vite-plugin-pwa` para precachear el shell. **Si no se va a hacer**, conviene sacar
 `display: standalone` de [`public/site.webmanifest`](public/site.webmanifest): hoy promete
@@ -117,10 +140,18 @@ recién al hidratar. Se arregla con ~10 líneas de script inline en el `<head>` 
 [`src/routes/__root.tsx`](src/routes/__root.tsx) que lean `ethos-theme` antes del primer
 paint. **La preferencia sí se guarda bien**; el problema es solo el destello.
 
-### 9. El APK usa el ícono por defecto de Capacitor
+### ~~9. El APK usa el ícono por defecto de Capacitor~~ ✅ RESUELTO (04/08/2026)
 
-Los íconos de la marca ya están hechos en `mobile/assets/`. Ver [`APK.md`](APK.md) →
-*Ícono de la app*.
+Los mipmaps se regeneraron desde `public/logo.png` en las seis densidades (legacy cuadrado,
+legacy redondo y las dos capas del adaptativo), más los 26 `splash.png`. El nombre visible
+pasó a "Juventud con Valores".
+
+El adaptativo va **sin `inset` en el XML**: el margen está dentro del PNG (el logo dibujado
+al 62% y centrado). Con el `inset="16.7%"` que traía el template, el recorte del launcher
+dejaba un borde transparente alrededor del azul.
+
+`applicationId` **no** cambió (`com.editorialethos.app`): cambiarlo haría que Android trate
+el APK como otra app y no se instale encima de la que ya está en los teléfonos.
 
 ### 10. Versionar el APK antes de repartir una versión nueva
 
@@ -129,7 +160,10 @@ La firma **ya está resuelta**: `assembleRelease` firma solo con `ethos-release.
 
 Lo que queda: subir `versionCode` / `versionName` en `android/app/build.gradle` **en cada
 versión que se reparta** — Android se niega a instalar encima un `versionCode` menor o igual.
-Hoy va en `9` / `"1.7"`.
+Hoy va en `11` / `"1.8"`.
+
+**Esto pesa mucho menos desde el OTA (05/08/2026):** repartir un APK ya solo hace falta para
+cambios nativos. Un cambio de web se publica con `git push`. Ver [`OTA.md`](OTA.md).
 
 ### ~~15b. Acceso biométrico en el APK~~ ❌ DESCARTADO (31/07/2026)
 
@@ -144,6 +178,19 @@ escribirse en el disco.
 
 Si alguna vez se reintenta, en [`APK.md`](APK.md) → *No hay acceso biométrico* quedaron
 anotadas las cuatro trampas que costaron el tiempo, para no volver a pagarlas.
+
+### 11b. `POSTULACIONES.TURNO` no tiene tabla ni dominio en la base
+
+Es un `NUMBER` **sin FK y sin tabla que lo describa**. Los valores cargados son 1
+(4417 filas), 2 (3512) y 3 (44), y el significado —Mañana / Tarde / Noche— lo confirmó
+Jose el 05/08/2026; no está escrito en ningún lado de Oracle.
+
+Queda cableado en `TURNOS`, en [`src/lib/evaluaciones.ts`](src/lib/evaluaciones.ts),
+por el mismo motivo que la escala: **no hay de dónde leerlo**. Si un día se carga un
+turno 4, la tarjeta muestra "Turno 4" en vez de romperse.
+
+La salida es una tabla `TURNOS` con su FK, y un join en `lov_postulaciones`. Mientras
+no exista, cualquier cambio de dominio hay que hacerlo en ese objeto.
 
 ### 11. La escala está cableada en el front
 
@@ -186,3 +233,73 @@ Dura 6 h fijas, sin renovación deslizante. Al expirar, el usuario vuelve al log
 La app Expo tiene solo login, inicio y cuenta. Ya no es lo que responde a "generá el apk"
 —eso ahora es el APK de la web con Capacitor— pero sigue en el repo. Decidir si se
 completa, se deja como está o se da de baja.
+
+### 16. El nombre `ethos` quedó por todos lados
+
+La marca cambió a **Juventud con Valores** el 04/08/2026, pero siguen diciendo *ethos*: el
+repositorio, el `applicationId` del APK, el módulo ORDS, los paquetes PL/SQL y las claves de
+`localStorage` (`ethos-theme`, `ethos-palette`, `ethos-usuario`…).
+
+**No es olvido.** Cada uno tiene su costo:
+
+| Qué | Por qué no se cambió |
+| --- | --- |
+| `applicationId` | Android lo trataría como app distinta: no se instala encima, el usuario pierde lo guardado |
+| Módulo ORDS y paquetes | Cambia la URL base → tocar `.env`, el workflow y **el APK ya instalado** |
+| Claves de `localStorage` | Renombrarlas descarta las preferencias de quien ya usa la app |
+
+Lo único gratis sería el nombre del repo. Si algún día se hace todo, va junto con una
+migración de las claves viejas a las nuevas.
+
+### 17. `evaluado_por` sigue siendo texto libre
+
+Desde el 04/08/2026 se normaliza el formato al guardar ("jose galvez" → "Jose Galvez", ver
+`formatearNombre` en [`src/lib/evaluaciones.ts`](src/lib/evaluaciones.ts)), pero **sigue
+siendo un campo tipeado**: nada impide "Jose Galvez" y "J. Galvez" como dos personas.
+
+Lo correcto sería un combo contra una tabla de evaluadores, o contra `FACILITADORES` si
+quien evalúa siempre está ahí. Requiere decidir **quién puede evaluar**, que hoy no está
+definido en la base.
+
+Ojo si se hace: `claveNatural()` agrupa por `evaluado_por` en minúsculas. Cambiar el campo a
+un ID cambia el agrupado de todo lo ya cargado.
+
+### 18. Las filas viejas de `evaluado_por` quedaron con el formato anterior
+
+El formato nuevo se aplica **al guardar**, así que solo toca las evaluaciones que se editen
+de ahora en más. Las cargadas antes siguen como se tipearon ("JOSE GALVEZ", "jose galvez").
+
+Se arregla con un `UPDATE` de una sola pasada — `INITCAP()` de Oracle hace casi lo mismo que
+`formatearNombre()`. No se corrió porque toca datos históricos y eso se decide, no se
+asume:
+
+```sql
+-- Mirar primero qué cambiaría:
+SELECT DISTINCT evaluado_por, INITCAP(evaluado_por)
+  FROM evaluaciones_facilitadores
+ WHERE evaluado_por <> INITCAP(evaluado_por);
+```
+
+**Si se corre, el agrupado no se rompe**: `claveNatural()` normaliza a minúsculas, así que
+un grupo con filas viejas y nuevas sigue siendo el mismo grupo.
+
+### 19. Las evaluaciones ya cargadas no tienen postulación elegida
+
+Desde el 05/08/2026 el formulario muestra las postulaciones del facilitador en esa
+institución como tarjetas, y la elegida viaja en `id_postulacion`. Eso resuelve la
+ambigüedad que `f_postulacion()` no podía: **cuando hay varias, elige una persona**.
+
+Lo que queda: las filas cargadas antes siguen con lo que dedujo el backend, o con
+`NULL` cuando había más de una candidata. **Solo se completan editando la evaluación
+y eligiendo la tarjeta.** No se puede backfillear automáticamente — si se pudiera
+deducir, `f_postulacion()` ya lo habría hecho.
+
+Para ver cuántas están sin resolver:
+
+```sql
+SELECT COUNT(*) FROM evaluaciones_facilitadores WHERE id_postulacion IS NULL;
+```
+
+Ojo si se toca: `f_postulacion_final()` **valida que la postulación pertenezca** al
+facilitador y la institución que se están guardando, y si no, la ignora y vuelve a
+deducir. Un id de otra institución no rompe el guardado, simplemente no se usa.

@@ -39,6 +39,14 @@ type Props = {
   idFacilitador?: number | null;
   /** Al editar: trae el valor guardado aunque esté inactivo. */
   incluirId?: number | null;
+  /**
+   * Ids que NO se ofrecen. Para los pickers que suman a una lista: lo que ya se
+   * agregó no tiene que volver a aparecer.
+   *
+   * Se filtra en memoria y no en el backend a propósito — son pocos ids y
+   * mandarlos por query string obligaría a un parámetro nuevo en cada lista.
+   */
+  excluirIds?: number[];
   requerido?: boolean;
 };
 
@@ -79,6 +87,7 @@ export function PickerModal({
   idArea,
   idFacilitador,
   incluirId,
+  excluirIds,
   requerido = false,
 }: Props) {
   const [abierto, setAbierto] = useState(false);
@@ -110,7 +119,19 @@ export function PickerModal({
   });
 
   const q = texto.trim().toLowerCase();
-  const todas = estaticas ?? data ?? [];
+  const crudas = estaticas ?? data ?? [];
+
+  // Lo excluido se saca ANTES de buscar: si se filtrara después, buscar el
+  // nombre de un ítem ya agregado lo haría reaparecer.
+  //
+  // `o.id === value` deja pasar SIEMPRE al valor actual: sin eso, un picker con
+  // valor cargado que además se auto-excluya mostraría la lista sin la opción
+  // elegida. En los pickers que suman (`value: null`) la condición nunca da
+  // true, así que no cambia nada.
+  const todas = excluirIds?.length
+    ? crudas.filter((o) => o.id === value || !excluirIds.includes(o.id))
+    : crudas;
+
   const opciones = q ? todas.filter((o) => o.busqueda.includes(q)) : todas;
 
   const conBuscador = !estaticas || estaticas.length > UMBRAL_BUSCADOR;
@@ -224,7 +245,14 @@ export function PickerModal({
               </p>
             ) : opciones.length === 0 ? (
               <p className="px-4 py-12 text-center text-sm text-muted-foreground">
-                {q ? `Nada coincide con “${texto.trim()}”` : "No hay opciones disponibles"}
+                {q
+                  ? `Nada coincide con “${texto.trim()}”`
+                  : // "No hay opciones" sería mentira cuando la lista SÍ trajo
+                    // filas y lo que pasa es que ya se agregaron todas: el
+                    // usuario buscaría un problema donde no lo hay.
+                    crudas.length > 0
+                    ? "Ya agregaste todas las opciones"
+                    : "No hay opciones disponibles"}
               </p>
             ) : (
               <ul className="space-y-1.5">

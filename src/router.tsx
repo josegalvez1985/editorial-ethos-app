@@ -1,7 +1,27 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
+import { avisarBundleOk } from "./lib/ota";
 import { CACHE_MAX_AGE, reintentar } from "./lib/query-persist";
 import { routeTree } from "./routeTree.gen";
+
+/*
+ * ACTUALIZACIÓN OTA: confirmarle al plugin que este bundle arranca bien.
+ *
+ * Va ACÁ, en el módulo del router, y no en un componente, porque este archivo se
+ * ejecuta apenas el bundle se carga —antes de que React monte nada—. Si el aviso
+ * dependiera de que un componente llegue a montarse, un error en cualquier
+ * provider de `__root.tsx` haría que el plugin diera por roto un bundle sano y lo
+ * revirtiera. Ver `lib/ota.ts`.
+ *
+ * `typeof window` descarta el SSR: en el servidor no hay app nativa que avisar, y
+ * este módulo también corre ahí.
+ *
+ * Sin `await`: es fire-and-forget y `avisarBundleOk` no lanza. Bloquear la
+ * creación del router por el actualizador sería subordinar la app a él.
+ */
+if (typeof window !== "undefined") {
+  void avisarBundleOk();
+}
 
 export const getRouter = () => {
   const queryClient = new QueryClient({

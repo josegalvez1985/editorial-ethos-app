@@ -18,8 +18,20 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Subir en CADA versión que se reparta: Android se niega a instalar
         // encima un versionCode menor o igual al ya instalado.
-        versionCode 10
-        versionName "1.7.1"
+        //
+        // 1.9: actualización OTA. A partir de acá, un cambio de la WEB ya no pide
+        // un APK nuevo: viaja solo (ver OTA.md). Los cambios NATIVOS —plugins,
+        // ícono, splash, permisos, este mismo archivo— siguen necesitándolo.
+        //
+        // ESTE APK HAY QUE REPARTIRLO SÍ O SÍ: trae el plugin nativo que hace
+        // posible el OTA. Los teléfonos con la 1.8 no se actualizan solos hasta
+        // tenerlo instalado — es el último reparto manual obligatorio.
+        //
+        // 1.8: cambio de marca a "Juventud con Valores" — logo, íconos, splash,
+        // paleta nueva con 11 temas de color, y evaluaciones que se pueden
+        // guardar sin áreas.
+        versionCode 12
+        versionName "1.9"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

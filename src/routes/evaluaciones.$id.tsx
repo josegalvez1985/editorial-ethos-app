@@ -96,7 +96,12 @@ function EditarPage() {
           </h1>
         </div>
 
-        {data ? (
+        {/*
+          Sin botón de eliminar si está cerrada: el backend responde 409 y el
+          borrado son N llamadas, así que un intento dejaría la evaluación a
+          medias. Para borrarla hay que reabrirla primero, desde el formulario.
+        */}
+        {data && !data.cerrada ? (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <button

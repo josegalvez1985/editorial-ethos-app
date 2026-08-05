@@ -80,9 +80,15 @@ export type Evaluacion = {
   fecha_desde: string;
   fecha_hasta: string;
   evaluado_por: string;
-  id_area: number;
+  /**
+   * `null` cuando la fila es una **cabecera sola**: la evaluación se guardó con
+   * facilitador, institución y período pero todavía sin ítems. Las dos columnas
+   * son NULLABLE en Oracle desde el 04/08/2026 y viajan juntas — nunca una sola
+   * en null. Ver `agrupar()`, que descarta esas filas de `detalles`.
+   */
+  id_area: number | null;
   area: string | null;
-  id_evaluacion: number;
+  id_evaluacion: number | null;
   evaluacion: string | null;
   /**
    * Antes `CALIFICACION_ESTRELLAS`. 1 = marcada, null = desmarcada.
@@ -93,6 +99,28 @@ export type Evaluacion = {
   escala: number | null;
   aspectos_positivos: string | null;
   aspectos_mejorar: string | null;
+  /**
+   * Nota de quien revisa la evaluación, aparte de los dos campos de aspectos
+   * —que son del evaluador—. `OBSERVACION_ADMIN` en Oracle, CLOB y opcional.
+   */
+  observacion_admin: string | null;
+  /**
+   * `'S'` cerrada / `'N'` abierta. El backend ya aplica `NVL(...,'N')`, así que
+   * nunca llega null aunque la fila sea vieja.
+   *
+   * Cerrada = **no se puede editar ni borrar**: el backend responde 409. Se
+   * reabre con un PUT mandando `'N'`.
+   */
+  ind_cerrado: string;
+  /**
+   * La postulación que se está evaluando: el grado y sección concretos.
+   *
+   * Desde el 05/08/2026 la **elige el usuario** en las tarjetas del formulario y
+   * viaja en el JSON. Si no va ninguna, el backend la deduce como antes cruzando
+   * facilitador + institución + año lectivo — y deja `null` si hay varias
+   * candidatas, que es el caso que las tarjetas vinieron a resolver.
+   */
+  id_postulacion: number | null;
   /** Solo lectura: lo pone el trigger de bitácora. */
   id_auditoria: number | null;
 };
@@ -107,6 +135,18 @@ export type Cabecera = {
   evaluado_por: string;
   aspectos_positivos: string;
   aspectos_mejorar: string;
+  observacion_admin: string;
+  /**
+   * `boolean` y no el `'S'/'N'` de Oracle: adentro de la app esto es un sí o un
+   * no, y la conversión vive en un solo lugar (`filaInput` al salir, `agrupar`
+   * al entrar). Así ningún componente tiene que acordarse de comparar con `'S'`.
+   */
+  cerrada: boolean;
+  /**
+   * La postulación elegida en las tarjetas del formulario: qué grado y sección
+   * se está evaluando. `null` = ninguna elegida, y ahí el backend la deduce.
+   */
+  id_postulacion: number | null;
 };
 
 /** Un ítem evaluado. `id` es la fila en Oracle; null = todavía no se guardó. */
@@ -147,6 +187,14 @@ export type EvaluacionInput = {
   escala: number | null;
   aspectos_positivos: string;
   aspectos_mejorar: string;
+  observacion_admin: string;
+  /** `'S'` / `'N'`. Acá sí va el formato de Oracle: es lo que viaja en el JSON. */
+  ind_cerrado: string;
+  /**
+   * La postulación elegida. Opcional: si va `null`, el backend la deduce sola
+   * como hacía antes de que existieran las tarjetas.
+   */
+  id_postulacion: number | null;
 };
 
 export type Filtros = {
@@ -324,6 +372,97 @@ export async function lista(nombre: LovNombre, params: LovParams = {}): Promise<
 }
 
 /* -------------------------------------------------------------------------- */
+/* Postulaciones                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Una postulación: el hecho de que un facilitador da clase en un grado concreto
+ * de una institución. Es lo que el evaluador elige para decir **qué** está
+ * evaluando, cuando hay más de una.
+ *
+ * NO usa `Opcion` como los combos: esto se muestra en tarjetas con varios datos,
+ * no en una lista de una línea. Forzarlo al `{ id, texto }` de los combos
+ * obligaría a concatenar todo en un string y a partirlo de nuevo en la tarjeta.
+ *
+ * Casi todo es opcional porque en la base casi todo es NULLABLE: hay filas sin
+ * grado, sin sección y sin docente. La tarjeta omite lo que no está en vez de
+ * mostrar huecos.
+ */
+export type Postulacion = {
+  id_postulacion: number;
+  /** "7mo", "1ro Media"… Derivado en el backend de trece columnas. Ver el SQL. */
+  grado: string | null;
+  /** La matrícula del grado: el VALOR de esa columna, no un id. */
+  alumnos: number | null;
+  seccion: string | null;
+  /** 1/2/3 crudo. La etiqueta la pone `TURNOS`, más abajo. */
+  turno: number | null;
+  /** SER / HACER / TENER / CARACTER / VISION / CORAJE / LIDERAZGO. */
+  programa: string | null;
+  /** De `DOCENTES`, con `NOMBRE_PROFESOR` de respaldo. Lo resuelve el backend. */
+  docente: string | null;
+  telefono: string | null;
+  enfasis: string | null;
+  materia: string | null;
+  observacion: string | null;
+  estado: string | null;
+  anio: string | null;
+};
+
+/**
+ * `POSTULACIONES.TURNO` es un NUMBER **sin tabla ni FK**: el dominio no está en
+ * la base. Confirmado con los datos (1: 4417 filas, 2: 3512, 3: 44) y con el
+ * usuario el 05/08/2026.
+ *
+ * Está cableado acá igual que `ESCALA`, y por el mismo motivo: no hay de dónde
+ * leerlo. Anotado en PENDIENTES.md — si algún día se crea la tabla `TURNOS`,
+ * este objeto se reemplaza por un join en `lov_postulaciones`.
+ */
+export const TURNOS: Record<number, string> = {
+  1: "Mañana",
+  2: "Tarde",
+  3: "Noche",
+};
+
+/** La etiqueta del turno, o el número crudo si aparece uno que no conocemos. */
+export function nombreTurno(turno: number | null): string | null {
+  if (turno == null) return null;
+  return TURNOS[turno] ?? `Turno ${turno}`;
+}
+
+/**
+ * Las postulaciones de un facilitador en una institución.
+ *
+ * Los dos ids son obligatorios **en el backend** (responde 400 sin ellos), así
+ * que la llamada no debe hacerse hasta tenerlos: el `enabled` de la query es
+ * responsabilidad de quien la usa.
+ */
+export async function listarPostulaciones(
+  id_facilitador: number,
+  id_institucion: number,
+): Promise<Postulacion[]> {
+  const r = (await authFetch(`listas/postulaciones${qs({ id_facilitador, id_institucion })}`)) as {
+    data?: Record<string, unknown>[];
+  };
+
+  return (r.data ?? []).map((row) => ({
+    id_postulacion: Number(row.id_postulacion),
+    grado: (row.grado as string) ?? null,
+    alumnos: row.alumnos == null ? null : Number(row.alumnos),
+    seccion: (row.seccion as string) ?? null,
+    turno: row.turno == null ? null : Number(row.turno),
+    programa: (row.programa as string) ?? null,
+    docente: (row.docente as string) ?? null,
+    telefono: (row.telefono as string) ?? null,
+    enfasis: (row.enfasis as string) ?? null,
+    materia: (row.materia as string) ?? null,
+    observacion: (row.observacion as string) ?? null,
+    estado: (row.estado as string) ?? null,
+    anio: (row.anio as string) ?? null,
+  }));
+}
+
+/* -------------------------------------------------------------------------- */
 /* Escala de calificación                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -490,6 +629,9 @@ export function agrupar(filas: Evaluacion[]): EvaluacionAgrupada[] {
         evaluado_por: f.evaluado_por,
         aspectos_positivos: f.aspectos_positivos ?? "",
         aspectos_mejorar: f.aspectos_mejorar ?? "",
+        observacion_admin: f.observacion_admin ?? "",
+        cerrada: f.ind_cerrado === "S",
+        id_postulacion: f.id_postulacion,
         detalles: [],
         marcadas: 0,
         calificacion: null,
@@ -502,9 +644,29 @@ export function agrupar(filas: Evaluacion[]): EvaluacionAgrupada[] {
     if (f.id_evaluacion_facilitador < g.id) g.id = f.id_evaluacion_facilitador;
 
     // Los aspectos se repiten en cada fila, pero una carga vieja puede tenerlos
-    // solo en una: se toma la primera no vacía en vez de la última.
+    // solo en una: se toma la primera no vacía en vez de la última. Lo mismo
+    // vale para la observación del admin, que además puede haberse cargado desde
+    // APEX sobre una sola fila del grupo.
     if (!g.aspectos_positivos && f.aspectos_positivos) g.aspectos_positivos = f.aspectos_positivos;
     if (!g.aspectos_mejorar && f.aspectos_mejorar) g.aspectos_mejorar = f.aspectos_mejorar;
+    if (!g.observacion_admin && f.observacion_admin) g.observacion_admin = f.observacion_admin;
+
+    // El grupo está cerrado si CUALQUIERA de sus filas lo está.
+    //
+    // Es lo seguro: guardar son N llamadas, una por detalle, así que un cierre a
+    // medias —o una fila cerrada a mano desde APEX— dejaría el resto del grupo
+    // editable mientras el backend rechaza esa fila con 409. Marcándolo cerrado
+    // entero, el front no ofrece una edición que va a fallar.
+    if (f.ind_cerrado === "S") g.cerrada = true;
+
+    // Fila de CABECERA SOLA: `id_area`/`id_evaluacion` en null significa que la
+    // evaluación se guardó sin ítems todavía. No es un detalle y no entra a la
+    // lista — si entrara, contaría como un ítem vacío en la calificación y en
+    // el "(N ítems)" del botón.
+    //
+    // Su id igual quedó registrado arriba (`g.id`), que es lo que permite
+    // reusar la fila al agregarle áreas después en vez de crear una nueva.
+    if (f.id_area === null || f.id_evaluacion === null) continue;
 
     g.detalles.push({
       id: f.id_evaluacion_facilitador,
@@ -565,13 +727,19 @@ export async function obtenerEvaluacionAgrupada(id: number): Promise<EvaluacionA
 /**
  * Arma el payload de una fila combinando la cabecera con uno de sus detalles.
  *
+ * **`d` puede ser `null`**: eso produce una fila de CABECERA SOLA, con
+ * `id_area`, `id_evaluacion` y `escala` en null. Es lo que permite guardar una
+ * evaluación cuyas áreas todavía no se cargaron — las dos columnas son
+ * NULLABLE en Oracle desde el 04/08/2026. En cuanto se agrega la primera área,
+ * esa fila se reemplaza por una fila por detalle.
+ *
  * `evaluado_por` pasa por `formatearNombre()` ACÁ y no en el `onChange` del
  * input: formatear mientras se tipea pelea con el cursor —al escribir " " la
  * palabra anterior se capitaliza y el cursor salta— y además impide escribir un
  * apellido que de verdad lleve dos mayúsculas. Se normaliza al guardar, que es
  * cuando importa que quede parejo en la base.
  */
-function filaInput(cab: Cabecera, d: Detalle): EvaluacionInput {
+function filaInput(cab: Cabecera, d: Detalle | null): EvaluacionInput {
   return {
     id_facilitador: cab.id_facilitador,
     id_institucion: cab.id_institucion,
@@ -579,13 +747,21 @@ function filaInput(cab: Cabecera, d: Detalle): EvaluacionInput {
     fecha_desde: cab.fecha_desde,
     fecha_hasta: cab.fecha_hasta,
     evaluado_por: formatearNombre(cab.evaluado_por),
-    id_area: d.id_area,
-    id_evaluacion: d.id_evaluacion,
+    // Los dos juntos o los dos en null: el backend rechaza uno solo.
+    id_area: d?.id_area ?? null,
+    id_evaluacion: d?.id_evaluacion ?? null,
     // 1 o null, nunca 0: el CHECK solo acepta 1..5 o NULL, y la FK a
     // ESCALAS_EVALUACIONES exige que el valor exista ahí (el 1 existe).
-    escala: d.marcada ? 1 : null,
+    // Sin detalle no hay estrella que marcar.
+    escala: d?.marcada ? 1 : null,
     aspectos_positivos: cab.aspectos_positivos,
     aspectos_mejorar: cab.aspectos_mejorar,
+    observacion_admin: cab.observacion_admin,
+    // Acá se traduce el boolean de la app al 'S'/'N' que espera Oracle.
+    ind_cerrado: cab.cerrada ? "S" : "N",
+    // Va en TODAS las filas del grupo, igual que el resto de la cabecera: una
+    // evaluación es de una postulación, no cada detalle de la suya.
+    id_postulacion: cab.id_postulacion,
   };
 }
 
@@ -617,13 +793,33 @@ export async function guardarEvaluacion(
   const vigentes = new Set(detalles.map((d) => d.id).filter((id): id is number => id !== null));
   const aBorrar = idsOriginales.filter((id) => !vigentes.has(id));
 
+  /*
+   * SIN DETALLES: una fila de cabecera sola.
+   *
+   * Sin esto, guardar una evaluación sin áreas no haría ninguna llamada y
+   * "Guardar" no guardaría nada, en silencio.
+   *
+   * Se REUSA la primera fila que ya existía (PUT) en vez de borrar todo y
+   * volver a insertar: así el id de la evaluación —y el link que lleva a
+   * ella— no cambia al quitarle todas las áreas. Las demás se borran.
+   */
+  const soloCabecera = detalles.length === 0;
+  const idAReusar = soloCabecera ? (idsOriginales[0] ?? null) : null;
+  const aBorrarFinal = soloCabecera ? idsOriginales.filter((id) => id !== idAReusar) : aBorrar;
+
   const tareas: Promise<unknown>[] = [
-    ...detalles.map((d) =>
-      d.id === null
-        ? crearEvaluacion(filaInput(cab, d))
-        : actualizarEvaluacion(d.id, filaInput(cab, d)),
-    ),
-    ...aBorrar.map((id) => eliminarEvaluacion(id)),
+    ...(soloCabecera
+      ? [
+          idAReusar === null
+            ? crearEvaluacion(filaInput(cab, null))
+            : actualizarEvaluacion(idAReusar, filaInput(cab, null)),
+        ]
+      : detalles.map((d) =>
+          d.id === null
+            ? crearEvaluacion(filaInput(cab, d))
+            : actualizarEvaluacion(d.id, filaInput(cab, d)),
+        )),
+    ...aBorrarFinal.map((id) => eliminarEvaluacion(id)),
   ];
 
   const r = await Promise.allSettled(tareas);
@@ -642,11 +838,20 @@ export async function guardarEvaluacion(
     );
   }
 
-  return {
-    creados: detalles.filter((d) => d.id === null).length,
-    actualizados: detalles.filter((d) => d.id !== null).length,
-    borrados: aBorrar.length,
-  };
+  // Con solo cabecera hubo exactamente una operación: la que reusó la fila
+  // vieja (PUT) o la que la creó (POST). Contar `detalles` daría 0 y el toast
+  // diría que no se guardó nada.
+  return soloCabecera
+    ? {
+        creados: idAReusar === null ? 1 : 0,
+        actualizados: idAReusar === null ? 0 : 1,
+        borrados: aBorrarFinal.length,
+      }
+    : {
+        creados: detalles.filter((d) => d.id === null).length,
+        actualizados: detalles.filter((d) => d.id !== null).length,
+        borrados: aBorrarFinal.length,
+      };
 }
 
 /** Borra una evaluación completa: una llamada por detalle. */

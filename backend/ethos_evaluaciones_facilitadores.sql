@@ -27,6 +27,7 @@
 --     GET    listas/areas           ?buscar=&limite=
 --     GET    listas/evaluaciones    ?id_area=&buscar=&limite=
 --     GET    listas/ciudades        ?buscar=&limite=
+--     GET    listas/postulaciones   ?id_facilitador=&id_institucion=&anio=&limite=
 --
 --   Todos protegidos: Authorization: Bearer <token> de auth/login.
 --
@@ -38,7 +39,9 @@
 --      ciudad  ID_CIUDAD sola, con FK simple a CIUDADES(ID_CIUDAD).
 --              Sin ID_PAIS ni ID_DEPARTAMENTO: son recuperables por join a
 --              CIUDADES y el historico viejo sigue en la tabla _JN.
---      textos  ASPECTOS_POSITIVOS y ASPECTOS_MEJORAR son CLOB.
+--      textos  ASPECTOS_POSITIVOS, ASPECTOS_MEJORAR y OBSERVACION_ADMIN son CLOB.
+--              Los dos primeros son del evaluador; OBSERVACION_ADMIN es la nota
+--              de quien revisa despues. Los tres son opcionales.
 --    La seccion 1 NO recrea nada: verifica y agrega lo que falte (PK, FKs,
 --    CHECK, y la columna de la PK en la tabla _JN). Sobre tu tabla actual va a
 --    imprimir puro [SKIP], que es lo esperado.
@@ -70,11 +73,18 @@
 --       elegir la ciudad a mano, no puede dejarla vacia porque en
 --       EVALUACIONES_FACILITADORES es NOT NULL.
 --
---    c) Filtro de año opcional (?anio=, contra POSTULACIONES.ANIO). Sin el
---       parametro no filtra: si filtrara por el lectivo actual por defecto, un
---       facilitador cuyas postulaciones de este año no se cargaron todavia
---       apareceria sin ninguna institucion y el formulario quedaria trabado.
---       Hay FN_ANIO_LECTIVO_ACTUAL() si algun dia se quiere ese default.
+--    c) Filtro de año contra POSTULACIONES.ANIO. **Por defecto usa el AÑO
+--       LECTIVO ACTIVO** (FN_ANIO_LECTIVO_ACTUAL, que lee ANIOS_LECTIVOS con
+--       ESTADO='A'); ?anio=TODOS lo apaga y ?anio=2025 fuerza uno.
+--
+--       Antes el default era NO filtrar, por miedo a que un facilitador sin
+--       postulaciones cargadas quedara sin instituciones. Se invirtio a pedido
+--       el 04/08/2026: una evaluacion es siempre del año en curso. El miedo se
+--       cubre por otro lado — si no hay año activo cargado, la funcion devuelve
+--       NULL y el filtro se apaga solo.
+--
+--       El mismo filtro aplica a listas/facilitadores: ademas de ACTIVO='SI',
+--       tiene que tener una postulacion en el año vigente.
 --
 --    d) La base NO obliga nada de esto: se puede guardar una evaluacion con una
 --       institucion donde el facilitador nunca postulo. Es una ayuda de captura,
@@ -158,6 +168,9 @@ SET SERVEROUTPUT ON SIZE UNLIMITED
 --     ESCALA    NUMBER,
 --     ASPECTOS_POSITIVOS        CLOB,
 --     ASPECTOS_MEJORAR          CLOB,
+--     OBSERVACION_ADMIN         CLOB,
+--     IND_CERRADO               VARCHAR2(1),   -- 'S' / 'N', NULL = abierta
+--     ID_POSTULACION            NUMBER,        -- FK a POSTULACIONES
 --     ID_AUDITORIA              NUMBER,
 --     CHECK (escala BETWEEN 1 AND 5) ENABLE,
 --     CONSTRAINT EVAL_FAC_PK PRIMARY KEY (ID_EVALUACION_FACILITADOR)
@@ -286,6 +299,94 @@ BEGIN
   ELSE
     DBMS_OUTPUT.PUT_LINE('[SKIP]  La _JN ya tenia ID_EVALUACION_FACILITADOR.');
   END IF;
+
+  -- 1.5 OBSERVACION_ADMIN, en las DOS tablas.
+  --
+  -- Es la nota de quien revisa la evaluacion despues de cargada, aparte de los
+  -- dos campos de aspectos (que son del evaluador). CLOB por consistencia con
+  -- esos dos: una observacion puede ser larga y no hay razon para cortarla.
+  --
+  -- Va acá y no como DDL suelto porque este script tiene que poder correr contra
+  -- una base donde la columna ya existe (la de produccion la tiene) y contra una
+  -- recien creada. El IF la hace idempotente en los dos casos.
+  --
+  -- OJO CON EL ORDEN: primero la _JN. El trigger de la seccion 2 la escribe, y
+  -- si la tabla de journal no la tiene, no compila.
+  IF NOT hay_columna('EVALUACIONES_FACILITADORES_JN', 'OBSERVACION_ADMIN') THEN
+    ejecutar('ALTER TABLE evaluaciones_facilitadores_jn ADD (observacion_admin CLOB)',
+             'Columna OBSERVACION_ADMIN agregada a la tabla _JN.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[SKIP]  La _JN ya tenia OBSERVACION_ADMIN.');
+  END IF;
+
+  IF NOT hay_columna('EVALUACIONES_FACILITADORES', 'OBSERVACION_ADMIN') THEN
+    ejecutar('ALTER TABLE evaluaciones_facilitadores ADD (observacion_admin CLOB)',
+             'Columna OBSERVACION_ADMIN agregada.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[SKIP]  OBSERVACION_ADMIN ya existia.');
+  END IF;
+
+  -- 1.6 IND_CERRADO: 'S' cerrada / 'N' abierta.
+  --
+  -- Una evaluacion cerrada NO se edita ni se borra: INSERTAR la deja abierta,
+  -- ACTUALIZAR y ELIMINAR responden 409 si ya lo esta. Se reabre con el mismo
+  -- PUT mandando ind_cerrado='N'.
+  --
+  -- SIN DEFAULT y NULLABLE a proposito: las filas ya cargadas quedan en NULL y
+  -- ponerles un DEFAULT no las tocaria igual. Todo el codigo lee
+  -- NVL(ind_cerrado,'N'), asi que NULL == abierta y no hay que backfillear nada.
+  IF NOT hay_columna('EVALUACIONES_FACILITADORES_JN', 'IND_CERRADO') THEN
+    ejecutar('ALTER TABLE evaluaciones_facilitadores_jn ADD (ind_cerrado VARCHAR2(1))',
+             'Columna IND_CERRADO agregada a la tabla _JN.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[SKIP]  La _JN ya tenia IND_CERRADO.');
+  END IF;
+
+  IF NOT hay_columna('EVALUACIONES_FACILITADORES', 'IND_CERRADO') THEN
+    ejecutar('ALTER TABLE evaluaciones_facilitadores ADD (ind_cerrado VARCHAR2(1))',
+             'Columna IND_CERRADO agregada.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[SKIP]  IND_CERRADO ya existia.');
+  END IF;
+
+  -- El CHECK del dominio. Acepta NULL (= abierta, ver arriba).
+  SELECT COUNT(*) INTO l_c
+    FROM user_constraints
+   WHERE table_name = 'EVALUACIONES_FACILITADORES'
+     AND constraint_type = 'C'
+     AND UPPER(search_condition_vc) LIKE '%IND_CERRADO%';
+  IF l_c = 0 THEN
+    ejecutar('ALTER TABLE evaluaciones_facilitadores ADD CONSTRAINT EVAL_FAC_CK_CERRADO '
+             || 'CHECK (ind_cerrado IS NULL OR ind_cerrado IN (''S'',''N''))',
+             'CHECK de IND_CERRADO (S/N) creado.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[SKIP]  El CHECK de IND_CERRADO ya existia.');
+  END IF;
+
+  -- 1.7 ID_POSTULACION: que postulacion origino la evaluacion.
+  --
+  -- POSTULACIONES es la tabla que une facilitador + institucion + año, asi que
+  -- guardar su id ata la evaluacion a un hecho concreto en vez de a tres campos
+  -- sueltos que podrian no corresponderse entre si.
+  --
+  -- NULLABLE: el paquete la resuelve sola al guardar, y cuando no puede
+  -- —no hay postulacion, o hay varias en la misma institucion— deja NULL en vez
+  -- de inventar una. Las filas viejas tampoco la tienen.
+  IF NOT hay_columna('EVALUACIONES_FACILITADORES_JN', 'ID_POSTULACION') THEN
+    ejecutar('ALTER TABLE evaluaciones_facilitadores_jn ADD (id_postulacion NUMBER)',
+             'Columna ID_POSTULACION agregada a la tabla _JN.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[SKIP]  La _JN ya tenia ID_POSTULACION.');
+  END IF;
+
+  IF NOT hay_columna('EVALUACIONES_FACILITADORES', 'ID_POSTULACION') THEN
+    ejecutar('ALTER TABLE evaluaciones_facilitadores ADD (id_postulacion NUMBER)',
+             'Columna ID_POSTULACION agregada.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[SKIP]  ID_POSTULACION ya existia.');
+  END IF;
+
+  fk('EVAL_FAC_FK_POSTULACION', 'ID_POSTULACION', 'postulaciones', 'id_postulacion');
 EXCEPTION
   WHEN OTHERS THEN
     DBMS_OUTPUT.PUT_LINE('[ERROR] Estructura incompleta: ' || SQLERRM);
@@ -353,6 +454,9 @@ BEGIN
       ESCALA,
       ASPECTOS_POSITIVOS,
       ASPECTOS_MEJORAR,
+      OBSERVACION_ADMIN,
+      IND_CERRADO,
+      ID_POSTULACION,
       JN_OPERATION,
       JN_ORACLE_USER,
       JN_DATETIME,
@@ -373,6 +477,9 @@ BEGIN
       :NEW.ESCALA,
       :NEW.ASPECTOS_POSITIVOS,
       :NEW.ASPECTOS_MEJORAR,
+      :NEW.OBSERVACION_ADMIN,
+      :NEW.IND_CERRADO,
+      :NEW.ID_POSTULACION,
       'INS',
       -- Para que la bitacora guarde el usuario de la app y no el del esquema,
       -- reemplazar por (el paquete deja el usuario en CLIENT_IDENTIFIER):
@@ -398,6 +505,9 @@ BEGIN
       ESCALA,
       ASPECTOS_POSITIVOS,
       ASPECTOS_MEJORAR,
+      OBSERVACION_ADMIN,
+      IND_CERRADO,
+      ID_POSTULACION,
       JN_OPERATION,
       JN_ORACLE_USER,
       JN_DATETIME,
@@ -418,6 +528,9 @@ BEGIN
       :NEW.ESCALA,
       :NEW.ASPECTOS_POSITIVOS,
       :NEW.ASPECTOS_MEJORAR,
+      :NEW.OBSERVACION_ADMIN,
+      :NEW.IND_CERRADO,
+      :NEW.ID_POSTULACION,
       'UPD',
       NVL(V('APP_USER'), USER),
       SYSDATE,
@@ -440,6 +553,9 @@ BEGIN
       ESCALA,
       ASPECTOS_POSITIVOS,
       ASPECTOS_MEJORAR,
+      OBSERVACION_ADMIN,
+      IND_CERRADO,
+      ID_POSTULACION,
       JN_OPERATION,
       JN_ORACLE_USER,
       JN_DATETIME,
@@ -460,6 +576,9 @@ BEGIN
       :OLD.ESCALA,
       :OLD.ASPECTOS_POSITIVOS,
       :OLD.ASPECTOS_MEJORAR,
+      :OLD.OBSERVACION_ADMIN,
+      :OLD.IND_CERRADO,
+      :OLD.ID_POSTULACION,
       'DEL',
       NVL(V('APP_USER'), USER),
       SYSDATE,
@@ -516,7 +635,14 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
       p_id_evaluacion          IN NUMBER,
       p_escala IN NUMBER   DEFAULT NULL,
       p_aspectos_positivos     IN CLOB     DEFAULT NULL,
-      p_aspectos_mejorar       IN CLOB     DEFAULT NULL);
+      p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
+      -- SIN p_ind_cerrado: una evaluacion nace ABIERTA y no hay forma de pedir
+      -- lo contrario. Se cierra despues, con ACTUALIZAR.
+      p_observacion_admin      IN CLOB     DEFAULT NULL,
+      -- La postulacion que se esta evaluando, elegida en el front
+      -- (GET listas/postulaciones). OPCIONAL: si no viene, se resuelve sola con
+      -- f_postulacion(), que da NULL cuando hay mas de una candidata.
+      p_id_postulacion         IN NUMBER   DEFAULT NULL);
 
   PROCEDURE actualizar(
       p_token                  IN VARCHAR2,
@@ -531,7 +657,12 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
       p_id_evaluacion          IN NUMBER,
       p_escala IN NUMBER   DEFAULT NULL,
       p_aspectos_positivos     IN CLOB     DEFAULT NULL,
-      p_aspectos_mejorar       IN CLOB     DEFAULT NULL);
+      p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
+      p_observacion_admin      IN CLOB     DEFAULT NULL,
+      p_ind_cerrado            IN VARCHAR2 DEFAULT NULL,
+      -- Igual que en INSERTAR. Ver el UPDATE: al no venir se recalcula, que es
+      -- lo que corresponde si cambiaron el facilitador o la institucion.
+      p_id_postulacion         IN NUMBER   DEFAULT NULL);
 
   PROCEDURE eliminar(
       p_token IN VARCHAR2,
@@ -542,8 +673,8 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
   ----------------------------------------------------------------------------
 
   -- Un solo punto de entrada. p_nombre: facilitadores | instituciones | areas |
-  -- evaluaciones | ciudades. Cada lista usa los parametros que le sirven e
-  -- ignora el resto.
+  -- evaluaciones | ciudades | postulaciones. Cada lista usa los parametros que
+  -- le sirven e ignora el resto.
   PROCEDURE lista(
       p_token      IN VARCHAR2,
       p_nombre     IN VARCHAR2,
@@ -552,8 +683,11 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
       p_activo     IN VARCHAR2 DEFAULT NULL,
       p_estado     IN VARCHAR2 DEFAULT NULL,
       p_incluir_id IN NUMBER   DEFAULT NULL,
-      -- Solo `instituciones`: las del facilitador, via POSTULACIONES.
+      -- `instituciones`: las del facilitador, via POSTULACIONES.
+      -- `postulaciones`: junto con p_id_institucion, las que se muestran.
       p_id_facilitador IN NUMBER   DEFAULT NULL,
+      -- Solo `postulaciones`.
+      p_id_institucion IN NUMBER   DEFAULT NULL,
       p_anio           IN VARCHAR2 DEFAULT NULL,
       p_limite     IN NUMBER   DEFAULT NULL);
 
@@ -611,6 +745,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_EVAL_FACILITADORES_ETHOS AS
            e.escala,
            e.aspectos_positivos,
            e.aspectos_mejorar,
+           e.observacion_admin,
+           -- NVL: las filas cargadas antes de que existiera la columna tienen
+           -- NULL, y para el negocio eso es "abierta".
+           NVL(e.ind_cerrado, 'N')  AS ind_cerrado,
+           e.id_postulacion,
            e.id_auditoria
       FROM evaluaciones_facilitadores e
       LEFT JOIN facilitadores      f  ON f.id_facilitador  = e.id_facilitador
@@ -758,6 +897,133 @@ BEGIN
     END IF;
 END exigir;
 
+-- DECLARACION ADELANTADA. `anio_a_filtrar` vive abajo, con las listas de
+-- valores —que es donde se usa el resto de las veces— pero `f_postulacion`, que
+-- viene a continuacion, tambien la necesita. Sin esta linea el body no compila:
+-- PL/SQL resuelve los subprogramas en orden de aparicion (PLS-00313).
+--
+-- La alternativa era mover la funcion entera aca arriba, pero queda mejor cerca
+-- de los combos, que son su motivo de existir.
+FUNCTION anio_a_filtrar(p_anio IN VARCHAR2) RETURN VARCHAR2;
+
+------------------------------------------------------------------------------
+-- La postulacion que corresponde a esta evaluacion, o NULL.
+--
+-- POSTULACIONES es lo que une facilitador + institucion + año, asi que guardar
+-- su id ata la evaluacion a un hecho concreto en vez de a tres campos sueltos.
+-- El front NO la manda: se resuelve aca y se guarda sola.
+--
+-- DEVUELVE NULL EN VEZ DE ADIVINAR cuando:
+--
+--   * No hay ninguna. El facilitador puede estar evaluado en una institucion
+--     donde este año no postulo (una suplencia, una carga vieja). La evaluacion
+--     se guarda igual — esto es trazabilidad, no una regla de integridad.
+--   * Hay VARIAS. Un facilitador puede tener dos postulaciones en la misma
+--     institucion por materia, turno o seccion distinta. Elegir una al azar
+--     seria peor que no elegir: quedaria un dato que parece cierto y no lo es.
+--
+-- Si mas adelante se quiere resolver la ambiguedad, el camino es un combo en el
+-- front (GET listas/postulaciones) y que el id venga en el JSON, no adivinar.
+------------------------------------------------------------------------------
+FUNCTION f_postulacion(
+    p_id_facilitador IN NUMBER,
+    p_id_institucion IN NUMBER
+) RETURN NUMBER IS
+    l_id   NUMBER;
+    l_anio VARCHAR2(4) := anio_a_filtrar(NULL);  -- el año lectivo activo
+BEGIN
+    IF p_id_facilitador IS NULL OR p_id_institucion IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    -- Sin año activo cargado no se filtra por año: con varios años de
+    -- postulaciones eso da casi siempre "varias", y ahi cae en NULL igual.
+    SELECT id_postulacion
+      INTO l_id
+      FROM postulaciones
+     WHERE id_facilitador = p_id_facilitador
+       AND id_institucion = p_id_institucion
+       AND (l_anio IS NULL OR anio = l_anio);
+
+    RETURN l_id;
+EXCEPTION
+    -- Las dos ramas son deliberadas y significan lo mismo: no se puede afirmar
+    -- cual es. TOO_MANY_ROWS NO es un error a reportar — es el caso normal de un
+    -- facilitador con dos materias en el mismo colegio.
+    WHEN NO_DATA_FOUND  THEN RETURN NULL;
+    WHEN TOO_MANY_ROWS  THEN RETURN NULL;
+END f_postulacion;
+
+------------------------------------------------------------------------------
+-- La postulacion DEFINITIVA de una evaluacion: la que eligio el usuario si vino,
+-- la deducida si no.
+--
+-- Desde el 05/08/2026 el front puede mandar `id_postulacion` (lo elige de las
+-- tarjetas que muestra GET listas/postulaciones). Eso RESUELVE la ambiguedad que
+-- f_postulacion() no puede: cuando hay varias en la misma institucion, decide
+-- una persona en vez de quedar en NULL.
+--
+-- f_postulacion() NO se borra y sigue siendo el camino por defecto: las filas ya
+-- cargadas, un POST hecho a mano y cualquier cliente viejo no mandan el campo.
+--
+-- SE VALIDA QUE CORRESPONDA. El id llega del cliente, asi que podria apuntar a
+-- la postulacion de otro facilitador o de otra institucion — por error o a
+-- proposito. Si no pertenece al par que se esta guardando, se IGNORA y se cae a
+-- la deduccion. No es un 400: el dato es accesorio (trazabilidad, no integridad)
+-- y rechazar la evaluacion entera por eso seria desproporcionado.
+------------------------------------------------------------------------------
+FUNCTION f_postulacion_final(
+    p_id_postulacion IN NUMBER,
+    p_id_facilitador IN NUMBER,
+    p_id_institucion IN NUMBER
+) RETURN NUMBER IS
+    l_existe PLS_INTEGER;
+BEGIN
+    IF p_id_postulacion IS NULL THEN
+        RETURN f_postulacion(p_id_facilitador, p_id_institucion);
+    END IF;
+
+    SELECT COUNT(*)
+      INTO l_existe
+      FROM postulaciones
+     WHERE id_postulacion = p_id_postulacion
+       AND id_facilitador = p_id_facilitador
+       AND id_institucion = p_id_institucion;
+
+    -- El que mando el front, solo si de verdad es de este facilitador en esta
+    -- institucion. Si no, la deduccion de siempre.
+    RETURN CASE WHEN l_existe > 0 THEN p_id_postulacion
+                ELSE f_postulacion(p_id_facilitador, p_id_institucion)
+           END;
+END f_postulacion_final;
+
+------------------------------------------------------------------------------
+-- Si la evaluacion esta cerrada. NULL cuenta como ABIERTA: las filas cargadas
+-- antes de que existiera la columna no tienen valor y no pueden quedar trabadas.
+------------------------------------------------------------------------------
+FUNCTION f_cerrada(p_id IN NUMBER) RETURN BOOLEAN IS
+    l_ind evaluaciones_facilitadores.ind_cerrado%TYPE;
+BEGIN
+    SELECT NVL(ind_cerrado, 'N')
+      INTO l_ind
+      FROM evaluaciones_facilitadores
+     WHERE id_evaluacion_facilitador = p_id;
+    RETURN UPPER(l_ind) = 'S';
+EXCEPTION
+    -- No existe: que el 404 lo tire quien corresponda, no esta funcion.
+    WHEN NO_DATA_FOUND THEN RETURN FALSE;
+END f_cerrada;
+
+------------------------------------------------------------------------------
+-- Normaliza el indicador a 'S' / 'N'. Cualquier cosa que no sea 'S' es 'N':
+-- el CHECK de la tabla solo acepta esos dos valores y un ORA-02290 por un
+-- 'si' minuscula o un 'X' seria un error feo de diagnosticar desde el front.
+------------------------------------------------------------------------------
+FUNCTION f_sn(p_valor IN VARCHAR2) RETURN VARCHAR2 IS
+BEGIN
+    RETURN CASE WHEN UPPER(TRIM(p_valor)) = 'S' THEN 'S' ELSE 'N' END;
+END f_sn;
+
 ------------------------------------------------------------------------------
 -- Validaciones comunes a INSERTAR y ACTUALIZAR. Lanzan e_validacion.
 ------------------------------------------------------------------------------
@@ -777,11 +1043,11 @@ PROCEDURE validar(
     l_area_de_evaluacion evaluaciones.id_area%TYPE;
 BEGIN
     ---------------------------------------------------------------- obligatorios
+    -- ID_AREA e ID_EVALUACION NO estan aca: son NULLABLE en la tabla desde el
+    -- 04/08/2026 y opcionales aca. Ver "cabecera sin detalle" mas abajo.
     exigir(p_id_facilitador IS NOT NULL, 'id_facilitador es obligatorio');
     exigir(p_id_institucion IS NOT NULL, 'id_institucion es obligatorio');
     exigir(p_id_ciudad      IS NOT NULL, 'id_ciudad es obligatorio');
-    exigir(p_id_area        IS NOT NULL, 'id_area es obligatorio');
-    exigir(p_id_evaluacion  IS NOT NULL, 'id_evaluacion es obligatorio');
     exigir(p_fecha_desde    IS NOT NULL, 'fecha_desde es obligatoria');
     exigir(p_fecha_hasta    IS NOT NULL, 'fecha_hasta es obligatoria');
     exigir(TRIM(p_evaluado_por) IS NOT NULL, 'evaluado_por es obligatorio');
@@ -790,21 +1056,35 @@ BEGIN
     exigir(p_fecha_hasta >= p_fecha_desde,
            'fecha_hasta no puede ser anterior a fecha_desde');
 
+    ------------------------------------------------------- cabecera sin detalle
+    -- Una fila con las dos columnas en NULL es una CABECERA SOLA: la evaluacion
+    -- se cargo con facilitador, institucion y periodo, pero todavia sin items.
+    -- Se completa despues agregando areas, que reemplazan esta fila por una por
+    -- detalle.
+    --
+    -- LOS DOS O NINGUNO. Un area sin evaluacion, o al reves, no es ninguna de
+    -- las dos cosas: ni cabecera limpia ni detalle completo, y ensucia el
+    -- agrupado sin significar nada.
+    exigir((p_id_area IS NULL) = (p_id_evaluacion IS NULL),
+           'id_area e id_evaluacion van juntos: los dos o ninguno');
+
     ------------------------------------------------------------ area/evaluacion
-    -- Nada en la base impide que id_area e id_evaluacion se contradigan, y una
+    -- Solo si vinieron. Nada en la base impide que se contradigan, y una
     -- evaluacion pertenece a un area (EVALUACIONES.ID_AREA).
-    BEGIN
-        SELECT id_area INTO l_area_de_evaluacion
-          FROM evaluaciones
-         WHERE id_evaluacion = p_id_evaluacion;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            g_mensaje := 'La evaluacion indicada no existe';
-            RAISE e_validacion;
-    END;
-    exigir(l_area_de_evaluacion = p_id_area,
-           'La evaluacion no pertenece al area indicada. Carga el combo con '
-           || 'GET listas/evaluaciones?id_area=' || p_id_area);
+    IF p_id_evaluacion IS NOT NULL THEN
+        BEGIN
+            SELECT id_area INTO l_area_de_evaluacion
+              FROM evaluaciones
+             WHERE id_evaluacion = p_id_evaluacion;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                g_mensaje := 'La evaluacion indicada no existe';
+                RAISE e_validacion;
+        END;
+        exigir(l_area_de_evaluacion = p_id_area,
+               'La evaluacion no pertenece al area indicada. Carga el combo con '
+               || 'GET listas/evaluaciones?id_area=' || p_id_area);
+    END IF;
 
     ---------------------------------------------------------------------- escala
     -- ESCALA reemplazo a CALIFICACION_ESTRELLAS: mismo rango 1..5 en el CHECK,
@@ -823,6 +1103,12 @@ BEGIN
            OR (p_escala BETWEEN 1 AND 5
                AND p_escala = TRUNC(p_escala)),
            'escala debe ser un entero de 1 a 5');
+
+    -- Una cabecera sola no puede traer estrella: la escala califica UN item, y
+    -- ahi no hay item. Sin esto, esa fila entraria al conteo de marcadas y le
+    -- inventaria una calificacion a una evaluacion vacia.
+    exigir(p_id_evaluacion IS NOT NULL OR p_escala IS NULL,
+           'No se puede marcar la escala sin un item: falta id_area/id_evaluacion');
 
     --------------------------------------------------------------------- largos
     exigir(LENGTH(p_evaluado_por) <= 255, 'evaluado_por no puede pasar de 255 caracteres');
@@ -857,6 +1143,12 @@ BEGIN
     APEX_JSON.WRITE('escala',    p_r.escala);
     APEX_JSON.WRITE('aspectos_positivos',        p_r.aspectos_positivos);
     APEX_JSON.WRITE('aspectos_mejorar',          p_r.aspectos_mejorar);
+    -- Nota de quien revisa, aparte de los dos campos del evaluador.
+    APEX_JSON.WRITE('observacion_admin',         p_r.observacion_admin);
+    -- 'S' / 'N'. Ya viene con NVL desde el SELECT: nunca sale null.
+    APEX_JSON.WRITE('ind_cerrado',               p_r.ind_cerrado);
+    -- Solo lectura para el front: lo resuelve el backend al guardar.
+    APEX_JSON.WRITE('id_postulacion',            p_r.id_postulacion);
     -- Solo lectura: lo pone el trigger de auditoria.
     APEX_JSON.WRITE('id_auditoria',              p_r.id_auditoria);
     APEX_JSON.CLOSE_OBJECT;
@@ -1009,12 +1301,20 @@ PROCEDURE insertar(
     p_id_evaluacion          IN NUMBER,
     p_escala IN NUMBER   DEFAULT NULL,
     p_aspectos_positivos     IN CLOB     DEFAULT NULL,
-    p_aspectos_mejorar       IN CLOB     DEFAULT NULL
+    p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
+    -- SIN p_ind_cerrado: ver el INSERT de mas abajo. Nace abierta y punto.
+    p_observacion_admin      IN CLOB     DEFAULT NULL,
+    p_id_postulacion         IN NUMBER   DEFAULT NULL
 ) IS
     l_usuario VARCHAR2(255);
     l_desde   DATE;
     l_hasta   DATE;
     l_id      evaluaciones_facilitadores.id_evaluacion_facilitador%TYPE;
+    -- Se resuelve ANTES del INSERT, no adentro: una funcion privada del package
+    -- body NO se puede llamar desde una sentencia SQL (PLS-00231). Solo las
+    -- declaradas en la SPEC son visibles para el motor SQL, y f_postulacion es
+    -- interna a proposito.
+    l_postulacion NUMBER;
 BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -1038,15 +1338,34 @@ BEGIN
         p_aspectos_positivos     => p_aspectos_positivos,
         p_aspectos_mejorar       => p_aspectos_mejorar);
 
+    -- Fuera del INSERT: ver la declaracion de l_postulacion (PLS-00231).
+    -- La que eligio el usuario, o la deducida si no mando ninguna.
+    l_postulacion := f_postulacion_final(p_id_postulacion, p_id_facilitador, p_id_institucion);
+
     -- ID_AUDITORIA no se lista a proposito: lo asigna el trigger.
+    --
+    -- ID_POSTULACION tampoco lo manda el front: lo resolvio f_postulacion() en
+    -- la linea de arriba, y vale NULL si no habia una sola candidata clara.
     INSERT INTO evaluaciones_facilitadores (
         id_facilitador, id_institucion, id_ciudad,
         fecha_desde, fecha_hasta, evaluado_por, id_area, id_evaluacion,
-        escala, aspectos_positivos, aspectos_mejorar
+        escala, aspectos_positivos, aspectos_mejorar, observacion_admin,
+        ind_cerrado, id_postulacion
     ) VALUES (
         p_id_facilitador, p_id_institucion, p_id_ciudad,
         l_desde, l_hasta, TRIM(p_evaluado_por), p_id_area, p_id_evaluacion,
-        p_escala, p_aspectos_positivos, p_aspectos_mejorar
+        p_escala, p_aspectos_positivos, p_aspectos_mejorar, p_observacion_admin,
+        -- SIEMPRE 'N': una evaluacion NACE ABIERTA.
+        --
+        -- No hay parametro para pedir lo contrario, y es deliberado: cerrar algo
+        -- que todavia no existe no significa nada, y aceptarlo dejaria una fila
+        -- bloqueada de entrada que habria que reabrir para poder completar. Se
+        -- cierra despues, con un PUT.
+        --
+        -- El front tampoco ofrece el check en el alta, pero eso es la UI. El que
+        -- manda es este literal: un POST a mano con "ind_cerrado":"S" en el JSON
+        -- tiene que dar exactamente el mismo resultado.
+        'N', l_postulacion
     ) RETURNING id_evaluacion_facilitador INTO l_id;
 
     COMMIT;
@@ -1083,11 +1402,18 @@ PROCEDURE actualizar(
     p_id_evaluacion          IN NUMBER,
     p_escala IN NUMBER   DEFAULT NULL,
     p_aspectos_positivos     IN CLOB     DEFAULT NULL,
-    p_aspectos_mejorar       IN CLOB     DEFAULT NULL
+    p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
+    p_observacion_admin      IN CLOB     DEFAULT NULL,
+    p_ind_cerrado            IN VARCHAR2 DEFAULT NULL,
+    p_id_postulacion         IN NUMBER   DEFAULT NULL
 ) IS
     l_usuario VARCHAR2(255);
     l_desde   DATE;
     l_hasta   DATE;
+    -- Las dos se resuelven ANTES del UPDATE: una funcion privada del package
+    -- body no se puede llamar desde SQL (PLS-00231). Ver insertar().
+    l_cerrado     VARCHAR2(1);
+    l_postulacion NUMBER;
 BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
@@ -1097,6 +1423,28 @@ BEGIN
 
     IF p_id IS NULL THEN
         p_error(400, 'Bad Request', 'id_evaluacion_facilitador es obligatorio');
+        RETURN;
+    END IF;
+
+    l_cerrado := f_sn(p_ind_cerrado);
+
+    -- EL CANDADO. Una evaluacion cerrada no se edita.
+    --
+    -- La UNICA operacion que se le acepta es REABRIRLA (ind_cerrado='N'). Sin
+    -- esa salida, cerrar seria irreversible desde la app y habria que entrar a
+    -- APEX para corregir un clic.
+    --
+    -- OJO CON LA CONDICION: se rechaza cuando la fila esta cerrada Y el PUT la
+    -- deja cerrada. Escrita al reves —rechazar solo si viene 'S'— un PUT con
+    -- ind_cerrado='S' y los demas campos cambiados pasaria por el candado y
+    -- editaria una evaluacion cerrada, que es justo lo que hay que impedir.
+    --
+    -- Reabrir y editar en la misma llamada SI funciona (llega 'N', el candado no
+    -- salta) y esta bien: el front manda el registro completo, asi que reabrir es
+    -- un PUT con el resto de los campos como estaban.
+    IF f_cerrada(p_id) AND l_cerrado = 'S' THEN
+        p_error(409, 'Conflict',
+                'La evaluacion esta cerrada. Reabrila para poder editarla.');
         RETURN;
     END IF;
 
@@ -1119,6 +1467,10 @@ BEGIN
         p_aspectos_positivos     => p_aspectos_positivos,
         p_aspectos_mejorar       => p_aspectos_mejorar);
 
+    -- Fuera del UPDATE: ver la declaracion de l_postulacion (PLS-00231).
+    -- La que eligio el usuario, o la deducida si no mando ninguna.
+    l_postulacion := f_postulacion_final(p_id_postulacion, p_id_facilitador, p_id_institucion);
+
     -- ID_AUDITORIA fuera del SET: es de la bitacora, no del negocio.
     UPDATE evaluaciones_facilitadores
        SET id_facilitador         = p_id_facilitador,
@@ -1131,7 +1483,13 @@ BEGIN
            id_evaluacion          = p_id_evaluacion,
            escala = p_escala,
            aspectos_positivos     = p_aspectos_positivos,
-           aspectos_mejorar       = p_aspectos_mejorar
+           aspectos_mejorar       = p_aspectos_mejorar,
+           observacion_admin      = p_observacion_admin,
+           ind_cerrado            = l_cerrado,
+           -- Se recalcula: si cambiaron el facilitador o la institucion, la
+           -- postulacion anterior ya no corresponde. Resuelta arriba, fuera del
+           -- UPDATE (PLS-00231).
+           id_postulacion         = l_postulacion
      WHERE id_evaluacion_facilitador = p_id;
 
     IF SQL%ROWCOUNT = 0 THEN
@@ -1168,6 +1526,20 @@ BEGIN
 
     IF p_id IS NULL THEN
         p_error(400, 'Bad Request', 'id_evaluacion_facilitador es obligatorio');
+        RETURN;
+    END IF;
+
+    -- El mismo candado que en ACTUALIZAR: una evaluacion cerrada no se borra.
+    -- Aca no hay excepcion posible —borrar no admite un "pero reabrila"—, asi
+    -- que hay que reabrirla con un PUT y recien despues borrarla.
+    --
+    -- OJO: el front borra una evaluacion con N llamadas, una por detalle. Si
+    -- alguna fila del grupo esta cerrada, ese DELETE falla y la evaluacion queda
+    -- a medias. Es el mismo problema que ya tiene el borrado sin transaccion
+    -- (ver PENDIENTES.md); por eso el front no ofrece borrar lo que esta cerrado.
+    IF f_cerrada(p_id) THEN
+        p_error(409, 'Conflict',
+                'La evaluacion esta cerrada. Reabrila para poder eliminarla.');
         RETURN;
     END IF;
 
@@ -1428,6 +1800,126 @@ BEGIN
     APEX_JSON.CLOSE_ARRAY;
 END lov_ciudades;
 
+------------------------------------------------------------------------------
+-- Las postulaciones de UN facilitador en UNA institucion. Alimenta las tarjetas
+-- que el front muestra despues de elegir la institucion, para que el evaluador
+-- diga CUAL de todas esta evaluando.
+--
+-- Es la lista que el comentario de f_postulacion() dejaba anotada como la salida
+-- correcta a la ambiguedad: cuando hay varias candidatas, la elige una persona
+-- en vez de adivinarla el backend.
+--
+-- LOS DOS PARAMETROS SON OBLIGATORIOS. Sin ellos la consulta devolveria las
+-- postulaciones de toda la base: son ~8.000 filas y ninguna significa nada fuera
+-- del par facilitador+institucion. El dispatcher corta con un 400 antes.
+--
+-- ── EL GRADO NO ES UNA COLUMNA ───────────────────────────────────────────────
+--
+-- POSTULACIONES no tiene un campo "grado": tiene TRECE columnas numericas —"2",
+-- "3", "4".."9", "1M".."3M"— donde **la que esta cargada indica el grado y su
+-- valor es la matricula**. Una fila con "7"=20 es "7mo grado, 20 alumnos".
+--
+-- Los nombres son identificadores que empiezan con digito, asi que van SIEMPRE
+-- entre comillas dobles. Sin ellas, Oracle lee p."4" como el numero 4 y falla
+-- con ORA-00923.
+--
+-- El orden del CASE importa: es el orden en que se muestran los grados. Va de
+-- menor a mayor y no en el orden fisico de la tabla, donde "2" y "3" quedaron
+-- despues de SECCION.
+--
+-- ── SER/HACER/TENER/... SON OTRO EJE ─────────────────────────────────────────
+--
+-- Las otras siete columnas (SER, HACER, TENER, CARACTER, VISION, CORAJE,
+-- LIDERAZGO) traen el MISMO numero que la del grado. Son el programa, no el
+-- grado, y por eso salen en un campo aparte en vez de mezclarse con el.
+------------------------------------------------------------------------------
+PROCEDURE lov_postulaciones(
+    p_id_facilitador IN NUMBER,
+    p_id_institucion IN NUMBER,
+    p_anio           IN VARCHAR2,
+    p_tope           IN PLS_INTEGER
+) IS
+    -- NULL = no filtrar por año. Se resuelve UNA vez y no dentro del SELECT:
+    -- adentro, la funcion se evaluaria por fila candidata.
+    l_anio VARCHAR2(4) := anio_a_filtrar(p_anio);
+BEGIN
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT p.id_postulacion,
+               p.seccion,
+               p.turno,
+               p.observacion,
+               p.estado,
+               p.anio,
+               -- Cual de las trece columnas esta cargada.
+               CASE
+                 WHEN p."2"  IS NOT NULL THEN '2do'
+                 WHEN p."3"  IS NOT NULL THEN '3ro'
+                 WHEN p."4"  IS NOT NULL THEN '4to'
+                 WHEN p."5"  IS NOT NULL THEN '5to'
+                 WHEN p."6"  IS NOT NULL THEN '6to'
+                 WHEN p."7"  IS NOT NULL THEN '7mo'
+                 WHEN p."8"  IS NOT NULL THEN '8vo'
+                 WHEN p."9"  IS NOT NULL THEN '9no'
+                 WHEN p."1M" IS NOT NULL THEN '1ro Media'
+                 WHEN p."2M" IS NOT NULL THEN '2do Media'
+                 WHEN p."3M" IS NOT NULL THEN '3ro Media'
+               END AS grado,
+               -- El valor de esa misma columna: la matricula.
+               COALESCE(p."2", p."3", p."4", p."5", p."6", p."7", p."8", p."9",
+                        p."1M", p."2M", p."3M") AS alumnos,
+               -- El segundo eje. Mismo criterio: el que este cargado.
+               CASE
+                 WHEN p.ser       IS NOT NULL THEN 'Ser'
+                 WHEN p.hacer     IS NOT NULL THEN 'Hacer'
+                 WHEN p.tener     IS NOT NULL THEN 'Tener'
+                 WHEN p.caracter  IS NOT NULL THEN 'Caracter'
+                 WHEN p.vision    IS NOT NULL THEN 'Vision'
+                 WHEN p.coraje    IS NOT NULL THEN 'Coraje'
+                 WHEN p.liderazgo IS NOT NULL THEN 'Liderazgo'
+               END AS programa,
+               -- DOCENTES manda; NOMBRE_PROFESOR es el respaldo para las filas
+               -- donde ID_DOCENTE quedo en null (es NULLABLE y hay filas asi).
+               COALESCE(d.nombre_apellido, p.nombre_profesor) AS docente,
+               p.telefono,
+               e.descripcion AS enfasis,
+               m.descripcion AS materia
+          FROM postulaciones p
+          -- Los tres LEFT y no INNER: las tres FK son NULLABLE, y una
+          -- postulacion sin enfasis cargado tiene que aparecer igual.
+          LEFT JOIN docentes d ON d.id_docente   = p.id_docente
+          LEFT JOIN enfasis  e ON e.id_enfasis   = p.id_enfasis
+          LEFT JOIN materias m ON m.id_materia   = p.id_materia
+         WHERE p.id_facilitador = p_id_facilitador
+           AND p.id_institucion = p_id_institucion
+           AND (l_anio IS NULL OR p.anio = l_anio)
+         -- Por grado y seccion: es como el evaluador las tiene en la cabeza.
+         -- NULLS LAST deja al final las que no tienen grado cargado.
+         ORDER BY p.turno, p.seccion NULLS LAST, p.id_postulacion
+         FETCH FIRST p_tope ROWS ONLY
+    ) LOOP
+        APEX_JSON.OPEN_OBJECT;
+        APEX_JSON.WRITE('id_postulacion', r.id_postulacion);
+        APEX_JSON.WRITE('grado',          r.grado);
+        APEX_JSON.WRITE('alumnos',        r.alumnos);
+        APEX_JSON.WRITE('seccion',        r.seccion);
+        -- El numero crudo. La etiqueta ("Mañana"/"Tarde"/"Noche") la pone el
+        -- front: TURNO no tiene tabla ni FK, asi que el dominio esta cableado en
+        -- los dos lados. Anotado en PENDIENTES.md.
+        APEX_JSON.WRITE('turno',          r.turno);
+        APEX_JSON.WRITE('programa',       r.programa);
+        APEX_JSON.WRITE('docente',        r.docente);
+        APEX_JSON.WRITE('telefono',       r.telefono);
+        APEX_JSON.WRITE('enfasis',        r.enfasis);
+        APEX_JSON.WRITE('materia',        r.materia);
+        APEX_JSON.WRITE('observacion',    r.observacion);
+        APEX_JSON.WRITE('estado',         r.estado);
+        APEX_JSON.WRITE('anio',           r.anio);
+        APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+END lov_postulaciones;
+
 PROCEDURE lista(
     p_token          IN VARCHAR2,
     p_nombre         IN VARCHAR2,
@@ -1437,6 +1929,7 @@ PROCEDURE lista(
     p_estado         IN VARCHAR2 DEFAULT NULL,
     p_incluir_id     IN NUMBER   DEFAULT NULL,
     p_id_facilitador IN NUMBER   DEFAULT NULL,
+    p_id_institucion IN NUMBER   DEFAULT NULL,
     p_anio           IN VARCHAR2 DEFAULT NULL,
     p_limite         IN NUMBER   DEFAULT NULL
 ) IS
@@ -1454,11 +1947,24 @@ BEGIN
     -- El IS NULL va aparte: "NULL NOT IN (...)" da NULL, no TRUE, y el nombre
     -- vacio se colaria hasta el CASE de abajo para morir con CASE_NOT_FOUND (500).
     IF l_clave IS NULL
-       OR l_clave NOT IN ('facilitadores', 'instituciones', 'areas', 'evaluaciones', 'ciudades')
+       OR l_clave NOT IN ('facilitadores', 'instituciones', 'areas', 'evaluaciones',
+                          'ciudades', 'postulaciones')
     THEN
         p_error(400, 'Bad Request',
                 'Lista desconocida. Validas: facilitadores, instituciones, '
-                || 'areas, evaluaciones, ciudades');
+                || 'areas, evaluaciones, ciudades, postulaciones');
+        RETURN;
+    END IF;
+
+    -- `postulaciones` EXIGE el par facilitador+institucion. Sin filtrar
+    -- devolveria las ~8.000 filas de la tabla, y ninguna significa nada fuera de
+    -- ese par. Es un 400 y no una lista vacia: una lista vacia se confundiria con
+    -- "este facilitador no postulo aca".
+    IF l_clave = 'postulaciones'
+       AND (p_id_facilitador IS NULL OR p_id_institucion IS NULL)
+    THEN
+        p_error(400, 'Bad Request',
+                'listas/postulaciones requiere id_facilitador e id_institucion');
         RETURN;
     END IF;
 
@@ -1481,6 +1987,10 @@ BEGIN
       WHEN 'areas'         THEN lov_areas(l_patron, l_tope);
       WHEN 'evaluaciones'  THEN lov_evaluaciones(l_patron, p_id_area, l_tope);
       WHEN 'ciudades'      THEN lov_ciudades(l_patron, l_tope);
+      WHEN 'postulaciones' THEN
+        -- Sin l_patron: no se busca por texto. Son pocas por facilitador e
+        -- institucion, y el front las muestra todas como tarjetas.
+        lov_postulaciones(p_id_facilitador, p_id_institucion, p_anio, l_tope);
     END CASE;
 
     APEX_JSON.CLOSE_OBJECT;
@@ -1601,7 +2111,13 @@ BEGIN
         p_id_evaluacion          => TO_NUMBER(:id_evaluacion),
         p_escala => TO_NUMBER(:escala),
         p_aspectos_positivos     => :aspectos_positivos,
-        p_aspectos_mejorar       => :aspectos_mejorar);
+        p_aspectos_mejorar       => :aspectos_mejorar,
+        -- Sin :ind_cerrado. El POST crea la evaluacion ABIERTA siempre; si el
+        -- JSON trae el campo, ORDS lo bindea y nadie lo lee. Ver INSERTAR.
+        p_observacion_admin      => :observacion_admin,
+        -- La postulacion elegida en las tarjetas del front. Opcional: sin ella
+        -- el paquete la deduce como siempre.
+        p_id_postulacion         => TO_NUMBER(:id_postulacion));
 END;
 ~');
 
@@ -1689,7 +2205,10 @@ BEGIN
         p_id_evaluacion          => TO_NUMBER(:id_evaluacion),
         p_escala => TO_NUMBER(:escala),
         p_aspectos_positivos     => :aspectos_positivos,
-        p_aspectos_mejorar       => :aspectos_mejorar);
+        p_aspectos_mejorar       => :aspectos_mejorar,
+        p_observacion_admin      => :observacion_admin,
+        p_ind_cerrado            => :ind_cerrado,
+        p_id_postulacion         => TO_NUMBER(:id_postulacion));
 END;
 ~');
 
@@ -1744,6 +2263,8 @@ END;
   --   listas/areas         ?buscar=&limite=
   --   listas/evaluaciones  ?id_area=&buscar=&limite=
   --   listas/ciudades      ?buscar=&limite=
+  --   listas/postulaciones ?id_facilitador=&id_institucion=&anio=   (los dos ids
+  --                        son OBLIGATORIOS: sin ellos responde 400)
   ----------------------------------------------------------------------------
   BEGIN
     ORDS.DEFINE_TEMPLATE(
@@ -1779,6 +2300,7 @@ BEGIN
         p_estado         => :estado,
         p_incluir_id     => TO_NUMBER(:incluir_id),
         p_id_facilitador => TO_NUMBER(:id_facilitador),
+        p_id_institucion => TO_NUMBER(:id_institucion),
         p_anio           => :anio,
         p_limite         => TO_NUMBER(:limite));
 END;
@@ -1996,7 +2518,8 @@ END;
 --          "fecha_desde":"2026-07-01","fecha_hasta":"2026-07-15",
 --          "evaluado_por":"Jose Galvez","id_area":1,"id_evaluacion":1,
 --          "escala":1,"aspectos_positivos":"Puntual y claro",
---          "aspectos_mejorar":"Cerrar con resumen"}'
+--          "aspectos_mejorar":"Cerrar con resumen",
+--          "observacion_admin":"Revisado por coordinacion"}'
 --
 --   Cada POST carga UN detalle (un area + una evaluacion + su estrella). Una
 --   evaluacion completa son varios POST, uno por detalle, repitiendo la cabecera.
