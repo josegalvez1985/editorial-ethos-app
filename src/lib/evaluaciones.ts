@@ -336,9 +336,9 @@ function indexar(row: Record<string, unknown>) {
     .join(" ");
 }
 
-export type LovNombre = "facilitadores" | "instituciones" | "areas" | "evaluaciones" | "ciudades";
+type LovNombre = "facilitadores" | "instituciones" | "areas" | "evaluaciones" | "ciudades";
 
-export type LovParams = {
+type LovParams = {
   buscar?: string;
   /** Solo `evaluaciones`: el área elegida. Obligatorio en la práctica. */
   id_area?: number | null;

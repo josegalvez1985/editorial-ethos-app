@@ -14,7 +14,6 @@ import { toast } from "sonner";
 
 import {
   cerrarSesion,
-  esSinConexion,
   getSesion,
   limpiarDatosViejos,
   login as apiLogin,
@@ -23,55 +22,7 @@ import {
   setOnUnauthorized,
   type Sesion,
 } from "@/lib/api";
-import { guardarEvaluacion, keys } from "@/lib/evaluaciones";
-import {
-  getSesionOffline,
-  precargarListas,
-  puedeEntrarSinRed,
-  recordarSesion,
-  sincronizar,
-} from "@/lib/offline";
 import { borrarCachePersistida } from "@/lib/query-persist";
-
-/**
- * Sube las evaluaciones que quedaron en la cola. Best-effort y silenciosa: es
- * una tarea de fondo y un fallo acá no debe romper el ingreso — las entradas
- * quedan en la cola y se reintentan en el próximo login con red.
- */
-async function sincronizarPendientes() {
-  try {
-    const { subidas } = await sincronizar((cab, detalles) =>
-      // Sin ids originales: la cola solo lleva evaluaciones NUEVAS.
-      guardarEvaluacion(cab, detalles, []),
-    );
-    if (subidas > 0) {
-      toast.success(
-        subidas === 1
-          ? "Se subió 1 evaluación que habías cargado sin conexión"
-          : `Se subieron ${subidas} evaluaciones que habías cargado sin conexión`,
-      );
-    }
-  } catch {
-    /* la cola no se pierde: se reintenta en el próximo login con red */
-  }
-}
-
-/**
- * Deja las listas de los combos en la caché, para poder cargar una evaluación
- * sin red. Sin esto, offline solo está lo que el usuario ya abrió a mano.
- */
-async function precargar(qc: ReturnType<typeof useQueryClient>) {
-  try {
-    await precargarListas((nombre, params, datos) => {
-      // Los `params` vienen ya en la forma exacta que arma `PickerModal`: se
-      // pasan tal cual, sin reconstruirlos, o la key deja de coincidir y la
-      // precarga no sirve para nada. Ver `precargarListas`.
-      qc.setQueryData(keys.lista(nombre, params), datos);
-    });
-  } catch {
-    /* quedarse sin precarga no es motivo para bloquear el ingreso */
-  }
-}
 
 /**
  * Estado de la sesión.
@@ -97,14 +48,6 @@ type Ctx = {
    * `true` apenas monta.
    */
   ready: boolean;
-  /**
-   * La sesión se abrió SIN validar contra el backend, porque no había red.
-   *
-   * Implica que **no hay token**: toda llamada a la API va a fallar y la app
-   * trabaja contra la caché persistida. La UI lo usa para avisar y para mandar
-   * lo que se guarde a la cola en vez de intentar un POST que no puede salir.
-   */
-  offline: boolean;
   login: (usuario: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -123,7 +66,6 @@ function avisar(descripcion: string) {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [sesion, setSesion] = useState<Sesion | null>(null);
   const [ready, setReady] = useState(false);
-  const [offline, setOffline] = useState(false);
   const qc = useQueryClient();
 
   // No hay sesión que restaurar: se arranca siempre en el login. Lo único que se
@@ -189,82 +131,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("visibilitychange", alVolver);
   }, [caerSesion]);
 
-  /**
-   * Inicia sesión. **Siempre intenta primero contra el backend.**
-   *
-   * El modo offline es un fallback y NADA MÁS: se activa solo si la llamada
-   * falla por falta de red (`SinConexion`). Un usuario o contraseña rechazados
-   * por Oracle son un rechazo real y no caen acá — si cayeran, una contraseña
-   * vieja guardada dejaría entrar después de que la cambiaron en el servidor.
-   */
-  /*
-   * Subir la cola cuando vuelve la red ESTANDO YA ADENTRO.
-   *
-   * Sin esto, lo cargado sin señal esperaría al próximo login: alguien que deja
-   * la app abierta todo el día no sube nada hasta el día siguiente.
-   *
-   * Solo con token: en modo offline no hay con qué autenticar, así que subir es
-   * imposible y hay que esperar a que el usuario entre de nuevo con red.
-   *
-   * `online` del navegador es una señal barata pero mentirosa —da `true` con
-   * wifi sin salida a internet—. Alcanza igual: si no había red de verdad, el
-   * intento falla, la entrada vuelve a la cola y se reintenta después. Lo que no
-   * se puede es NO intentar.
-   */
-  const conToken = Boolean(sesion?.token);
-  useEffect(() => {
-    if (!conToken) return;
-    const alVolverLaRed = () => void sincronizarPendientes();
-    window.addEventListener("online", alVolverLaRed);
-    return () => window.removeEventListener("online", alVolverLaRed);
-  }, [conToken]);
-
-  const login = useCallback(
-    async (usuario: string, password: string) => {
-      try {
-        const s = await apiLogin(usuario, password);
-        // Los datos para pintar la próxima sesión offline. Nunca el token.
-        recordarSesion(s);
-        setSesion(s);
-        setOffline(false);
-
-        // Con red: se suben los pendientes y se dejan las listas cacheadas. Las
-        // dos cosas son best-effort y no bloquean el ingreso.
-        void sincronizarPendientes();
-        void precargar(qc);
-      } catch (e) {
-        // Solo la falta de red habilita el camino offline.
-        if (!esSinConexion(e)) throw e;
-
-        const previa = getSesionOffline();
-        if (!previa || !puedeEntrarSinRed(usuario, password)) {
-          throw new Error(
-            "Sin conexión. Para entrar sin internet tenés que haber iniciado sesión antes " +
-              "en este dispositivo con la opción “Recordar usuario y contraseña” tildada.",
-          );
-        }
-
-        /*
-         * Sesión offline: sin token y con `expira` vacío.
-         *
-         * Sin token, cualquier llamada a la API va a fallar con "No hay sesión
-         * activa" — que es lo correcto: offline no hay backend con quien hablar,
-         * y la app trabaja contra la caché persistida.
-         *
-         * `expira` vacío hace que `msHastaExpirar` devuelva null y el timer de
-         * vencimiento no se arme: no hay token que pueda vencer.
-         */
-        setSesion({ ...previa, token: "", expira: "" });
-        setOffline(true);
-      }
-    },
-    [qc],
-  );
+  const login = useCallback(async (usuario: string, password: string) => {
+    setSesion(await apiLogin(usuario, password));
+  }, []);
 
   const logout = useCallback(async () => {
     await apiLogout();
     setSesion(null);
-    setOffline(false);
 
     // El check de "recordar" NO se toca acá, a propósito: es comodidad para
     // tipear, no una sesión. Si se borrara al salir, se destildaría solo cada vez
@@ -286,8 +159,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<Ctx>(
-    () => ({ sesion, user, ready, offline, login, logout }),
-    [sesion, user, ready, offline, login, logout],
+    () => ({ sesion, user, ready, login, logout }),
+    [sesion, user, ready, login, logout],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
