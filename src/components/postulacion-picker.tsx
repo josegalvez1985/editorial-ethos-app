@@ -106,6 +106,33 @@ function Datos({ p }: { p: Postulacion }) {
           {p.programa}
         </span>
       )}
+
+      {/*
+        EL ÍNDICE QUE LE TOCA A ESTA CLASE. Va acá abajo, después del programa,
+        porque es el dato que decide: el evaluador elige la postulación viendo
+        qué índice sigue, sin tener que seleccionarla primero para enterarse.
+
+        Lo calcula el backend (el posterior al último con SI_NO='Si' en
+        INTERVENCIONES). Cuando no hay —clase sin intervenciones, o manual ya
+        terminado— no se muestra nada: proponer el índice 1 sin saber el manual
+        sería inventar, y un cartel de "sin índice" en cada tarjeta es ruido.
+      */}
+      {p.indice_titulo && (
+        <div className="mt-2 rounded-lg border border-primary/30 bg-primary-soft px-2.5 py-1.5">
+          <p className="text-[11px] font-semibold text-muted-foreground">
+            Índice a desarrollar
+            {/* De dónde sale: sin esto el número aparece solo y no hay forma de
+                saber si es el que corresponde. */}
+            {p.nro_indice_ultimo != null && ` · sigue al ${p.nro_indice_ultimo}`}
+          </p>
+          <p className="mt-0.5 text-[13px] leading-snug font-bold">
+            {/* El número delante: es como el evaluador tiene el manual impreso
+                delante, y el título solo no lo ubica. */}
+            {p.nro_indice != null ? `${p.nro_indice} · ` : ""}
+            {p.indice_titulo}
+          </p>
+        </div>
+      )}
     </>
   );
 }
@@ -119,7 +146,12 @@ export function PostulacionPicker({
   idFacilitador: number | null;
   idInstitucion: number | null;
   value: number | null;
-  onChange: (id: number | null) => void;
+  /**
+   * La postulación completa y no solo su id: el formulario necesita además el
+   * `id_indice` que viene resuelto en ella, porque el índice de la evaluación
+   * es el que le toca a la clase elegida. `null` al deseleccionar.
+   */
+  onChange: (p: Postulacion | null) => void;
 }) {
   const [abierto, setAbierto] = useState(false);
 
@@ -249,7 +281,7 @@ export function PostulacionPicker({
                       // Volver a tocar la elegida la deselecciona: un clic por
                       // error, si no, no se puede deshacer. "Ninguna" es válido:
                       // el backend vuelve a deducirla.
-                      onChange(esta ? null : p.id_postulacion);
+                      onChange(esta ? null : p);
                       setAbierto(false);
                     }}
                     className={`tap w-full rounded-xl border p-3 text-left transition-colors ${

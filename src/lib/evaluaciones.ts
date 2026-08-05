@@ -438,6 +438,25 @@ export type Postulacion = {
   observacion: string | null;
   estado: string | null;
   anio: string | null;
+  /**
+   * EL SIGUIENTE ÍNDICE A DESARROLLAR en esta clase. Lo calcula el backend:
+   * el posterior al último con `SI_NO = 'Si'` en `INTERVENCIONES`, dentro del
+   * mismo manual.
+   *
+   * Los tres vienen juntos o los tres en `null`. Es `null` en dos casos, y la
+   * tarjeta simplemente no muestra la línea:
+   *
+   * - la clase no tiene ninguna intervención con `'Si'` (no se asume el índice
+   *   1: sin intervenciones tampoco se sabe qué manual usa),
+   * - ya desarrolló el índice más alto del manual.
+   */
+  id_indice: number | null;
+  nro_indice: number | null;
+  indice_titulo: string | null;
+  /** El manual que esta clase viene desarrollando. */
+  manual: string | null;
+  /** El último índice dado, para explicar de dónde sale la propuesta. */
+  nro_indice_ultimo: number | null;
 };
 
 /**
@@ -504,6 +523,11 @@ export async function listarPostulaciones(
     observacion: (row.observacion as string) ?? null,
     estado: (row.estado as string) ?? null,
     anio: (row.anio as string) ?? null,
+    id_indice: row.id_indice == null ? null : Number(row.id_indice),
+    nro_indice: row.nro_indice == null ? null : Number(row.nro_indice),
+    indice_titulo: (row.indice_titulo as string) ?? null,
+    manual: (row.manual as string) ?? null,
+    nro_indice_ultimo: row.nro_indice_ultimo == null ? null : Number(row.nro_indice_ultimo),
   }));
 }
 

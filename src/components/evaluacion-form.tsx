@@ -320,17 +320,6 @@ export function EvaluacionForm({
     });
   }, []);
 
-  /*
-   * El índice deducido por `IndiceSiguienteCard`.
-   *
-   * Va por `useCallback` y no como flecha inline (`set` se recrea en cada
-   * render): del otro lado lo consume un `useEffect` que lo tiene por
-   * dependencia, y una identidad nueva por render lo haría correr en bucle.
-   */
-  const onIndiceResuelto = useCallback((idIndice: number | null) => {
-    setCab((prev) => (prev.id_indice === idIndice ? prev : { ...prev, id_indice: idIndice }));
-  }, []);
-
   const onToggle = useCallback((idEvaluacion: number, marcada: boolean) => {
     setDetalles((prev) =>
       prev.map((d) => (d.id_evaluacion === idEvaluacion ? { ...d, marcada } : d)),
@@ -512,19 +501,31 @@ export function EvaluacionForm({
             idFacilitador={cab.id_facilitador}
             idInstitucion={cab.id_institucion}
             value={cab.id_postulacion}
-            onChange={(id) => set("id_postulacion", id)}
+            onChange={(p) => {
+              // El índice viaja CON la postulación: es el que le toca a esa
+              // clase según lo que ya desarrolló (ver la tarjeta del picker).
+              // No se elige a mano, así que se toma de acá o no se guarda.
+              setCab((prev) => ({
+                ...prev,
+                id_postulacion: p?.id_postulacion ?? null,
+                id_indice: p?.id_indice ?? null,
+                manual: p?.manual ?? null,
+                indice_titulo: p?.indice_titulo ?? null,
+              }));
+            }}
           />
 
           {/*
-            El índice que le toca a esa clase. Va DESPUÉS de la postulación
-            porque se calcula sobre ella: el manual avanza clase a clase, y dos
-            grados del mismo facilitador llevan avances distintos.
+            El índice de la clase elegida, como confirmación de lo que se va a
+            guardar. Aparece recién con la postulación puesta, porque se calcula
+            sobre ella: el manual avanza clase a clase y dos grados del mismo
+            facilitador llevan avances distintos.
 
-            Es de solo lectura —no se elige, se deduce de INTERVENCIONES—, pero a
-            diferencia de la tarjeta de directores el valor SÍ se guarda: por eso
-            reporta hacia arriba con `onResolve` en vez de ser solo visual.
+            Está también en cada tarjeta del picker —ahí sirve para ELEGIR la
+            clase—; acá queda a la vista al revisar el formulario antes de
+            guardar, cuando el modal ya se cerró.
           */}
-          <IndiceSiguienteCard idPostulacion={cab.id_postulacion} onResolve={onIndiceResuelto} />
+          <IndiceSiguienteCard idPostulacion={cab.id_postulacion} />
         </Seccion>
 
         <Seccion titulo="Período">

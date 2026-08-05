@@ -2262,8 +2262,71 @@ BEGIN
                    'Vie ' || TO_CHAR(p.viernes_desde, 'HH24:MI')
                    || NVL2(p.viernes_hasta, '-' || TO_CHAR(p.viernes_hasta, 'HH24:MI'), '') || ' '
                  END
-               ) AS horario
+               ) AS horario,
+               --------------------------------------------------------------
+               -- EL SIGUIENTE INDICE A DESARROLLAR en esta postulacion.
+               --
+               -- Va en la tarjeta, debajo del programa: el evaluador elige la
+               -- clase VIENDO que indice le toca, sin tener que seleccionarla
+               -- primero para enterarse.
+               --
+               -- La regla, en dos pasos:
+               --   1. el ultimo indice con SI_NO='Si' en INTERVENCIONES de ESTA
+               --      postulacion (el ultimo efectivamente desarrollado),
+               --   2. el inmediato siguiente DENTRO DEL MISMO MANUAL.
+               --
+               -- Solo cuentan los 'Si': un indice marcado 'No' no se dio —por
+               -- eso TRG_INTERV_SINO_MOTIVO le exige MOTIVO_DESARROLLO— y sigue
+               -- pendiente, asi que se vuelve a proponer. Mismo criterio que
+               -- TRG_INTERV_FINALIZA_POST, que exige 'Si' para finalizar.
+               --
+               -- Se ordena por NRO_INDICE y no por FECHA_HORA: si se cargaron
+               -- fuera de orden, manda el orden del manual, no el de tipeo.
+               --
+               -- Es un subquery escalar por fila y no un JOIN porque devuelve
+               -- UNA fila o ninguna, y un JOIN con el ultimo/siguiente exigiria
+               -- dos niveles de agregacion sobre la lista entera. Son pocas
+               -- postulaciones por facilitador+institucion (el tope las acota),
+               -- asi que el costo es despreciable y usa IDX_INTERV_POSTULACION.
+               --------------------------------------------------------------
+               (SELECT sig.id_indice
+                  FROM indices_manuales sig
+                 WHERE sig.manual = ult.manual
+                   AND sig.nro_indice > ult.nro_indice
+                 ORDER BY sig.nro_indice
+                 FETCH FIRST 1 ROW ONLY) AS id_indice_sig,
+               (SELECT sig.nro_indice
+                  FROM indices_manuales sig
+                 WHERE sig.manual = ult.manual
+                   AND sig.nro_indice > ult.nro_indice
+                 ORDER BY sig.nro_indice
+                 FETCH FIRST 1 ROW ONLY) AS nro_indice_sig,
+               (SELECT sig.titulo
+                  FROM indices_manuales sig
+                 WHERE sig.manual = ult.manual
+                   AND sig.nro_indice > ult.nro_indice
+                 ORDER BY sig.nro_indice
+                 FETCH FIRST 1 ROW ONLY) AS titulo_indice_sig,
+               -- El manual que esta clase viene desarrollando, y el ultimo
+               -- indice dado. Viajan para que la tarjeta pueda explicar de
+               -- donde sale la propuesta en vez de mostrar un numero suelto.
+               ult.manual     AS manual_indice,
+               ult.nro_indice AS nro_indice_ultimo
           FROM postulaciones p
+          -- El ultimo indice desarrollado, por postulacion. OUTER APPLY y no
+          -- LEFT JOIN: lleva FETCH FIRST, que un JOIN no admite. Sin filas
+          -- (clase sin intervenciones) devuelve NULL y la tarjeta no muestra
+          -- indice, que es lo correcto: sin intervenciones no se sabe ni el
+          -- manual, asi que cualquier propuesta seria inventada.
+          OUTER APPLY (
+              SELECT im.manual, im.nro_indice
+                FROM intervenciones i
+                JOIN indices_manuales im ON im.id_indice = i.id_indice
+               WHERE i.id_postulacion = p.id_postulacion
+                 AND UPPER(TRIM(i.si_no)) = 'SI'
+               ORDER BY im.nro_indice DESC
+               FETCH FIRST 1 ROW ONLY
+          ) ult
           -- Los tres LEFT y no INNER: las tres FK son NULLABLE, y una
           -- postulacion sin enfasis cargado tiene que aparecer igual.
           LEFT JOIN docentes d ON d.id_docente   = p.id_docente
@@ -2304,6 +2367,15 @@ BEGIN
         APEX_JSON.WRITE('observacion',    r.observacion);
         APEX_JSON.WRITE('estado',         r.estado);
         APEX_JSON.WRITE('anio',           r.anio);
+        -- El indice que le toca a esta clase. Los tres van juntos o los tres en
+        -- null: si no hay siguiente (clase sin intervenciones, o manual
+        -- terminado) la tarjeta no muestra la linea.
+        APEX_JSON.WRITE('id_indice',      r.id_indice_sig);
+        APEX_JSON.WRITE('nro_indice',     r.nro_indice_sig);
+        APEX_JSON.WRITE('indice_titulo',  r.titulo_indice_sig);
+        -- Contexto de la propuesta: de que manual sale y a que indice sigue.
+        APEX_JSON.WRITE('manual',         r.manual_indice);
+        APEX_JSON.WRITE('nro_indice_ultimo', r.nro_indice_ultimo);
         APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;

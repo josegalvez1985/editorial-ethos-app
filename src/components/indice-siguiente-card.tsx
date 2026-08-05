@@ -13,38 +13,30 @@
  * Un índice marcado `'No'` no cuenta como avance —no se dio, sigue pendiente— y
  * se vuelve a proponer.
  *
+ * ── POR QUÉ EXISTE, SI LA TARJETA YA LO MUESTRA ──────────────────────────────
+ *
+ * El índice aparece en dos lados y no es redundancia:
+ *
+ * - En **cada tarjeta del picker**, para elegir la clase viendo qué le toca.
+ * - Acá, como **confirmación de lo elegido**, junto al resto de los campos que
+ *   se van a guardar. La tarjeta del picker se colapsa a una sola cuando se
+ *   cierra el modal, y este campo deja el índice a la vista al revisar el
+ *   formulario antes de guardar.
+ *
  * ── DEPENDE DE LA POSTULACIÓN, NO DE LA INSTITUCIÓN ──────────────────────────
  *
  * El manual avanza clase a clase, y `ID_POSTULACION` es el grado y sección
  * concretos. Un facilitador con 7mo y 8vo en el mismo colegio lleva dos avances
  * distintos: por eso este campo aparece recién cuando hay postulación elegida, y
  * se recalcula al cambiarla.
- *
- * ── EL VALOR SÍ SE GUARDA ────────────────────────────────────────────────────
- *
- * A diferencia de la tarjeta de directores, esto no es decorativo: el
- * `id_indice` viaja en el JSON de la evaluación. Como el usuario no puede
- * tipearlo, el componente avisa hacia arriba con `onResolve` apenas lo sabe.
  */
 
 import { useQuery } from "@tanstack/react-query";
 import { BookMarked, Loader2, Lock } from "lucide-react";
-import { useEffect } from "react";
 
 import { obtenerIndiceSiguiente, STALE_LISTAS } from "@/lib/evaluaciones";
 
-export function IndiceSiguienteCard({
-  idPostulacion,
-  onResolve,
-}: {
-  idPostulacion: number | null;
-  /**
-   * El índice resuelto, o `null` si no hay ninguno que proponer. Lo escribe en
-   * la cabecera quien monta este componente: el campo es de solo lectura, así
-   * que si no lo reportáramos, `id_indice` se guardaría siempre vacío.
-   */
-  onResolve: (idIndice: number | null) => void;
-}) {
+export function IndiceSiguienteCard({ idPostulacion }: { idPostulacion: number | null }) {
   const habilitada = idPostulacion != null;
 
   const { data, isLoading, isError } = useQuery({
@@ -53,29 +45,6 @@ export function IndiceSiguienteCard({
     enabled: habilitada,
     staleTime: STALE_LISTAS,
   });
-
-  /*
-   * Sincroniza el valor deducido con el formulario.
-   *
-   * Va en un efecto y no en el `queryFn` porque también tiene que limpiarse
-   * cuando se quita la postulación o cuando el resultado deja de tener índice
-   * (FINALIZADO / SIN_INICIAR): si solo se escribiera al encontrar uno, el
-   * índice de la postulación anterior quedaría pegado.
-   *
-   * `data?.id_indice` como dependencia y no `data`: el objeto cambia de
-   * identidad en cada refetch aunque el índice sea el mismo.
-   */
-  const idIndice = data?.id_indice ?? null;
-  useEffect(() => {
-    if (!habilitada) {
-      onResolve(null);
-      return;
-    }
-    // Mientras carga no se toca nada: escribir null acá borraría el índice de
-    // una evaluación que se está editando, antes de saber el nuevo.
-    if (isLoading) return;
-    onResolve(idIndice);
-  }, [habilitada, isLoading, idIndice, onResolve]);
 
   // Sin postulación no hay nada que deducir. Igual que el picker de arriba, no
   // se muestra un "elegí primero…": el formulario ya es largo.
