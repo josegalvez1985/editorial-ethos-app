@@ -23,7 +23,7 @@ import {
   setOnUnauthorized,
   type Sesion,
 } from "@/lib/api";
-import { guardarEvaluacion, keys, lista } from "@/lib/evaluaciones";
+import { guardarEvaluacion, keys } from "@/lib/evaluaciones";
 import {
   getSesionOffline,
   precargarListas,
@@ -62,9 +62,11 @@ async function sincronizarPendientes() {
  */
 async function precargar(qc: ReturnType<typeof useQueryClient>) {
   try {
-    await precargarListas((nombre, _params, datos) => {
-      // La MISMA queryKey que usan los pickers, o la precarga no se aprovecha.
-      qc.setQueryData(keys.lista(nombre as Parameters<typeof lista>[0], {}), datos);
+    await precargarListas((nombre, params, datos) => {
+      // Los `params` vienen ya en la forma exacta que arma `PickerModal`: se
+      // pasan tal cual, sin reconstruirlos, o la key deja de coincidir y la
+      // precarga no sirve para nada. Ver `precargarListas`.
+      qc.setQueryData(keys.lista(nombre, params), datos);
     });
   } catch {
     /* quedarse sin precarga no es motivo para bloquear el ingreso */

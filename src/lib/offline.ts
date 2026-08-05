@@ -55,8 +55,15 @@
  * ver `sincronizar()`.
  */
 
-import { authFetch, getPasswordRecordada, getUsuarioRecordado, type Sesion } from "@/lib/api";
-import type { Cabecera, Detalle } from "@/lib/evaluaciones";
+import { getPasswordRecordada, getUsuarioRecordado, type Sesion } from "@/lib/api";
+import {
+  lista,
+  type Cabecera,
+  type Detalle,
+  type LovNombre,
+  type LovParams,
+  type Opcion,
+} from "@/lib/evaluaciones";
 
 /* -------------------------------------------------------------------------- */
 /* 1. Entrar sin red                                                          */
@@ -314,21 +321,56 @@ export async function sincronizar(
  * propaga, porque quedarse sin precarga no es motivo para bloquear el ingreso.
  * Lo peor que pasa es que offline falte una lista.
  *
+ * ## DOS TRAMPAS QUE YA COSTARON UN BUG (05/08/2026)
+ *
+ * Esta precarga escribe en la MISMA caché que leen los pickers, así que tiene
+ * que imitarlos exactamente. Se hizo mal y dejó el combo de facilitadores **en
+ * blanco**:
+ *
+ * 1. **Los datos van NORMALIZADOS, no crudos.** El picker espera `Opcion[]`
+ *    (`{id, texto, busqueda}`), no las filas del backend (`{id_facilitador,
+ *    nombre_apellido, …}`). Por eso acá se llama a `lista()`, que es la misma
+ *    función que usa el picker, en vez de a `authFetch` directo. Si se guardan
+ *    filas crudas, el combo se dibuja vacío: `o.texto` es `undefined` en todas.
+ * 2. **La queryKey tiene que ser IDÉNTICA**, y el picker la arma con las cuatro
+ *    claves presentes en `undefined`, no con un objeto vacío. `["lista","x",{}]`
+ *    y `["lista","x",{buscar:undefined,…}]` son keys DISTINTAS para react-query,
+ *    así que con `{}` la precarga no se aprovecha y el combo pide igual — que
+ *    offline es pedir y fallar.
+ *
+ * Quien reciba `cachear` es responsable del punto 2: acá se pasan los params ya
+ * en la forma correcta.
+ *
  * No incluye `evaluaciones` (los ítems de cada área) porque dependen del área
  * elegida y son cinco llamadas más; el listado de evaluaciones tampoco, que ya
  * se cachea al entrar a la pantalla.
  */
 export async function precargarListas(
-  cachear: (nombre: string, params: Record<string, unknown>, datos: unknown) => void,
+  cachear: (nombre: LovNombre, params: LovParams, datos: Opcion[]) => void,
 ): Promise<void> {
-  const listas = ["facilitadores", "instituciones", "areas", "ciudades"] as const;
+  const listas: LovNombre[] = ["facilitadores", "instituciones", "areas", "ciudades"];
 
   await Promise.allSettled(
     listas.map(async (nombre) => {
-      const r = (await authFetch(`listas/${nombre}?limite=500`)) as {
-        data?: Record<string, unknown>[];
+      /*
+       * LOS MISMOS params QUE ARMA `PickerModal`, con las cuatro claves
+       * presentes aunque valgan `undefined`. Ver la trampa 2 de arriba: si acá
+       * fuera `{}`, la key no coincidiría y esto no serviría para nada.
+       *
+       * `id_area` e `id_facilitador` van en undefined porque ninguna de las
+       * cuatro listas precargadas los usa (son de `evaluaciones` y de
+       * `instituciones` filtradas por facilitador, que dependen de lo que el
+       * usuario elija y no se pueden precargar).
+       */
+      const params: LovParams = {
+        buscar: undefined,
+        id_area: undefined,
+        id_facilitador: undefined,
+        incluir_id: undefined,
       };
-      cachear(nombre, {}, r.data ?? []);
+      // `lista()` y no `authFetch`: normaliza a `Opcion[]`, que es lo que el
+      // picker sabe dibujar.
+      cachear(nombre, params, await lista(nombre, params));
     }),
   );
 }
