@@ -27,7 +27,11 @@
 --     GET    listas/areas           ?buscar=&limite=
 --     GET    listas/evaluaciones    ?id_area=&buscar=&limite=
 --     GET    listas/ciudades        ?buscar=&limite=
---     GET    listas/postulaciones   ?id_facilitador=&id_institucion=&anio=&limite=
+--     GET    listas/postulaciones   ?id_facilitador=&id_institucion=&anio=&dia=&limite=
+--            Por defecto SOLO las del dia de HOY (lunes..viernes). ?dia=TODOS
+--            las trae todas; ?dia=3 fuerza el miercoles.
+--     GET    listas/manuales        ?buscar=&limite=
+--     GET    listas/indices         ?manual=&buscar=&limite=
 --
 --   Todos protegidos: Authorization: Bearer <token> de auth/login.
 --
@@ -387,6 +391,33 @@ BEGIN
   END IF;
 
   fk('EVAL_FAC_FK_POSTULACION', 'ID_POSTULACION', 'postulaciones', 'id_postulacion');
+
+  -- 1.8 ID_INDICE: que contenido del manual se dio en la clase evaluada.
+  --
+  -- FK a INDICES_MANUALES, que es un catalogo de (MANUAL, NRO_INDICE, TITULO).
+  -- Esa tabla NO tiene relacion con POSTULACIONES: el indice no se deduce de la
+  -- clase, lo ELIGE el evaluador. Por eso vive aca y no alla.
+  --
+  -- NULLABLE: las filas ya cargadas no lo tienen y el campo es opcional en el
+  -- formulario — una evaluacion sin indice indicado sigue siendo valida.
+  --
+  -- MISMO ORDEN QUE ARRIBA: primero la _JN, que el trigger de la seccion 2
+  -- escribe y no compila si le falta la columna.
+  IF NOT hay_columna('EVALUACIONES_FACILITADORES_JN', 'ID_INDICE') THEN
+    ejecutar('ALTER TABLE evaluaciones_facilitadores_jn ADD (id_indice NUMBER)',
+             'Columna ID_INDICE agregada a la tabla _JN.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[SKIP]  La _JN ya tenia ID_INDICE.');
+  END IF;
+
+  IF NOT hay_columna('EVALUACIONES_FACILITADORES', 'ID_INDICE') THEN
+    ejecutar('ALTER TABLE evaluaciones_facilitadores ADD (id_indice NUMBER)',
+             'Columna ID_INDICE agregada.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[SKIP]  ID_INDICE ya existia.');
+  END IF;
+
+  fk('EVAL_FAC_FK_INDICE', 'ID_INDICE', 'indices_manuales', 'id_indice');
 EXCEPTION
   WHEN OTHERS THEN
     DBMS_OUTPUT.PUT_LINE('[ERROR] Estructura incompleta: ' || SQLERRM);
@@ -457,6 +488,7 @@ BEGIN
       OBSERVACION_ADMIN,
       IND_CERRADO,
       ID_POSTULACION,
+      ID_INDICE,
       JN_OPERATION,
       JN_ORACLE_USER,
       JN_DATETIME,
@@ -480,6 +512,7 @@ BEGIN
       :NEW.OBSERVACION_ADMIN,
       :NEW.IND_CERRADO,
       :NEW.ID_POSTULACION,
+      :NEW.ID_INDICE,
       'INS',
       -- Para que la bitacora guarde el usuario de la app y no el del esquema,
       -- reemplazar por (el paquete deja el usuario en CLIENT_IDENTIFIER):
@@ -508,6 +541,7 @@ BEGIN
       OBSERVACION_ADMIN,
       IND_CERRADO,
       ID_POSTULACION,
+      ID_INDICE,
       JN_OPERATION,
       JN_ORACLE_USER,
       JN_DATETIME,
@@ -531,6 +565,7 @@ BEGIN
       :NEW.OBSERVACION_ADMIN,
       :NEW.IND_CERRADO,
       :NEW.ID_POSTULACION,
+      :NEW.ID_INDICE,
       'UPD',
       NVL(V('APP_USER'), USER),
       SYSDATE,
@@ -556,6 +591,7 @@ BEGIN
       OBSERVACION_ADMIN,
       IND_CERRADO,
       ID_POSTULACION,
+      ID_INDICE,
       JN_OPERATION,
       JN_ORACLE_USER,
       JN_DATETIME,
@@ -579,6 +615,7 @@ BEGIN
       :OLD.OBSERVACION_ADMIN,
       :OLD.IND_CERRADO,
       :OLD.ID_POSTULACION,
+      :OLD.ID_INDICE,
       'DEL',
       NVL(V('APP_USER'), USER),
       SYSDATE,
@@ -642,7 +679,10 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
       -- La postulacion que se esta evaluando, elegida en el front
       -- (GET listas/postulaciones). OPCIONAL: si no viene, se resuelve sola con
       -- f_postulacion(), que da NULL cuando hay mas de una candidata.
-      p_id_postulacion         IN NUMBER   DEFAULT NULL);
+      p_id_postulacion         IN NUMBER   DEFAULT NULL,
+      -- El indice del manual dado en la clase. Lo elige el evaluador
+      -- (GET listas/indices). Opcional.
+      p_id_indice              IN NUMBER   DEFAULT NULL);
 
   PROCEDURE actualizar(
       p_token                  IN VARCHAR2,
@@ -662,7 +702,8 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
       p_ind_cerrado            IN VARCHAR2 DEFAULT NULL,
       -- Igual que en INSERTAR. Ver el UPDATE: al no venir se recalcula, que es
       -- lo que corresponde si cambiaron el facilitador o la institucion.
-      p_id_postulacion         IN NUMBER   DEFAULT NULL);
+      p_id_postulacion         IN NUMBER   DEFAULT NULL,
+      p_id_indice              IN NUMBER   DEFAULT NULL);
 
   PROCEDURE eliminar(
       p_token IN VARCHAR2,
@@ -688,6 +729,11 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
       p_id_facilitador IN NUMBER   DEFAULT NULL,
       -- Solo `postulaciones`.
       p_id_institucion IN NUMBER   DEFAULT NULL,
+      -- Solo `postulaciones`: dia de la semana (1=lunes..5=viernes). Sin el
+      -- parametro usa HOY; 'TODOS' lo apaga.
+      p_dia            IN VARCHAR2 DEFAULT NULL,
+      -- Solo `indices`: filtra por manual (la cascada Manual -> Indice).
+      p_manual         IN VARCHAR2 DEFAULT NULL,
       p_anio           IN VARCHAR2 DEFAULT NULL,
       p_limite     IN NUMBER   DEFAULT NULL);
 
@@ -750,10 +796,17 @@ CREATE OR REPLACE PACKAGE BODY PKG_EVAL_FACILITADORES_ETHOS AS
            -- NULL, y para el negocio eso es "abierta".
            NVL(e.ind_cerrado, 'N')  AS ind_cerrado,
            e.id_postulacion,
+           -- El indice del manual, resuelto: al editar, el formulario tiene que
+           -- poder mostrar "Manual X - 3. Titulo" sin volver a pedir el catalogo.
+           e.id_indice,
+           im.manual                AS manual,
+           im.nro_indice            AS nro_indice,
+           im.titulo                AS indice_titulo,
            e.id_auditoria
       FROM evaluaciones_facilitadores e
       LEFT JOIN facilitadores      f  ON f.id_facilitador  = e.id_facilitador
       LEFT JOIN instituciones      i  ON i.id_institucion  = e.id_institucion
+      LEFT JOIN indices_manuales   im ON im.id_indice      = e.id_indice
       LEFT JOIN areas_evaluaciones a  ON a.id_area         = e.id_area
       LEFT JOIN evaluaciones       ev ON ev.id_evaluacion  = e.id_evaluacion
       LEFT JOIN ciudades           c  ON c.id_ciudad       = e.id_ciudad
@@ -1147,8 +1200,14 @@ BEGIN
     APEX_JSON.WRITE('observacion_admin',         p_r.observacion_admin);
     -- 'S' / 'N'. Ya viene con NVL desde el SELECT: nunca sale null.
     APEX_JSON.WRITE('ind_cerrado',               p_r.ind_cerrado);
-    -- Solo lectura para el front: lo resuelve el backend al guardar.
+    -- La postulacion elegida en las tarjetas (o la deducida, si no eligieron).
     APEX_JSON.WRITE('id_postulacion',            p_r.id_postulacion);
+    -- El indice del manual que se dio en la clase. Los tres campos de al lado
+    -- son del catalogo, solo para mostrar: el que se guarda es el id.
+    APEX_JSON.WRITE('id_indice',                 p_r.id_indice);
+    APEX_JSON.WRITE('manual',                    p_r.manual);
+    APEX_JSON.WRITE('nro_indice',                p_r.nro_indice);
+    APEX_JSON.WRITE('indice_titulo',             p_r.indice_titulo);
     -- Solo lectura: lo pone el trigger de auditoria.
     APEX_JSON.WRITE('id_auditoria',              p_r.id_auditoria);
     APEX_JSON.CLOSE_OBJECT;
@@ -1304,7 +1363,8 @@ PROCEDURE insertar(
     p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
     -- SIN p_ind_cerrado: ver el INSERT de mas abajo. Nace abierta y punto.
     p_observacion_admin      IN CLOB     DEFAULT NULL,
-    p_id_postulacion         IN NUMBER   DEFAULT NULL
+    p_id_postulacion         IN NUMBER   DEFAULT NULL,
+    p_id_indice              IN NUMBER   DEFAULT NULL
 ) IS
     l_usuario VARCHAR2(255);
     l_desde   DATE;
@@ -1350,7 +1410,7 @@ BEGIN
         id_facilitador, id_institucion, id_ciudad,
         fecha_desde, fecha_hasta, evaluado_por, id_area, id_evaluacion,
         escala, aspectos_positivos, aspectos_mejorar, observacion_admin,
-        ind_cerrado, id_postulacion
+        ind_cerrado, id_postulacion, id_indice
     ) VALUES (
         p_id_facilitador, p_id_institucion, p_id_ciudad,
         l_desde, l_hasta, TRIM(p_evaluado_por), p_id_area, p_id_evaluacion,
@@ -1365,7 +1425,9 @@ BEGIN
         -- El front tampoco ofrece el check en el alta, pero eso es la UI. El que
         -- manda es este literal: un POST a mano con "ind_cerrado":"S" en el JSON
         -- tiene que dar exactamente el mismo resultado.
-        'N', l_postulacion
+        -- El indice va tal cual: es una FK a un catalogo, asi que si el id no
+        -- existe la propia constraint lo rechaza. No hay nada que deducir.
+        'N', l_postulacion, p_id_indice
     ) RETURNING id_evaluacion_facilitador INTO l_id;
 
     COMMIT;
@@ -1405,7 +1467,8 @@ PROCEDURE actualizar(
     p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
     p_observacion_admin      IN CLOB     DEFAULT NULL,
     p_ind_cerrado            IN VARCHAR2 DEFAULT NULL,
-    p_id_postulacion         IN NUMBER   DEFAULT NULL
+    p_id_postulacion         IN NUMBER   DEFAULT NULL,
+    p_id_indice              IN NUMBER   DEFAULT NULL
 ) IS
     l_usuario VARCHAR2(255);
     l_desde   DATE;
@@ -1489,7 +1552,8 @@ BEGIN
            -- Se recalcula: si cambiaron el facilitador o la institucion, la
            -- postulacion anterior ya no corresponde. Resuelta arriba, fuera del
            -- UPDATE (PLS-00231).
-           id_postulacion         = l_postulacion
+           id_postulacion         = l_postulacion,
+           id_indice              = p_id_indice
      WHERE id_evaluacion_facilitador = p_id;
 
     IF SQL%ROWCOUNT = 0 THEN
@@ -1801,6 +1865,70 @@ BEGIN
 END lov_ciudades;
 
 ------------------------------------------------------------------------------
+-- Los manuales, sin repetir. Es el primer combo de la cascada Manual -> Indice.
+--
+-- INDICES_MANUALES no tiene tabla de manuales: MANUAL es un VARCHAR2(100) de la
+-- propia fila. El DISTINCT ES el catalogo — no hay otro lado de donde sacarlo.
+--
+-- Se devuelve el texto como `id` ademas de como `manual`: el front normaliza
+-- todos los combos a { id, texto } y necesita ALGO en id. Es el unico LOV cuyo
+-- identificador es texto, y por eso no entra en `lista()` como los demas.
+------------------------------------------------------------------------------
+PROCEDURE lov_manuales(p_patron IN VARCHAR2, p_tope IN PLS_INTEGER) IS
+BEGIN
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT DISTINCT manual
+          FROM indices_manuales
+         WHERE (p_patron IS NULL OR UPPER(manual) LIKE p_patron)
+         ORDER BY manual
+         FETCH FIRST p_tope ROWS ONLY
+    ) LOOP
+        APEX_JSON.OPEN_OBJECT;
+        APEX_JSON.WRITE('manual', r.manual);
+        APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+END lov_manuales;
+
+------------------------------------------------------------------------------
+-- Los indices de un manual. Segundo combo de la cascada.
+--
+-- p_manual filtra por el manual elegido. SIN el parametro devuelve los de todos
+-- los manuales, que es util para el buscador pero no para la cascada.
+--
+-- ORDER BY nro_indice: es el orden del manual impreso, que es como el evaluador
+-- lo tiene delante. Alfabetico por titulo no le serviria a nadie.
+------------------------------------------------------------------------------
+PROCEDURE lov_indices(
+    p_patron IN VARCHAR2,
+    p_manual IN VARCHAR2,
+    p_tope   IN PLS_INTEGER
+) IS
+BEGIN
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT id_indice, nro_indice, titulo, manual
+          FROM indices_manuales
+         WHERE (p_manual IS NULL OR manual = p_manual)
+           -- Busca por titulo O por numero: "3" tiene que encontrar el indice 3.
+           AND (p_patron IS NULL
+                OR UPPER(titulo) LIKE p_patron
+                OR TO_CHAR(nro_indice) LIKE p_patron)
+         ORDER BY manual, nro_indice
+         FETCH FIRST p_tope ROWS ONLY
+    ) LOOP
+        APEX_JSON.OPEN_OBJECT;
+        APEX_JSON.WRITE('id_indice',  r.id_indice);
+        APEX_JSON.WRITE('nro_indice', r.nro_indice);
+        APEX_JSON.WRITE('titulo',     r.titulo);
+        APEX_JSON.WRITE('manual',     r.manual);
+        APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+END lov_indices;
+
+------------------------------------------------------------------------------
 -- Las postulaciones de UN facilitador en UNA institucion. Alimenta las tarjetas
 -- que el front muestra despues de elegir la institucion, para que el evaluador
 -- diga CUAL de todas esta evaluando.
@@ -1837,12 +1965,51 @@ PROCEDURE lov_postulaciones(
     p_id_facilitador IN NUMBER,
     p_id_institucion IN NUMBER,
     p_anio           IN VARCHAR2,
+    p_dia            IN VARCHAR2,
     p_tope           IN PLS_INTEGER
 ) IS
     -- NULL = no filtrar por año. Se resuelve UNA vez y no dentro del SELECT:
     -- adentro, la funcion se evaluaria por fila candidata.
     l_anio VARCHAR2(4) := anio_a_filtrar(p_anio);
+
+    ----------------------------------------------------------------------------
+    -- EL DIA DE LA SEMANA. Por defecto, HOY.
+    --
+    -- Una evaluacion se carga el dia que se observa la clase, asi que lo util es
+    -- ver solo las postulaciones que ese facilitador tiene ESE dia. Un
+    -- facilitador con clases lunes, miercoles y viernes mostraba tres tarjetas
+    -- donde solo una podia ser la correcta.
+    --
+    -- 1=lunes .. 5=viernes, NULL = no filtrar. Se calcula con TRUNC(fecha)-TRUNC(
+    -- fecha,'IW'), que da los dias transcurridos desde el lunes de esa semana:
+    -- es INDEPENDIENTE de NLS_TERRITORY, a diferencia de TO_CHAR(...,'D'), que
+    -- arranca en domingo o en lunes segun la configuracion de la sesion. Ese
+    -- detalle es el que haria que el filtro corriera un dia en otra instancia.
+    --
+    -- ?dia=TODOS lo apaga; ?dia=1..5 fuerza uno (para probar sin esperar al
+    -- miercoles).
+    ----------------------------------------------------------------------------
+    l_dia PLS_INTEGER;
 BEGIN
+    IF UPPER(TRIM(p_dia)) = 'TODOS' THEN
+        l_dia := NULL;
+    ELSIF TRIM(p_dia) IS NOT NULL THEN
+        -- Si viene basura, el filtro se apaga en vez de tirar 500.
+        BEGIN
+            l_dia := TO_NUMBER(TRIM(p_dia));
+        EXCEPTION
+            WHEN VALUE_ERROR THEN l_dia := NULL;
+        END;
+    ELSE
+        l_dia := TRUNC(SYSDATE) - TRUNC(SYSDATE, 'IW') + 1;
+    END IF;
+
+    -- SABADO (6) y DOMINGO (7): no hay clases, y filtrar dejaria la lista vacia
+    -- sin explicacion. Se muestran todas — es mejor que el evaluador elija entre
+    -- varias a que crea que el facilitador no tiene ninguna.
+    IF l_dia NOT BETWEEN 1 AND 5 THEN
+        l_dia := NULL;
+    END IF;
     APEX_JSON.OPEN_ARRAY('data');
     FOR r IN (
         SELECT p.id_postulacion,
@@ -1883,7 +2050,41 @@ BEGIN
                COALESCE(d.nombre_apellido, p.nombre_profesor) AS docente,
                p.telefono,
                e.descripcion AS enfasis,
-               m.descripcion AS materia
+               m.descripcion AS materia,
+               -- HORARIO. Son cinco pares de columnas (LUNES_DESDE/HASTA ..
+               -- VIERNES_DESDE/HASTA), una por dia de clase.
+               --
+               -- SOLO GUARDAN LA HORA: el trigger TRG_POSTULACIONES_SET_FEC_HORA
+               -- reescribe la fecha al 01/01/2025 en cada INSERT y UPDATE, asi que
+               -- la parte de fecha no significa nada. Por eso sale con TO_CHAR
+               -- 'HH24:MI' y no como fecha: mandar el DATE crudo haria que el front
+               -- mostrara un 01/01/2025 que confunde.
+               --
+               -- Se arma el texto ACA y no en el front porque son diez columnas: el
+               -- JSON llevaria diez campos que el front tendria que volver a juntar,
+               -- repitiendo esta misma logica.
+               TRIM(
+                 CASE WHEN p.lunes_desde IS NOT NULL THEN
+                   'Lun ' || TO_CHAR(p.lunes_desde, 'HH24:MI')
+                   || NVL2(p.lunes_hasta, '-' || TO_CHAR(p.lunes_hasta, 'HH24:MI'), '') || ' '
+                 END
+                 || CASE WHEN p.martes_desde IS NOT NULL THEN
+                   'Mar ' || TO_CHAR(p.martes_desde, 'HH24:MI')
+                   || NVL2(p.martes_hasta, '-' || TO_CHAR(p.martes_hasta, 'HH24:MI'), '') || ' '
+                 END
+                 || CASE WHEN p.miercoles_desde IS NOT NULL THEN
+                   'Mie ' || TO_CHAR(p.miercoles_desde, 'HH24:MI')
+                   || NVL2(p.miercoles_hasta, '-' || TO_CHAR(p.miercoles_hasta, 'HH24:MI'), '') || ' '
+                 END
+                 || CASE WHEN p.jueves_desde IS NOT NULL THEN
+                   'Jue ' || TO_CHAR(p.jueves_desde, 'HH24:MI')
+                   || NVL2(p.jueves_hasta, '-' || TO_CHAR(p.jueves_hasta, 'HH24:MI'), '') || ' '
+                 END
+                 || CASE WHEN p.viernes_desde IS NOT NULL THEN
+                   'Vie ' || TO_CHAR(p.viernes_desde, 'HH24:MI')
+                   || NVL2(p.viernes_hasta, '-' || TO_CHAR(p.viernes_hasta, 'HH24:MI'), '') || ' '
+                 END
+               ) AS horario
           FROM postulaciones p
           -- Los tres LEFT y no INNER: las tres FK son NULLABLE, y una
           -- postulacion sin enfasis cargado tiene que aparecer igual.
@@ -1893,6 +2094,14 @@ BEGIN
          WHERE p.id_facilitador = p_id_facilitador
            AND p.id_institucion = p_id_institucion
            AND (l_anio IS NULL OR p.anio = l_anio)
+           -- El dia de la semana. Se mira _DESDE y no _HASTA: una postulacion
+           -- con horario cargado siempre tiene el desde, y el hasta puede faltar.
+           AND (l_dia IS NULL
+                OR (l_dia = 1 AND p.lunes_desde     IS NOT NULL)
+                OR (l_dia = 2 AND p.martes_desde    IS NOT NULL)
+                OR (l_dia = 3 AND p.miercoles_desde IS NOT NULL)
+                OR (l_dia = 4 AND p.jueves_desde    IS NOT NULL)
+                OR (l_dia = 5 AND p.viernes_desde   IS NOT NULL))
          -- Por grado y seccion: es como el evaluador las tiene en la cabeza.
          -- NULLS LAST deja al final las que no tienen grado cargado.
          ORDER BY p.turno, p.seccion NULLS LAST, p.id_postulacion
@@ -1912,6 +2121,8 @@ BEGIN
         APEX_JSON.WRITE('telefono',       r.telefono);
         APEX_JSON.WRITE('enfasis',        r.enfasis);
         APEX_JSON.WRITE('materia',        r.materia);
+        -- "Lun 07:30-09:00 Mie 10:00-11:30", o NULL si no cargaron horario.
+        APEX_JSON.WRITE('horario',        r.horario);
         APEX_JSON.WRITE('observacion',    r.observacion);
         APEX_JSON.WRITE('estado',         r.estado);
         APEX_JSON.WRITE('anio',           r.anio);
@@ -1930,6 +2141,8 @@ PROCEDURE lista(
     p_incluir_id     IN NUMBER   DEFAULT NULL,
     p_id_facilitador IN NUMBER   DEFAULT NULL,
     p_id_institucion IN NUMBER   DEFAULT NULL,
+    p_dia            IN VARCHAR2 DEFAULT NULL,
+    p_manual         IN VARCHAR2 DEFAULT NULL,
     p_anio           IN VARCHAR2 DEFAULT NULL,
     p_limite         IN NUMBER   DEFAULT NULL
 ) IS
@@ -1948,11 +2161,11 @@ BEGIN
     -- vacio se colaria hasta el CASE de abajo para morir con CASE_NOT_FOUND (500).
     IF l_clave IS NULL
        OR l_clave NOT IN ('facilitadores', 'instituciones', 'areas', 'evaluaciones',
-                          'ciudades', 'postulaciones')
+                          'ciudades', 'postulaciones', 'manuales', 'indices')
     THEN
         p_error(400, 'Bad Request',
                 'Lista desconocida. Validas: facilitadores, instituciones, '
-                || 'areas, evaluaciones, ciudades, postulaciones');
+                || 'areas, evaluaciones, ciudades, postulaciones, manuales, indices');
         RETURN;
     END IF;
 
@@ -1990,7 +2203,9 @@ BEGIN
       WHEN 'postulaciones' THEN
         -- Sin l_patron: no se busca por texto. Son pocas por facilitador e
         -- institucion, y el front las muestra todas como tarjetas.
-        lov_postulaciones(p_id_facilitador, p_id_institucion, p_anio, l_tope);
+        lov_postulaciones(p_id_facilitador, p_id_institucion, p_anio, p_dia, l_tope);
+      WHEN 'manuales'      THEN lov_manuales(l_patron, l_tope);
+      WHEN 'indices'       THEN lov_indices(l_patron, p_manual, l_tope);
     END CASE;
 
     APEX_JSON.CLOSE_OBJECT;
@@ -2117,7 +2332,8 @@ BEGIN
         p_observacion_admin      => :observacion_admin,
         -- La postulacion elegida en las tarjetas del front. Opcional: sin ella
         -- el paquete la deduce como siempre.
-        p_id_postulacion         => TO_NUMBER(:id_postulacion));
+        p_id_postulacion         => TO_NUMBER(:id_postulacion),
+        p_id_indice              => TO_NUMBER(:id_indice));
 END;
 ~');
 
@@ -2208,7 +2424,8 @@ BEGIN
         p_aspectos_mejorar       => :aspectos_mejorar,
         p_observacion_admin      => :observacion_admin,
         p_ind_cerrado            => :ind_cerrado,
-        p_id_postulacion         => TO_NUMBER(:id_postulacion));
+        p_id_postulacion         => TO_NUMBER(:id_postulacion),
+        p_id_indice              => TO_NUMBER(:id_indice));
 END;
 ~');
 
@@ -2301,6 +2518,8 @@ BEGIN
         p_incluir_id     => TO_NUMBER(:incluir_id),
         p_id_facilitador => TO_NUMBER(:id_facilitador),
         p_id_institucion => TO_NUMBER(:id_institucion),
+        p_dia            => :dia,
+        p_manual         => :manual,
         p_anio           => :anio,
         p_limite         => TO_NUMBER(:limite));
 END;

@@ -99,6 +99,9 @@ function cabeceraInicial(e?: EvaluacionAgrupada): Cabecera {
     // Al editar se recupera la que quedó guardada —sea elegida a mano o deducida
     // por el backend—, así que la tarjeta correspondiente aparece marcada.
     id_postulacion: e?.id_postulacion ?? null,
+    id_indice: e?.id_indice ?? null,
+    manual: e?.manual ?? null,
+    indice_titulo: e?.indice_titulo ?? null,
   };
 }
 

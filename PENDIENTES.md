@@ -303,3 +303,29 @@ SELECT COUNT(*) FROM evaluaciones_facilitadores WHERE id_postulacion IS NULL;
 Ojo si se toca: `f_postulacion_final()` **valida que la postulación pertenezca** al
 facilitador y la institución que se están guardando, y si no, la ignora y vuelve a
 deducir. Un id de otra institución no rompe el guardado, simplemente no se usa.
+
+### 20. `INDICES_MANUALES` no tiene tabla de manuales
+
+`MANUAL` es un `VARCHAR2(100)` de la propia fila, así que el combo de manuales sale
+de un `SELECT DISTINCT manual` — **ese distinct ES el catálogo**, no hay otro lado de
+dónde sacarlo.
+
+Consecuencias, ninguna bloqueante hoy:
+
+- **Un typo crea un manual nuevo.** "Manual 1" y "manual 1 " son dos entradas
+  distintas en el combo, y nada lo impide.
+- No hay orden propio: se listan alfabéticamente. Si los manuales tuvieran un orden
+  editorial distinto del alfabético, no se puede expresar.
+
+La salida es una tabla `MANUALES` con su FK desde `INDICES_MANUALES`. Mientras tanto
+el `DISTINCT` alcanza, porque esas filas las carga el equipo y no el usuario final.
+
+### 21. `ID_INDICE` se guarda por fila, no por evaluación
+
+Es el mismo problema del punto 4 (la tabla sin cabecera): el índice es un dato de la
+evaluación, pero como cada detalle es una fila, se repite en todas. `agrupar()` toma
+el de la primera fila que lo tenga.
+
+En la práctica no molesta —el formulario lo manda igual en todas—, pero una carga
+hecha desde APEX sobre una sola fila del grupo dejaría el resto sin él. Se resuelve
+con la columna de cabecera del punto 4, no antes.

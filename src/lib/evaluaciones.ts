@@ -121,6 +121,14 @@ export type Evaluacion = {
    * candidatas, que es el caso que las tarjetas vinieron a resolver.
    */
   id_postulacion: number | null;
+  /**
+   * El índice del manual que se dio en la clase evaluada. Lo elige el evaluador:
+   * ver el tipo `Indice`. Los tres de abajo vienen del join, solo para mostrar.
+   */
+  id_indice: number | null;
+  manual: string | null;
+  nro_indice: number | null;
+  indice_titulo: string | null;
   /** Solo lectura: lo pone el trigger de bitácora. */
   id_auditoria: number | null;
 };
@@ -147,6 +155,19 @@ export type Cabecera = {
    * se está evaluando. `null` = ninguna elegida, y ahí el backend la deduce.
    */
   id_postulacion: number | null;
+  /** El índice del manual dado en la clase. Opcional. */
+  id_indice: number | null;
+  /**
+   * El manual del índice elegido. NO se guarda —se deriva de `id_indice`— pero
+   * vive en la cabecera porque el combo de manual necesita estado propio: sin
+   * él, al editar no habría con qué precargar el primer combo de la cascada.
+   */
+  manual: string | null;
+  /**
+   * El título del índice guardado. Tampoco se guarda —viene del join— pero deja
+   * que el campo muestre el índice elegido SIN esperar a que cargue el catálogo.
+   */
+  indice_titulo: string | null;
 };
 
 /** Un ítem evaluado. `id` es la fila en Oracle; null = todavía no se guardó. */
@@ -195,6 +216,8 @@ export type EvaluacionInput = {
    * como hacía antes de que existieran las tarjetas.
    */
   id_postulacion: number | null;
+  /** El índice del manual. Opcional; es FK, así que un id inválido lo corta Oracle. */
+  id_indice: number | null;
 };
 
 export type Filtros = {
@@ -404,6 +427,14 @@ export type Postulacion = {
   telefono: string | null;
   enfasis: string | null;
   materia: string | null;
+  /**
+   * Los días y horas de clase, ya armados: "Lun 07:30-09:00 Mie 10:00-11:30".
+   *
+   * Sale de las diez columnas LUNES_DESDE..VIERNES_HASTA, que **solo guardan la
+   * hora** —un trigger les fija la fecha al 01/01/2025—. El texto lo arma el
+   * backend: traer las diez y juntarlas acá sería repetir esa lógica en el front.
+   */
+  horario: string | null;
   observacion: string | null;
   estado: string | null;
   anio: string | null;
@@ -440,8 +471,21 @@ export function nombreTurno(turno: number | null): string | null {
 export async function listarPostulaciones(
   id_facilitador: number,
   id_institucion: number,
+  /**
+   * Día de la semana. **Por defecto, HOY**: una evaluación se carga el día que se
+   * observa la clase, así que las de otros días son ruido.
+   *
+   * El cálculo lo hace el BACKEND con la fecha del servidor, no el navegador: la
+   * fecha del teléfono puede estar corrida y el filtro daría otro día.
+   *
+   * `"TODOS"` lo apaga — es lo que usa el botón "Ver todas". Sábado y domingo el
+   * backend también las muestra todas, porque esos días no hay clases.
+   */
+  dia?: "TODOS",
 ): Promise<Postulacion[]> {
-  const r = (await authFetch(`listas/postulaciones${qs({ id_facilitador, id_institucion })}`)) as {
+  const r = (await authFetch(
+    `listas/postulaciones${qs({ id_facilitador, id_institucion, dia })}`,
+  )) as {
     data?: Record<string, unknown>[];
   };
 
@@ -456,10 +500,66 @@ export async function listarPostulaciones(
     telefono: (row.telefono as string) ?? null,
     enfasis: (row.enfasis as string) ?? null,
     materia: (row.materia as string) ?? null,
+    horario: (row.horario as string) ?? null,
     observacion: (row.observacion as string) ?? null,
     estado: (row.estado as string) ?? null,
     anio: (row.anio as string) ?? null,
   }));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Índices de manuales                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Una entrada del catálogo `INDICES_MANUALES`: qué contenido se dio en la clase.
+ *
+ * **No sale de la postulación.** Esa tabla no tiene relación con `POSTULACIONES`
+ * —ni FK en un sentido ni en el otro—, así que el índice no se deduce de la
+ * clase: lo elige el evaluador. Por eso `ID_INDICE` vive en
+ * `EVALUACIONES_FACILITADORES` y no en la postulación.
+ */
+export type Indice = {
+  id_indice: number;
+  nro_indice: number;
+  titulo: string;
+  manual: string;
+};
+
+/**
+ * Los manuales, sin repetir.
+ *
+ * `MANUAL` es un `VARCHAR2` de la propia fila de `INDICES_MANUALES`: **no hay
+ * tabla de manuales**. El `DISTINCT` del backend ES el catálogo, y por eso esto
+ * devuelve strings y no ids.
+ */
+export async function listarManuales(): Promise<string[]> {
+  const r = (await authFetch("listas/manuales")) as { data?: Record<string, unknown>[] };
+  return (r.data ?? []).map((row) => String(row.manual ?? "")).filter(Boolean);
+}
+
+/**
+ * Los índices de un manual, en el orden del manual impreso (`NRO_INDICE`).
+ *
+ * Sin `manual` devuelve los de todos, que sirve para buscar pero no para la
+ * cascada: quien la use debería pasar siempre el manual elegido.
+ */
+export async function listarIndices(manual?: string | null): Promise<Indice[]> {
+  const r = (await authFetch(`listas/indices${qs({ manual: manual ?? undefined })}`)) as {
+    data?: Record<string, unknown>[];
+  };
+
+  return (r.data ?? []).map((row) => ({
+    id_indice: Number(row.id_indice),
+    nro_indice: Number(row.nro_indice),
+    titulo: String(row.titulo ?? ""),
+    manual: String(row.manual ?? ""),
+  }));
+}
+
+/** "3. Los valores en la familia" — como se lee en el manual. */
+export function textoIndice(i: Pick<Indice, "nro_indice" | "titulo">) {
+  return `${i.nro_indice}. ${i.titulo}`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -632,6 +732,12 @@ export function agrupar(filas: Evaluacion[]): EvaluacionAgrupada[] {
         observacion_admin: f.observacion_admin ?? "",
         cerrada: f.ind_cerrado === "S",
         id_postulacion: f.id_postulacion,
+        id_indice: f.id_indice,
+        manual: f.manual,
+        indice_titulo:
+          f.nro_indice != null && f.indice_titulo
+            ? `${f.nro_indice}. ${f.indice_titulo}`
+            : f.indice_titulo,
         detalles: [],
         marcadas: 0,
         calificacion: null,
@@ -762,6 +868,9 @@ function filaInput(cab: Cabecera, d: Detalle | null): EvaluacionInput {
     // Va en TODAS las filas del grupo, igual que el resto de la cabecera: una
     // evaluación es de una postulación, no cada detalle de la suya.
     id_postulacion: cab.id_postulacion,
+    // `manual` NO viaja: se deriva del índice con un join. Guardarlo sería
+    // duplicar un dato que ya está en INDICES_MANUALES.
+    id_indice: cab.id_indice,
   };
 }
 
