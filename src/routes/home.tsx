@@ -1,165 +1,146 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { format, parseISO } from "date-fns";
-import { es } from "date-fns/locale";
-import { ArrowRight, ClipboardList, Plus, Star } from "lucide-react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
-import { CalificacionDisplay } from "@/components/star-rating";
-import { agrupar, keys, LIMITE_DETALLES, listarEvaluaciones } from "@/lib/evaluaciones";
+import { PuntualidadChart } from "@/components/puntualidad-chart";
+import { PuntualidadModal } from "@/components/puntualidad-modal";
+import {
+  keysIntervenciones,
+  MESES,
+  resumenPuntualidad,
+  type ResumenFacilitador,
+} from "@/lib/intervenciones";
 
 export const Route = createFileRoute("/home")({
   head: () => ({
     meta: [
       { title: "Inicio — Juventud con Valores" },
-      { name: "description", content: "Resumen de evaluaciones de facilitadores." },
+      { name: "description", content: "Puntualidad de los facilitadores." },
     ],
   }),
   component: HomePage,
 });
 
-const fecha = (iso: string) => {
-  try {
-    return format(parseISO(iso), "d MMM", { locale: es });
-  } catch {
-    return iso;
-  }
-};
-
+/**
+ * El inicio: **el tablero de puntualidad y nada más.**
+ *
+ * Hasta el 05/08/2026 esta pantalla tenía además el acceso a "Nueva evaluación",
+ * dos baldosas con contadores y la lista de las últimas evaluaciones. Se sacaron
+ * a pedido: todo eso vive en la pantalla de Evaluaciones, que es donde se va a
+ * buscarlo, y acá solo duplicaba accesos.
+ *
+ * Al irse esa parte, **se fue también la consulta de evaluaciones**: el inicio ya
+ * no la pide. Es una llamada menos en cada arranque de la app.
+ */
 function HomePage() {
-  // Una sola consulta alimenta todo el resumen. `limite` alto porque el backend
-  // pagina FILAS y una evaluación son varias: con un límite chico los grupos
-  // llegarían cortados y los números de abajo saldrían mal.
-  const filtros = { limite: LIMITE_DETALLES };
-  const { data, isLoading, isError } = useQuery({
-    queryKey: keys.evaluaciones(filtros),
-    queryFn: () => listarEvaluaciones(filtros),
-  });
-
-  const filas = data?.data ?? [];
-  const grupos = agrupar(filas);
-  const marcados = grupos.reduce((n, g) => n + g.marcadas, 0);
-  const items = grupos.reduce((n, g) => n + g.detalles.length, 0);
-
   return (
     <AppShell>
       <div className="px-5 pt-5">
-        {/* Acción principal: es lo que el usuario viene a hacer */}
-        <Link
-          to="/evaluaciones/nueva"
-          className="tap relative flex items-center gap-4 overflow-hidden rounded-3xl bg-hero-gradient p-5 text-on-brand shadow-elegant"
-        >
-          <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_20%_20%,white_1px,transparent_1px)] [background-size:20px_20px]" />
-          <div className="relative grid size-12 shrink-0 place-items-center rounded-2xl bg-white/20">
-            <Plus className="size-6" />
-          </div>
-          <div className="relative min-w-0 flex-1">
-            <p className="font-display text-lg leading-tight font-bold">Nueva evaluación</p>
-            <p className="text-[13px] text-on-brand/80">Cargar la de un facilitador</p>
-          </div>
-          <ArrowRight className="relative size-5 shrink-0" />
-        </Link>
-
-        {/* Métricas */}
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <Tile
-            icon={<ClipboardList className="size-4" />}
-            label="Evaluaciones"
-            valor={isLoading ? null : isError ? "—" : String(grupos.length)}
-            hint={isError ? "sin datos" : `${data?.total ?? 0} ítems cargados`}
-          />
-          {/*
-            Ya no hay promedio de estrellas: la estrella es binaria y promediar
-            unos y nulos no significa nada. Lo que se muestra es cuántos ítems
-            están marcados sobre el total, que es de donde sale la calificación.
-          */}
-          <Tile
-            icon={<Star className="size-4" />}
-            label="Marcados"
-            valor={isLoading ? null : isError || !items ? "—" : `${marcados}/${items}`}
-            hint={items ? `en ${grupos.length} evaluaciones` : "sin datos"}
-          />
-        </div>
-
-        {/* Últimas */}
-        <div className="mt-7 mb-3 flex items-end justify-between gap-3">
-          <h2 className="font-display text-xl font-bold">Últimas</h2>
-          <Link to="/evaluaciones" className="text-sm font-semibold text-primary">
-            Ver todas
-          </Link>
-        </div>
-
-        {isLoading ? (
-          <div className="space-y-3">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-16 animate-pulse rounded-2xl bg-muted" />
-            ))}
-          </div>
-        ) : isError ? (
-          <p className="rounded-2xl bg-destructive/10 p-4 text-sm text-destructive">
-            No se pudo cargar el resumen. Revisá tu conexión.
-          </p>
-        ) : grupos.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border p-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              Todavía no hay evaluaciones cargadas. Empezá por la primera.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {grupos.slice(0, 4).map((g) => (
-              <Link
-                key={g.clave}
-                to="/evaluaciones/$id"
-                params={{ id: String(g.id) }}
-                className="tap flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3.5 shadow-soft"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-semibold">
-                    {g.facilitador ?? `Facilitador #${g.id_facilitador}`}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {g.institucion ?? "—"} · {fecha(g.fecha_desde)}
-                  </p>
-                </div>
-                <CalificacionDisplay
-                  marcadas={g.marcadas}
-                  total={g.detalles.length}
-                  className="shrink-0"
-                />
-              </Link>
-            ))}
-          </div>
-        )}
+        <Puntualidad />
       </div>
     </AppShell>
   );
 }
 
-function Tile({
-  icon,
-  label,
-  valor,
-  hint,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  /** null mientras carga: la baldosa mantiene su alto y no salta el layout. */
-  valor: string | null;
-  hint: string;
-}) {
+/**
+ * Atraso promedio de cada facilitador en el mes, en barras.
+ *
+ * ── ARRANCA EN EL MES Y AÑO ACTUALES ─────────────────────────────────────────
+ *
+ * Es lo que se quiere ver al abrir la app. Los dos selectores están para mirar
+ * atrás, no para tener que elegir antes de ver nada.
+ *
+ * El mes se manda como NÚMERO. La vista de Oracle lo guarda como texto en
+ * español ('Agosto'), pero mandar el nombre desde el navegador obligaría a que
+ * el idioma y la capitalización del cliente coincidan con los de la base — el
+ * backend lo traduce con una tabla fija. Ver `intervenciones.sql`.
+ *
+ * ── SE OCULTA ENTERA SI NO HAY DATOS ─────────────────────────────────────────
+ *
+ * Un gráfico vacío con dos selectores ocupa media pantalla para no decir nada.
+ * Si el mes no tiene marcaciones, se muestra una línea de texto y se sale.
+ */
+function Puntualidad() {
+  const ahora = new Date();
+  const [anio, setAnio] = useState(String(ahora.getFullYear()));
+  const [mes, setMes] = useState(ahora.getMonth() + 1);
+  // Qué barra se tocó. `null` = modal cerrado.
+  const [elegido, setElegido] = useState<ResumenFacilitador | null>(null);
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: keysIntervenciones.resumen(anio, mes),
+    queryFn: () => resumenPuntualidad(anio, mes),
+  });
+
+  // Los últimos cinco años, del actual hacia atrás: no hay tabla de años para
+  // este módulo y pedirla sería una consulta más para llenar un combo.
+  const anios = Array.from({ length: 5 }, (_, i) => String(ahora.getFullYear() - i));
+
   return (
-    <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
-      <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        {icon}
-        {label}
-      </p>
-      {valor === null ? (
-        <div className="mt-2 h-8 w-14 animate-pulse rounded-lg bg-muted" />
-      ) : (
-        <p className="font-display mt-1 text-3xl leading-none font-bold">{valor}</p>
-      )}
-      <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
-    </div>
+    <section className="mt-7">
+      <div className="mb-3 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-display text-xl font-bold">Puntualidad</h2>
+          <p className="text-xs text-muted-foreground">Atraso promedio por facilitador</p>
+        </div>
+      </div>
+
+      {/* Los filtros, en una fila arriba del gráfico. */}
+      <div className="mb-3 flex gap-2">
+        <select
+          value={mes}
+          onChange={(e) => setMes(Number(e.target.value))}
+          aria-label="Mes"
+          className="h-10 min-w-0 flex-1 rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
+        >
+          {MESES.map((m, i) => (
+            <option key={m} value={i + 1}>
+              {m}
+            </option>
+          ))}
+        </select>
+        <select
+          value={anio}
+          onChange={(e) => setAnio(e.target.value)}
+          aria-label="Año"
+          className="h-10 w-24 shrink-0 rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
+        >
+          {anios.map((a) => (
+            <option key={a} value={a}>
+              {a}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
+        {isLoading ? (
+          <div className="h-40 animate-pulse rounded-xl bg-muted" />
+        ) : isError ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            No se pudo cargar la puntualidad.
+          </p>
+        ) : !data?.length ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            No hay marcaciones registradas en {MESES[mes - 1]} de {anio}.
+          </p>
+        ) : (
+          <>
+            <PuntualidadChart datos={data} onSeleccionar={setElegido} />
+            <p className="mt-3 border-t border-border/60 pt-2.5 text-center text-[11px] text-muted-foreground">
+              Tocá una barra para ver el detalle de las marcaciones
+            </p>
+          </>
+        )}
+      </div>
+
+      <PuntualidadModal
+        facilitador={elegido}
+        anio={anio}
+        mes={mes}
+        onClose={() => setElegido(null)}
+      />
+    </section>
   );
 }

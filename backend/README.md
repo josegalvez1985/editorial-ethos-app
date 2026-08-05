@@ -5,6 +5,7 @@
 | **[`ethos_auth.sql`](ethos_auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
 | **[`ethos_anios_lectivos.sql`](ethos_anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` | 2º |
 | **[`ethos_evaluaciones_facilitadores.sql`](ethos_evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos y de la tarjeta de dirección (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
+| **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`) | 4º (independiente) |
 
 Los tres son idempotentes. El tercero **no** define el módulo ni habilita el esquema:
 agrega handlers al módulo `ethos` que creó el primero.
@@ -148,6 +149,38 @@ Dos cosas que conviene saber antes de tocarla:
 
 El teléfono sale de `INSTITUCIONES_DIRECTORES.NRO_TELEFONO` —el de esa persona en
 esa institución— y cae al de `DIRECTORES` cuando no está cargado.
+
+## Puntualidad (`intervenciones.sql`)
+
+Dos endpoints de **solo lectura** sobre `V_HISTORIAL_INTERVENCIONES`. No dependen del
+paquete de evaluaciones; solo de `ethos_auth.sql` (el módulo ORDS y el token).
+
+| Método | Ruta | Devuelve |
+| --- | --- | --- |
+| GET | `intervenciones/resumen` `?anio=&mes=` | Una fila por facilitador: `promedio`, `peor`, `marcaciones`, `con_atraso`. **Ya ordenado de mayor a menor.** |
+| GET | `intervenciones` `?id_facilitador=&anio=&mes=&limite=` | El detalle de las marcaciones de uno (`id_facilitador` obligatorio) |
+
+`anio` por defecto es el lectivo activo; `?anio=TODOS` lo apaga. `mes` va **como
+número 1–12** y el backend lo traduce al nombre en español que guarda la vista.
+
+### La cuenta del atraso
+
+`atraso = hora que marcó − hora en que empezaba la clase`, en minutos. Tres decisiones
+que están en el SQL y conviene no revertir sin pensarlas:
+
+- **Los adelantos cuentan como cero** (`GREATEST(x, 0)`). Se mide atraso, no puntualidad
+  neta: sin esto, quien un día llega 20 antes y otro 20 tarde promedia 0 y parece
+  puntual cuando en realidad es irregular.
+- **El promedio es por marcación, no por grado.** Una marcación que cubre 7mo y 8vo es
+  **una** llegada. La subconsulta `por_marcacion` agrupa antes de promediar, replicando
+  el `GROUP BY` de la consulta original; sin eso, quien da dos grados a la misma hora
+  pesaría el doble.
+- **Las filas sin hora se descartan, no valen 0.** Un 0 diría "llegó puntual", que el
+  dato no respalda. `AVG` de Oracle ignora los `NULL`, así que no ensucian el promedio.
+
+El mes se traduce con una tabla fija y **no** con `TO_CHAR(fecha,'MONTH')`: ese depende
+de `NLS_DATE_LANGUAGE` de la sesión, que en ORDS no está garantizado, y el día que la
+sesión viniera en inglés el filtro dejaría de matchear en silencio.
 
 ### El filtro por año lectivo
 

@@ -19,6 +19,13 @@ android {
         // Subir en CADA versión que se reparta: Android se niega a instalar
         // encima un versionCode menor o igual al ya instalado.
         //
+        // 1.9.1: mismo contenido nativo que la 1.9. Sube solo el versionCode
+        // porque el 12 ya se usó en un APK que llegó a compilarse con el modo
+        // offline (revertido en a5ce4f3: envenenaba la caché y dejaba el combo
+        // de facilitadores en blanco). Android rechaza instalar encima un
+        // versionCode igual, así que reusarlo dejaría trabado a quien tenga ese
+        // APK puesto.
+        //
         // 1.9: actualización OTA. A partir de acá, un cambio de la WEB ya no pide
         // un APK nuevo: viaja solo (ver OTA.md). Los cambios NATIVOS —plugins,
         // ícono, splash, permisos, este mismo archivo— siguen necesitándolo.
@@ -30,8 +37,8 @@ android {
         // 1.8: cambio de marca a "Juventud con Valores" — logo, íconos, splash,
         // paleta nueva con 11 temas de color, y evaluaciones que se pueden
         // guardar sin áreas.
-        versionCode 12
-        versionName "1.9"
+        versionCode 13
+        versionName "1.9.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
