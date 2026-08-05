@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 
 import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
+import { OfflineBanner } from "@/components/offline-banner";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { useSession } from "@/lib/session";
 
@@ -73,6 +74,13 @@ export function AppShell({
       */}
       <div className="flex min-h-dvh w-full min-w-0 flex-1 flex-col bg-background lg:bg-muted/40">
         <AppHeader />
+
+        {/*
+          El aviso de "sin conexión" y de lo que falta subir. Va acá, en el
+          shell, para que salga en todas las pantallas protegidas: el estado es
+          de la app entera, no de una vista. Se dibuja solo cuando corresponde.
+        */}
+        <OfflineBanner />
 
         {/*
           pb-28 solo en celular: es el hueco de la barra fija. En escritorio no
