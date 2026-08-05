@@ -3,6 +3,7 @@ import { Loader2, Lock, MapPin, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { DirectorCard } from "@/components/director-card";
+import { IndiceSiguienteCard } from "@/components/indice-siguiente-card";
 import { PickerModal } from "@/components/picker-modal";
 import { PostulacionPicker } from "@/components/postulacion-picker";
 import { CalificacionDisplay, StarToggle } from "@/components/star-rating";
@@ -319,6 +320,17 @@ export function EvaluacionForm({
     });
   }, []);
 
+  /*
+   * El índice deducido por `IndiceSiguienteCard`.
+   *
+   * Va por `useCallback` y no como flecha inline (`set` se recrea en cada
+   * render): del otro lado lo consume un `useEffect` que lo tiene por
+   * dependencia, y una identidad nueva por render lo haría correr en bucle.
+   */
+  const onIndiceResuelto = useCallback((idIndice: number | null) => {
+    setCab((prev) => (prev.id_indice === idIndice ? prev : { ...prev, id_indice: idIndice }));
+  }, []);
+
   const onToggle = useCallback((idEvaluacion: number, marcada: boolean) => {
     setDetalles((prev) =>
       prev.map((d) => (d.id_evaluacion === idEvaluacion ? { ...d, marcada } : d)),
@@ -502,6 +514,17 @@ export function EvaluacionForm({
             value={cab.id_postulacion}
             onChange={(id) => set("id_postulacion", id)}
           />
+
+          {/*
+            El índice que le toca a esa clase. Va DESPUÉS de la postulación
+            porque se calcula sobre ella: el manual avanza clase a clase, y dos
+            grados del mismo facilitador llevan avances distintos.
+
+            Es de solo lectura —no se elige, se deduce de INTERVENCIONES—, pero a
+            diferencia de la tarjeta de directores el valor SÍ se guarda: por eso
+            reporta hacia arriba con `onResolve` en vez de ser solo visual.
+          */}
+          <IndiceSiguienteCard idPostulacion={cab.id_postulacion} onResolve={onIndiceResuelto} />
         </Seccion>
 
         <Seccion titulo="Período">

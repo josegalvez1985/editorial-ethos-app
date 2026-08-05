@@ -90,6 +90,38 @@ Listas de valores (`limite` máx. 500, por defecto 100):
 | `manuales` | `buscar` | `manual` (el texto es el id: no hay tabla de manuales) |
 | `indices` | `manual`, `buscar` | `id_indice`, `nro_indice`, `titulo`, `manual` |
 | `directores` | **`id_institucion` obligatorio**, `estado` | `id_periodo`, `periodo`, `id_director`, `nombre_apellido`, `cargo`, `nivel`, `turno`, `estado`, `nro_telefono` |
+| `indice-siguiente` | **`id_postulacion` obligatorio** | **Un objeto, no un array**: `estado`, `manual`, `nro_ultimo`, `id_indice`, `nro_indice`, `titulo` |
+
+### `indice-siguiente`: el índice se deduce, no se elige
+
+Alimenta el campo de solo lectura del formulario. La regla, en dos pasos:
+
+1. El último índice con `SI_NO = 'Si'` en las `INTERVENCIONES` de **esa
+   postulación** — el último efectivamente desarrollado.
+2. El inmediato siguiente **dentro del mismo manual**.
+
+Tres decisiones que están en el código y conviene no revertir sin pensarlas:
+
+- **Solo cuentan los `'Si'`.** Un índice marcado `'No'` no se desarrolló (por eso
+  `TRG_INTERV_SINO_MOTIVO` le exige `MOTIVO_DESARROLLO`) y sigue pendiente:
+  contarlo lo saltearía para siempre. Es el mismo criterio de
+  `TRG_INTERV_FINALIZA_POST`, que exige `'Si'` para finalizar la postulación.
+- **Se calcula por postulación, no por facilitador.** El manual avanza clase a
+  clase; un facilitador con 7mo y 8vo en el mismo colegio lleva dos avances
+  distintos y cruzarlos haría que una clase empuje a la otra.
+- **El siguiente es "el menor mayor al último", no `último + 1`.** Los
+  `NRO_INDICE` pueden tener huecos.
+
+El campo `estado` distingue los tres casos:
+
+| `estado` | Qué significa |
+| --- | --- |
+| `PENDIENTE` | Hay siguiente índice; `id_indice`, `nro_indice` y `titulo` vienen cargados |
+| `SIN_INICIAR` | Esa postulación no tiene ninguna intervención con `'Si'`. **No se asume el índice 1**: sin intervenciones tampoco se sabe el manual |
+| `FINALIZADO` | El último desarrollado ya era el más alto del manual |
+
+El orden es por `NRO_INDICE` y **no** por `FECHA_HORA`: si las intervenciones se
+cargaron fuera de orden, lo que manda es el orden del manual, no el de tipeo.
 
 ### `directores`: informativa, y devuelve varias filas
 

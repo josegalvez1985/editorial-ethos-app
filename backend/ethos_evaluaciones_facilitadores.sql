@@ -36,6 +36,11 @@
 --            La direccion de UNA institucion (id_institucion OBLIGATORIO).
 --            Por defecto solo ESTADO='A'; ?estado=TODOS trae el historico.
 --            Es informativa: NO se guarda nada de esto en la evaluacion.
+--     GET    listas/indice-siguiente ?id_postulacion=   (OBLIGATORIO)
+--            El indice que le toca desarrollar a esa postulacion: el posterior
+--            al ultimo con SI_NO='Si' en INTERVENCIONES, dentro del mismo
+--            manual. Devuelve UN objeto con `estado` = PENDIENTE / SIN_INICIAR
+--            / FINALIZADO. Es el unico endpoint de listas/ que no da un array.
 --
 --   Todos protegidos: Authorization: Bearer <token> de auth/login.
 --
@@ -734,6 +739,9 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
       p_id_facilitador IN NUMBER   DEFAULT NULL,
       -- `postulaciones` y `directores`: la institucion. Obligatoria en las dos.
       p_id_institucion IN NUMBER   DEFAULT NULL,
+      -- Solo `indice-siguiente`: la postulacion sobre la que se calcula el
+      -- avance del manual. Obligatoria.
+      p_id_postulacion IN NUMBER   DEFAULT NULL,
       -- Solo `postulaciones`: dia de la semana (1=lunes..5=viernes). Sin el
       -- parametro usa HOY; 'TODOS' lo apaga.
       p_dia            IN VARCHAR2 DEFAULT NULL,
@@ -2001,6 +2009,104 @@ BEGIN
 END lov_indices;
 
 ------------------------------------------------------------------------------
+-- EL SIGUIENTE INDICE A DESARROLLAR en una postulacion.
+--
+-- Devuelve UN objeto (no un array): el indice que le toca a esa clase segun lo
+-- que el facilitador ya registro en INTERVENCIONES. El formulario de evaluacion
+-- lo muestra como campo de solo lectura — no se elige, se deduce.
+--
+-- LA REGLA, en dos pasos:
+--   1. Ultimo desarrollado = el NRO_INDICE mas alto con SI_NO = 'Si' en las
+--      INTERVENCIONES de ESA postulacion.
+--   2. El siguiente = el NRO_INDICE inmediato posterior DENTRO DEL MISMO MANUAL.
+--
+-- POR QUE SOLO 'Si':
+--   SI_NO = 'No' significa que el indice NO se desarrollo (y por eso el trigger
+--   TRG_INTERV_SINO_MOTIVO exige MOTIVO_DESARROLLO). Ese indice sigue PENDIENTE:
+--   contarlo como avance lo saltearia para siempre. Es el mismo criterio de
+--   TRG_INTERV_FINALIZA_POST, que exige 'Si' para dar la postulacion por
+--   terminada. UPPER() porque el dominio es VARCHAR2(50) libre y hay 'Si'/'SI'.
+--
+-- POR QUE POR POSTULACION Y NO POR FACILITADOR:
+--   El manual avanza clase a clase. Un facilitador con 7mo y 8vo en el mismo
+--   colegio lleva DOS avances distintos; cruzarlos haria que una clase empuje a
+--   la otra. ID_POSTULACION es el grado y seccion concretos, que es la unidad
+--   real. Coincide con TRG_INTERV_FINALIZA_POST, que tambien razona por
+--   postulacion.
+--
+-- EL MANUAL SALE DE LA ULTIMA INTERVENCION, no de un parametro: es el que esa
+-- clase viene desarrollando. Sin intervenciones previas no hay manual del cual
+-- deducir nada, y ahi devuelve el objeto vacio (ver abajo).
+--
+-- LOS TRES CASOS, que el front distingue por `estado`:
+--   'PENDIENTE'  hay siguiente indice: se devuelve con sus datos.
+--   'SIN_INICIAR' la postulacion no tiene ninguna intervencion con 'Si'. No se
+--                 asume el indice 1: el manual no se sabe. El front deja el
+--                 campo vacio en vez de proponer algo inventado.
+--   'FINALIZADO' el ultimo 'Si' ya era el indice mas alto del manual. No queda
+--                siguiente — es el estado que TRG_INTERV_FINALIZA_POST marca en
+--                POSTULACIONES.ESTADO.
+------------------------------------------------------------------------------
+PROCEDURE indice_siguiente(p_id_postulacion IN NUMBER) IS
+    l_manual      indices_manuales.manual%TYPE;
+    l_nro_ultimo  indices_manuales.nro_indice%TYPE;
+    l_id_indice   indices_manuales.id_indice%TYPE;
+    l_nro_indice  indices_manuales.nro_indice%TYPE;
+    l_titulo      indices_manuales.titulo%TYPE;
+    l_estado      VARCHAR2(20);
+BEGIN
+    -- 1) El ultimo indice EFECTIVAMENTE desarrollado en esta postulacion.
+    --    Se ordena por NRO_INDICE y no por FECHA_HORA: si se cargaron fuera de
+    --    orden, lo que manda es el orden del manual, no el de tipeo.
+    BEGIN
+        SELECT im.manual, im.nro_indice
+          INTO l_manual, l_nro_ultimo
+          FROM intervenciones i
+          JOIN indices_manuales im ON im.id_indice = i.id_indice
+         WHERE i.id_postulacion = p_id_postulacion
+           AND UPPER(TRIM(i.si_no)) = 'SI'
+         ORDER BY im.nro_indice DESC
+         FETCH FIRST 1 ROW ONLY;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            l_manual := NULL;
+    END;
+
+    IF l_manual IS NULL THEN
+        l_estado := 'SIN_INICIAR';
+    ELSE
+        -- 2) El inmediato siguiente DEL MISMO MANUAL. Se toma el menor mayor al
+        --    ultimo y no "ultimo + 1": los NRO_INDICE pueden tener huecos.
+        BEGIN
+            SELECT id_indice, nro_indice, titulo
+              INTO l_id_indice, l_nro_indice, l_titulo
+              FROM indices_manuales
+             WHERE manual = l_manual
+               AND nro_indice > l_nro_ultimo
+             ORDER BY nro_indice
+             FETCH FIRST 1 ROW ONLY;
+            l_estado := 'PENDIENTE';
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                l_estado := 'FINALIZADO';
+        END;
+    END IF;
+
+    -- Objeto y no array: es UN indice o ninguno. `data` igual para que el front
+    -- lea todas las respuestas del paquete de la misma forma.
+    APEX_JSON.OPEN_OBJECT('data');
+    APEX_JSON.WRITE('estado',          l_estado);
+    APEX_JSON.WRITE('manual',          l_manual);
+    -- El ultimo desarrollado viaja para que la UI pueda explicar de donde sale
+    -- la propuesta ("sigue al indice 7") en vez de mostrar un numero solo.
+    APEX_JSON.WRITE('nro_ultimo',      l_nro_ultimo);
+    APEX_JSON.WRITE('id_indice',       l_id_indice);
+    APEX_JSON.WRITE('nro_indice',      l_nro_indice);
+    APEX_JSON.WRITE('titulo',          l_titulo);
+    APEX_JSON.CLOSE_OBJECT;
+END indice_siguiente;
+
+------------------------------------------------------------------------------
 -- Las postulaciones de UN facilitador en UNA institucion. Alimenta las tarjetas
 -- que el front muestra despues de elegir la institucion, para que el evaluador
 -- diga CUAL de todas esta evaluando.
@@ -2213,6 +2319,7 @@ PROCEDURE lista(
     p_incluir_id     IN NUMBER   DEFAULT NULL,
     p_id_facilitador IN NUMBER   DEFAULT NULL,
     p_id_institucion IN NUMBER   DEFAULT NULL,
+    p_id_postulacion IN NUMBER   DEFAULT NULL,
     p_dia            IN VARCHAR2 DEFAULT NULL,
     p_manual         IN VARCHAR2 DEFAULT NULL,
     p_anio           IN VARCHAR2 DEFAULT NULL,
@@ -2234,12 +2341,19 @@ BEGIN
     IF l_clave IS NULL
        OR l_clave NOT IN ('facilitadores', 'instituciones', 'areas', 'evaluaciones',
                           'ciudades', 'postulaciones', 'manuales', 'indices',
-                          'directores')
+                          'directores', 'indice-siguiente')
     THEN
         p_error(400, 'Bad Request',
                 'Lista desconocida. Validas: facilitadores, instituciones, '
                 || 'areas, evaluaciones, ciudades, postulaciones, manuales, '
-                || 'indices, directores');
+                || 'indices, directores, indice-siguiente');
+        RETURN;
+    END IF;
+
+    -- `indice-siguiente` se calcula SOBRE una postulacion: sin ella no hay nada
+    -- que deducir. Es la unica "lista" que devuelve un objeto y no un array.
+    IF l_clave = 'indice-siguiente' AND p_id_postulacion IS NULL THEN
+        p_error(400, 'Bad Request', 'listas/indice-siguiente requiere id_postulacion');
         RETURN;
     END IF;
 
@@ -2291,6 +2405,9 @@ BEGIN
       WHEN 'directores'    THEN
         -- Sin l_patron: son una o dos por institucion y se muestran todas.
         lov_directores(p_id_institucion, p_estado, l_tope);
+      WHEN 'indice-siguiente' THEN
+        -- Sin tope: devuelve UN objeto, no una lista.
+        indice_siguiente(p_id_postulacion);
     END CASE;
 
     APEX_JSON.CLOSE_OBJECT;
@@ -2569,9 +2686,8 @@ END;
   --                        son OBLIGATORIOS: sin ellos responde 400)
   --   listas/directores    ?id_institucion=&estado=&limite=   (id_institucion
   --                        OBLIGATORIO: sin el responde 400)
-  --
-  -- Los binds ya estan todos declarados abajo: la lista nueva usa
-  -- :id_institucion y :estado, que existian para instituciones/postulaciones.
+  --   listas/indice-siguiente ?id_postulacion=   (OBLIGATORIO. Devuelve UN
+  --                        objeto, no un array)
   ----------------------------------------------------------------------------
   BEGIN
     ORDS.DEFINE_TEMPLATE(
@@ -2608,6 +2724,7 @@ BEGIN
         p_incluir_id     => TO_NUMBER(:incluir_id),
         p_id_facilitador => TO_NUMBER(:id_facilitador),
         p_id_institucion => TO_NUMBER(:id_institucion),
+        p_id_postulacion => TO_NUMBER(:id_postulacion),
         p_dia            => :dia,
         p_manual         => :manual,
         p_anio           => :anio,

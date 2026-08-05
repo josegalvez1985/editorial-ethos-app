@@ -508,6 +508,67 @@ export async function listarPostulaciones(
 }
 
 /* -------------------------------------------------------------------------- */
+/* El siguiente índice a desarrollar                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * El índice que le toca a una postulación, deducido de `INTERVENCIONES`.
+ *
+ * **No se elige: se calcula.** El formulario lo muestra de solo lectura, igual
+ * que la ciudad. La regla, en dos pasos:
+ *
+ * 1. El último índice con `SI_NO = 'Si'` en las intervenciones de esa
+ *    postulación — el último **efectivamente desarrollado**.
+ * 2. El inmediato siguiente dentro del mismo manual.
+ *
+ * Un índice marcado `'No'` no cuenta como avance: significa que no se dio (por
+ * eso lleva `MOTIVO_DESARROLLO`) y sigue pendiente, así que se vuelve a
+ * proponer. Es el mismo criterio de `TRG_INTERV_FINALIZA_POST`.
+ */
+export type IndiceSiguiente = {
+  /**
+   * - `PENDIENTE`: hay siguiente índice, los campos de abajo vienen cargados.
+   * - `SIN_INICIAR`: la postulación no tiene ninguna intervención con `'Si'`.
+   *   **No se asume el índice 1**: sin intervenciones no se sabe ni el manual.
+   * - `FINALIZADO`: el último desarrollado ya era el más alto del manual.
+   */
+  estado: "PENDIENTE" | "SIN_INICIAR" | "FINALIZADO";
+  /** El manual que esa clase viene desarrollando. `null` si `SIN_INICIAR`. */
+  manual: string | null;
+  /** El último desarrollado. Sirve para explicar de dónde sale la propuesta. */
+  nro_ultimo: number | null;
+  /** Los tres de abajo solo vienen con `PENDIENTE`. */
+  id_indice: number | null;
+  nro_indice: number | null;
+  titulo: string | null;
+};
+
+/**
+ * El siguiente índice de una postulación.
+ *
+ * Es el único endpoint de `listas/` que devuelve **un objeto y no un array**:
+ * es un índice o ninguno. `id_postulacion` es obligatorio en el backend (400 sin
+ * él), así que el `enabled` de la query es responsabilidad de quien la usa.
+ */
+export async function obtenerIndiceSiguiente(id_postulacion: number): Promise<IndiceSiguiente> {
+  const r = (await authFetch(`listas/indice-siguiente${qs({ id_postulacion })}`)) as {
+    data?: Record<string, unknown>;
+  };
+  const d = r.data ?? {};
+
+  return {
+    // Si el backend mandara algo inesperado, SIN_INICIAR es el caso inerte: la
+    // UI no propone nada en vez de mostrar un índice inventado.
+    estado: (d.estado as IndiceSiguiente["estado"]) ?? "SIN_INICIAR",
+    manual: (d.manual as string) ?? null,
+    nro_ultimo: d.nro_ultimo == null ? null : Number(d.nro_ultimo),
+    id_indice: d.id_indice == null ? null : Number(d.id_indice),
+    nro_indice: d.nro_indice == null ? null : Number(d.nro_indice),
+    titulo: (d.titulo as string) ?? null,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Directores                                                                 */
 /* -------------------------------------------------------------------------- */
 
