@@ -19,6 +19,17 @@ android {
         // Subir en CADA versión que se reparta: Android se niega a instalar
         // encima un versionCode menor o igual al ya instalado.
         //
+        // 1.9.2: el filtro de mes de los gráficos del inicio. El backend dejaba
+        // de filtrar en silencio porque la vista devuelve el nombre del mes en
+        // el idioma de la sesión —'August   ' desde ORDS, 'Agosto' desde SQL
+        // Workshop— y el paquete comparaba contra texto. Ahora sale de
+        // EXTRACT(MONTH FROM fecha_hora). Ver backend/intervenciones.sql.
+        //
+        // El arreglo de fondo es del BACKEND y no necesitaba APK. Este se
+        // reparte porque quien tenga la 1.8 o anterior NO TIENE EL PLUGIN OTA:
+        // sin él nada le llega solo, por más que se publique. Es el último
+        // reparto manual para esos teléfonos.
+        //
         // 1.9.1: mismo contenido nativo que la 1.9. Sube solo el versionCode
         // porque el 12 ya se usó en un APK que llegó a compilarse con el modo
         // offline (revertido en a5ce4f3: envenenaba la caché y dejaba el combo
@@ -37,8 +48,8 @@ android {
         // 1.8: cambio de marca a "Juventud con Valores" — logo, íconos, splash,
         // paleta nueva con 11 temas de color, y evaluaciones que se pueden
         // guardar sin áreas.
-        versionCode 13
-        versionName "1.9.1"
+        versionCode 14
+        versionName "1.9.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

@@ -336,7 +336,13 @@ function indexar(row: Record<string, unknown>) {
     .join(" ");
 }
 
-type LovNombre = "facilitadores" | "instituciones" | "areas" | "evaluaciones" | "ciudades";
+type LovNombre =
+  | "facilitadores"
+  | "instituciones"
+  | "areas"
+  | "evaluaciones"
+  | "ciudades"
+  | "indices";
 
 type LovParams = {
   buscar?: string;
@@ -348,6 +354,13 @@ type LovParams = {
   id_facilitador?: number | null;
   /** Solo `instituciones`: año lectivo de la postulación. */
   anio?: string;
+  /**
+   * Solo `indices`: los de ESE manual, en orden de `NRO_INDICE`.
+   *
+   * En la práctica es obligatorio: sin él vienen los de todos los manuales
+   * —más de cien— y no hay forma de saber cuál corresponde a la clase.
+   */
+  manual?: string;
   limite?: number;
 };
 
@@ -390,6 +403,18 @@ export async function lista(nombre: LovNombre, params: LovParams = {}): Promise<
         return { id: Number(row.id_evaluacion), texto: String(row.descripcion ?? ""), busqueda };
       case "ciudades":
         return { id: Number(row.id_ciudad), texto: String(row.nombre ?? ""), busqueda };
+      case "indices":
+        return {
+          id: Number(row.id_indice),
+          // El NÚMERO adelante: es como el facilitador tiene el manual impreso,
+          // y el título solo no lo ubica ("Los valores en la familia" podría ser
+          // el 3 de un manual y el 8 de otro).
+          texto: `${row.nro_indice ?? "?"}. ${row.titulo ?? ""}`,
+          // El manual como dato secundario: la lista ya viene filtrada por él,
+          // pero verlo confirma que se está eligiendo del manual correcto.
+          extra: row.manual ? String(row.manual) : undefined,
+          busqueda,
+        };
     }
   });
 }

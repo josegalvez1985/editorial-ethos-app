@@ -15,6 +15,9 @@ import { Route as HomeRouteImport } from './routes/home'
 import { Route as EvaluacionesIndexRouteImport } from './routes/evaluaciones.index'
 import { Route as EvaluacionesIdRouteImport } from './routes/evaluaciones.$id'
 import { Route as EvaluacionesNuevaRouteImport } from './routes/evaluaciones.nueva'
+import { Route as IntervencionesIndexRouteImport } from './routes/intervenciones.index'
+import { Route as IntervencionesIdRouteImport } from './routes/intervenciones.$id'
+import { Route as IntervencionesNuevaRouteImport } from './routes/intervenciones.nueva'
 import { Route as ApiOrdsSplatRouteImport } from './routes/api/ords.$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -47,6 +50,21 @@ const EvaluacionesNuevaRoute = EvaluacionesNuevaRouteImport.update({
   path: '/evaluaciones/nueva',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IntervencionesIndexRoute = IntervencionesIndexRouteImport.update({
+  id: '/intervenciones/',
+  path: '/intervenciones/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntervencionesIdRoute = IntervencionesIdRouteImport.update({
+  id: '/intervenciones/$id',
+  path: '/intervenciones/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntervencionesNuevaRoute = IntervencionesNuevaRouteImport.update({
+  id: '/intervenciones/nueva',
+  path: '/intervenciones/nueva',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiOrdsSplatRoute = ApiOrdsSplatRouteImport.update({
   id: '/api/ords/$',
   path: '/api/ords/$',
@@ -59,7 +77,10 @@ export interface FileRoutesByFullPath {
   '/home': typeof HomeRoute
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
+  '/intervenciones/$id': typeof IntervencionesIdRoute
+  '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
+  '/intervenciones/': typeof IntervencionesIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRoutesByTo {
@@ -68,7 +89,10 @@ export interface FileRoutesByTo {
   '/home': typeof HomeRoute
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
+  '/intervenciones/$id': typeof IntervencionesIdRoute
+  '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/evaluaciones': typeof EvaluacionesIndexRoute
+  '/intervenciones': typeof IntervencionesIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRoutesById {
@@ -78,7 +102,10 @@ export interface FileRoutesById {
   '/home': typeof HomeRoute
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
+  '/intervenciones/$id': typeof IntervencionesIdRoute
+  '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
+  '/intervenciones/': typeof IntervencionesIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRouteTypes {
@@ -89,7 +116,10 @@ export interface FileRouteTypes {
     | '/home'
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
+    | '/intervenciones/$id'
+    | '/intervenciones/nueva'
     | '/evaluaciones/'
+    | '/intervenciones/'
     | '/api/ords/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -98,7 +128,10 @@ export interface FileRouteTypes {
     | '/home'
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
+    | '/intervenciones/$id'
+    | '/intervenciones/nueva'
     | '/evaluaciones'
+    | '/intervenciones'
     | '/api/ords/$'
   id:
     | '__root__'
@@ -107,7 +140,10 @@ export interface FileRouteTypes {
     | '/home'
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
+    | '/intervenciones/$id'
+    | '/intervenciones/nueva'
     | '/evaluaciones/'
+    | '/intervenciones/'
     | '/api/ords/$'
   fileRoutesById: FileRoutesById
 }
@@ -117,7 +153,10 @@ export interface RootRouteChildren {
   HomeRoute: typeof HomeRoute
   EvaluacionesIdRoute: typeof EvaluacionesIdRoute
   EvaluacionesNuevaRoute: typeof EvaluacionesNuevaRoute
+  IntervencionesIdRoute: typeof IntervencionesIdRoute
+  IntervencionesNuevaRoute: typeof IntervencionesNuevaRoute
   EvaluacionesIndexRoute: typeof EvaluacionesIndexRoute
+  IntervencionesIndexRoute: typeof IntervencionesIndexRoute
   ApiOrdsSplatRoute: typeof ApiOrdsSplatRoute
 }
 
@@ -165,6 +204,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EvaluacionesNuevaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/intervenciones/': {
+      id: '/intervenciones/'
+      path: '/intervenciones'
+      fullPath: '/intervenciones/'
+      preLoaderRoute: typeof IntervencionesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/intervenciones/$id': {
+      id: '/intervenciones/$id'
+      path: '/intervenciones/$id'
+      fullPath: '/intervenciones/$id'
+      preLoaderRoute: typeof IntervencionesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/intervenciones/nueva': {
+      id: '/intervenciones/nueva'
+      path: '/intervenciones/nueva'
+      fullPath: '/intervenciones/nueva'
+      preLoaderRoute: typeof IntervencionesNuevaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ords/$': {
       id: '/api/ords/$'
       path: '/api/ords/$'
@@ -181,7 +241,10 @@ const rootRouteChildren: RootRouteChildren = {
   HomeRoute: HomeRoute,
   EvaluacionesIdRoute: EvaluacionesIdRoute,
   EvaluacionesNuevaRoute: EvaluacionesNuevaRoute,
+  IntervencionesIdRoute: IntervencionesIdRoute,
+  IntervencionesNuevaRoute: IntervencionesNuevaRoute,
   EvaluacionesIndexRoute: EvaluacionesIndexRoute,
+  IntervencionesIndexRoute: IntervencionesIndexRoute,
   ApiOrdsSplatRoute: ApiOrdsSplatRoute,
 }
 export const routeTree = rootRouteImport

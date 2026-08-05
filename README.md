@@ -135,24 +135,42 @@ No son bugs:
   con esa contraseña se rehace el login — nunca se revive la sesión.
 - La web pasa por proxy; la app va directo.
 
-## Pendientes
+## ¿Hay que repartir un APK nuevo? Casi nunca
 
-**Ver [`PENDIENTES.md`](PENDIENTES.md).** Ahí está todo lo que quedó abierto, con el motivo
-de cada cosa y qué costaría resolverla.
+**Una página nueva NO necesita un APK nuevo.** Desde la versión **1.9** el APK trae el plugin
+de actualización remota: `git push` a `main` y los teléfonos levantan el cambio solos. Esta es
+la tabla que responde la pregunta, y es la única que hay que consultar:
 
-Lo que bloquea hoy, **en este orden** (el segundo script no compila sin el primero):
+| Lo que cambiaste | ¿APK nuevo? |
+| --- | --- |
+| Una pantalla, una ruta, un ítem del menú | **No** — `git push` |
+| Un formulario, una validación, un texto, un color | **No** — `git push` |
+| Lógica de `src/lib/*.ts`, los gráficos, cómo se consulta la API | **No** — `git push` |
+| Un `.sql` de `backend/` | **No** — se corre en APEX y listo, ni pasa por el APK |
+| Instalar un plugin nativo de Capacitor | **Sí** |
+| Ícono, splash, nombre visible de la app | **Sí** |
+| Permisos del `AndroidManifest.xml` | **Sí** |
+| `minSdkVersion` / `targetSdkVersion` | **Sí** |
 
-1. **Correr [`backend/ethos_anios_lectivos.sql`](backend/ethos_anios_lectivos.sql).** Crea
-   `ANIOS_LECTIVOS` y `FN_ANIO_LECTIVO_ACTUAL()`, que el paquete de evaluaciones llama.
-2. **Cargar la fila del año lectivo activo** (`ESTADO = 'A'`). El script imprime el
-   `INSERT` de ejemplo si la tabla queda vacía.
-3. **Correr [`backend/ethos_evaluaciones_facilitadores.sql`](backend/ethos_evaluaciones_facilitadores.sql).**
-   El API de evaluaciones está caído hasta que se aplique.
+**Regla de bolsillo:** si tocaste `android/`, `capacitor.config.ts`, o instalaste un paquete con
+código nativo → APK. Si no → `git push`.
 
-El APK ya compila: `npm run apk` (ver [`APK.md`](APK.md)). **Antes de repartir uno nuevo**
-hay que subir `versionCode` en `android/app/build.gradle` — hoy va en `11` / `"1.8"`.
+### Las dos condiciones, y son las únicas
 
-**Pero repartir un APK ya casi nunca hace falta.** Desde el 05/08/2026 el contenido web del
-APK se actualiza solo: `git push` a `main` publica el sitio y un bundle que los teléfonos
-levantan al reabrir la app. Solo los cambios **nativos** (plugin, ícono, splash, permisos)
-piden un APK nuevo. Ver [`OTA.md`](OTA.md).
+1. **El teléfono tiene que tener la 1.9 o superior.** Las versiones anteriores **no traen el
+   plugin**, así que no se actualizan solas por más que se publique: hay que instalarles un APK
+   a mano **una vez**, y de ahí en adelante ya entran al circuito. Se mira en Ajustes →
+   Aplicaciones → Juventud con Valores.
+2. **Se ve al SEGUNDO arranque.** El bundle se descarga cuando abrís la app con internet y se
+   aplica **cuando pasa a segundo plano**. O sea: abrir → salir → volver a entrar. Si abrís una
+   sola vez y no ves el cambio, no está roto — falta el segundo arranque. Es deliberado:
+   aplicarlo en caliente recarga la WebView y le borraría lo tipeado a quien esté a mitad de una
+   evaluación.
+
+Todo el detalle —cómo se publica el bundle, qué pasa sin internet, cómo volver atrás una
+actualización mala— está en [`OTA.md`](OTA.md).
+
+### Cuando sí toca compilar
+
+`npm run apk` (ver [`APK.md`](APK.md)). **Antes hay que subir `versionCode`** en
+`android/app/build.gradle`, o Android se niega a instalar encima. Hoy va en `14` / `"1.9.2"`.

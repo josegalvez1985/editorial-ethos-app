@@ -15,7 +15,7 @@
  * y el costo de dejarla armada es una línea por grupo.
  */
 
-import { ClipboardList, Home, Settings, type LucideIcon } from "lucide-react";
+import { CalendarClock, ClipboardList, Home, Settings, type LucideIcon } from "lucide-react";
 
 export type ItemNav = {
   to: string;
@@ -56,6 +56,12 @@ export const MENU: GrupoNav[] = [
         label: "Evaluaciones",
         icon: ClipboardList,
         descripcion: "Evaluación de facilitadores",
+      },
+      {
+        to: "/intervenciones",
+        label: "Intervenciones",
+        icon: CalendarClock,
+        descripcion: "Carga manual de intervenciones",
       },
     ],
   },

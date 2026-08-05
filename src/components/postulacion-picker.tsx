@@ -142,6 +142,7 @@ export function PostulacionPicker({
   idInstitucion,
   value,
   onChange,
+  todosPorDefecto = false,
 }: {
   idFacilitador: number | null;
   idInstitucion: number | null;
@@ -152,6 +153,14 @@ export function PostulacionPicker({
    * es el que le toca a la clase elegida. `null` al deseleccionar.
    */
   onChange: (p: Postulacion | null) => void;
+  /**
+   * Arrancar mostrando TODAS las clases, no solo las de hoy.
+   *
+   * Lo usa la carga manual de intervenciones atrasadas, donde el filtro por día
+   * de hoy no sirve por definición: se está cargando una clase de la semana
+   * pasada. En evaluaciones se deja en `false`, que es el caso normal.
+   */
+  todosPorDefecto?: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
 
@@ -161,9 +170,10 @@ export function PostulacionPicker({
    * resuelve el backend con la fecha del servidor.
    *
    * `todos` es la salida manual, para los casos que el filtro no cubre: cargar
-   * una evaluación al día siguiente, o corregir una vieja.
+   * una evaluación al día siguiente, o corregir una vieja. `todosPorDefecto` lo
+   * deja prendido desde el arranque para quien nunca carga en el día.
    */
-  const [todos, setTodos] = useState(false);
+  const [todos, setTodos] = useState(todosPorDefecto);
 
   /*
    * Los dos ids son OBLIGATORIOS en el backend, que responde 400 sin ellos. Sin
