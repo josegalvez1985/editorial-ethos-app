@@ -76,16 +76,36 @@ export const MENU: GrupoNav[] = [
 export const ITEMS: ItemNav[] = MENU.flatMap((g) => g.items);
 
 /**
- * Los accesos de la tab bar del celular.
+ * Cuántos módulos entran en la barra ADEMÁS de "Mi cuenta".
  *
- * Hoy son todos los módulos, así que el drawer de "Menú" muestra lo mismo que la
- * barra. Se mantiene igual porque es donde vive **cerrar sesión** —que no merece
- * un cuarto del ancho de la barra— y porque es el lugar por donde van a entrar
- * los módulos que no quepan cuando sean más de tres.
+ * Dos + "Mi cuenta" + el botón "Menú" = cuatro objetivos táctiles, que es el
+ * máximo que deja un ancho cómodo en un teléfono. Con los tres módulos de hoy
+ * (Inicio, Evaluaciones, Mi cuenta) el resultado es idéntico a la barra que ya
+ * existía; a partir del cuarto módulo, los que sobran caen en la hoja de "Menú".
  */
-export const TABS: ItemNav[] = ["/home", "/evaluaciones", "/account"].map((to) =>
-  ITEMS.find((i) => i.to === to)!,
-);
+const MAX_TABS = 2;
+
+/**
+ * Los accesos directos de la tab bar del celular.
+ *
+ * **Se derivan de `MENU`, no se listan a mano.** Son los primeros
+ * {@link MAX_TABS} módulos en el orden en que están declarados, más "Mi cuenta"
+ * al final, que va fijo: es el acceso a sesión y preferencias y tiene que estar
+ * siempre a un toque, aunque algún día haya diez módulos por delante.
+ *
+ * Antes las tres rutas estaban escritas literalmente acá. Con eso, agregar un
+ * módulo a `MENU` lo dejaba fuera de la barra en silencio y había que acordarse
+ * de tocar este archivo en dos lugares. Ahora un módulo nuevo entra solo hasta
+ * llenar la barra, y a partir de ahí cae en la hoja de "Menú" — que es
+ * exactamente para lo que existe.
+ *
+ * El drawer sigue mostrando `MENU` entero, así que nada queda inalcanzable.
+ */
+export const TABS: ItemNav[] = (() => {
+  const cuenta = ITEMS.find((i) => i.to === "/account");
+  const resto = ITEMS.filter((i) => i.to !== "/account").slice(0, MAX_TABS);
+  return cuenta ? [...resto, cuenta] : resto;
+})();
 
 /**
  * Si `pathname` cae dentro de `to`.
