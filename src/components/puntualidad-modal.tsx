@@ -10,10 +10,9 @@
  * es sobre el cumplimiento de una persona.
  */
 
-import { useQuery } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
-import { Clock, Loader2, MapPin } from "lucide-react";
+import { Clock, MapPin } from "lucide-react";
 
 import {
   Dialog,
@@ -24,9 +23,8 @@ import {
 } from "@/components/ui/dialog";
 import { nombreTurno } from "@/lib/evaluaciones";
 import {
+  atrasoMinutos,
   formatearAtraso,
-  keysIntervenciones,
-  listarIntervenciones,
   MESES,
   type Intervencion,
   type ResumenFacilitador,
@@ -59,6 +57,9 @@ function tonoAtraso(min: number | null) {
 
 function Fila({ i }: { i: Intervencion }) {
   const turno = nombreTurno(i.turno);
+  // La conversión vive en `atrasoMinutos`: la columna del backend viene en horas
+  // y con el signo invertido. Ver `lib/intervenciones.ts`.
+  const atraso = atrasoMinutos(i);
 
   return (
     <div className="rounded-xl border border-border/60 bg-card p-3">
@@ -66,7 +67,8 @@ function Fila({ i }: { i: Intervencion }) {
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-semibold">{fecha(i.fecha)}</p>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {i.institucion ?? "—"}
+            {/* La vista llama `NOMBRE` a secas al nombre de la institución. */}
+            {i.nombre ?? "—"}
             {i.grado && ` · ${i.grado}`}
             {i.seccion && ` "${i.seccion}"`}
           </p>
@@ -74,11 +76,11 @@ function Fila({ i }: { i: Intervencion }) {
 
         {/* El atraso, que es el dato que se vino a ver. */}
         <div className="shrink-0 text-right">
-          <p className={`text-[15px] leading-none font-bold ${tonoAtraso(i.atraso)}`}>
-            {formatearAtraso(i.atraso)}
+          <p className={`text-[15px] leading-none font-bold ${tonoAtraso(atraso)}`}>
+            {formatearAtraso(atraso)}
           </p>
           <p className="mt-1 text-[10px] text-muted-foreground">
-            {i.atraso === 0 ? "en horario" : i.atraso === null ? "sin hora" : "de atraso"}
+            {atraso === 0 ? "en horario" : atraso === null ? "sin hora" : "de atraso"}
           </p>
         </div>
       </div>
@@ -130,13 +132,14 @@ export function PuntualidadModal({
 }) {
   const abierto = facilitador !== null;
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: keysIntervenciones.detalle(facilitador?.id_facilitador ?? 0, anio, mes),
-    queryFn: () => listarIntervenciones(facilitador!.id_facilitador, anio, mes),
-    // Solo se pide al abrir: el detalle de quince facilitadores serían quince
-    // consultas que nadie miró.
-    enabled: abierto,
-  });
+  /*
+   * NO hay consulta acá: las filas ya vinieron con el agrupado del gráfico.
+   *
+   * El backend devuelve el historial completo del período en una sola llamada y
+   * `agruparPorFacilitador` reparte esas filas por persona, así que abrir el
+   * modal no toca la red. Antes esto pedía un endpoint de detalle aparte.
+   */
+  const filas = facilitador?.filas ?? [];
 
   return (
     <Dialog open={abierto} onOpenChange={(v) => !v && onClose()}>
@@ -154,21 +157,12 @@ export function PuntualidadModal({
         </DialogHeader>
 
         <div className="space-y-2 overflow-y-auto overscroll-contain px-3 pb-4">
-          {isLoading ? (
-            <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              Cargando el detalle…
-            </div>
-          ) : isError ? (
-            <p className="rounded-xl bg-destructive/10 p-4 text-sm text-destructive">
-              No se pudo cargar el detalle. Revisá tu conexión.
-            </p>
-          ) : !data?.length ? (
+          {filas.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No hay marcaciones en este período.
             </p>
           ) : (
-            data.map((i) => <Fila key={i.id_intervencion} i={i} />)
+            filas.map((i) => <Fila key={i.id_intervencion} i={i} />)
           )}
         </div>
       </DialogContent>

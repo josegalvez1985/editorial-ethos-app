@@ -6,9 +6,10 @@ import { AppShell } from "@/components/app-shell";
 import { PuntualidadChart } from "@/components/puntualidad-chart";
 import { PuntualidadModal } from "@/components/puntualidad-modal";
 import {
+  agruparPorFacilitador,
   keysIntervenciones,
+  listarIntervenciones,
   MESES,
-  resumenPuntualidad,
   type ResumenFacilitador,
 } from "@/lib/intervenciones";
 
@@ -68,10 +69,17 @@ function Puntualidad() {
   // Qué barra se tocó. `null` = modal cerrado.
   const [elegido, setElegido] = useState<ResumenFacilitador | null>(null);
 
+  /*
+   * UNA sola llamada: el historial del período completo. El agrupado por
+   * facilitador —lo que dibuja las barras— se hace en memoria, y el modal usa
+   * las mismas filas sin volver a pedir nada.
+   */
   const { data, isLoading, isError } = useQuery({
-    queryKey: keysIntervenciones.resumen(anio, mes),
-    queryFn: () => resumenPuntualidad(anio, mes),
+    queryKey: keysIntervenciones.historial(anio, mes),
+    queryFn: () => listarIntervenciones(anio, mes),
   });
+
+  const resumen = data ? agruparPorFacilitador(data) : [];
 
   // Los últimos cinco años, del actual hacia atrás: no hay tabla de años para
   // este módulo y pedirla sería una consulta más para llenar un combo.
@@ -121,13 +129,13 @@ function Puntualidad() {
           <p className="py-6 text-center text-sm text-muted-foreground">
             No se pudo cargar la puntualidad.
           </p>
-        ) : !data?.length ? (
+        ) : !resumen.length ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             No hay marcaciones registradas en {MESES[mes - 1]} de {anio}.
           </p>
         ) : (
           <>
-            <PuntualidadChart datos={data} onSeleccionar={setElegido} />
+            <PuntualidadChart datos={resumen} onSeleccionar={setElegido} />
             <p className="mt-3 border-t border-border/60 pt-2.5 text-center text-[11px] text-muted-foreground">
               Tocá una barra para ver el detalle de las marcaciones
             </p>
