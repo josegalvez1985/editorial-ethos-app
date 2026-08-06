@@ -2335,6 +2335,15 @@ BEGIN
          WHERE p.id_facilitador = p_id_facilitador
            AND p.id_institucion = p_id_institucion
            AND (l_anio IS NULL OR p.anio = l_anio)
+           -- SOLO LAS PENDIENTES. 'Finalizado' lo escribe TRG_INTERV_FINALIZA_POST
+           -- cuando se carga el ultimo indice del manual con 'Si': esa clase ya no
+           -- tiene nada que desarrollar y ofrecerla es ofrecer un error.
+           --
+           -- Se excluye 'Finalizado' en vez de exigir 'Pendiente' a proposito:
+           -- ESTADO es texto libre y las filas con NULL —o con cualquier otra
+           -- palabra— son postulaciones vivas. Con un igualdad estricta
+           -- desaparecerian del formulario sin que nada lo explique.
+           AND (p.estado IS NULL OR UPPER(TRIM(p.estado)) != 'FINALIZADO')
            -- El dia de la semana. Se mira _DESDE y no _HASTA: una postulacion
            -- con horario cargado siempre tiene el desde, y el hasta puede faltar.
            AND (l_dia IS NULL

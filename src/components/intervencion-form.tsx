@@ -57,7 +57,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { lista, nombreTurno, STALE_LISTAS, type Postulacion } from "@/lib/evaluaciones";
+import {
+  diaDeLaSemana,
+  lista,
+  nombreTurno,
+  STALE_LISTAS,
+  type Postulacion,
+} from "@/lib/evaluaciones";
 import {
   actualizarIntervencion,
   crearIntervencion,
@@ -346,14 +352,18 @@ export function IntervencionForm({ previa }: { previa?: IntervencionCrud }) {
         />
 
         {/*
-          `todosPorDefecto`: en carga atrasada el filtro "clases de hoy" no sirve
-          por definición — se está cargando una clase de la semana pasada.
+          EL DÍA SALE DE LA FECHA DEL FORMULARIO, no de hoy: en carga atrasada se
+          está registrando una clase de la semana pasada, así que las únicas
+          postulaciones que pueden corresponder son las de ESE día de la semana.
+
+          Cambiar la fecha vuelve a filtrar la lista — el día está en la
+          queryKey del picker.
         */}
         <PostulacionPicker
           idFacilitador={e.id_facilitador}
           idInstitucion={e.id_institucion}
           value={e.id_postulacion}
-          todosPorDefecto
+          dia={diaDeLaSemana(e.fecha)}
           onChange={(p) =>
             setE((prev) => ({
               ...prev,

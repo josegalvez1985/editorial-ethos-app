@@ -599,6 +599,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERV_CRUD_ETHOS AS
     l_usuario_fac    VARCHAR2(100);
     l_manual         VARCHAR2(100);
     l_fecha          DATE;
+    l_grado          VARCHAR2(5);
   BEGIN
     l_login := f_usuario(p_token);
     IF l_login IS NULL THEN
@@ -614,6 +615,16 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERV_CRUD_ETHOS AS
     -- Sin fecha, se deja que el trigger ponga la de hoy (alta del dia).
     IF TRIM(p_fecha_hora) IS NOT NULL THEN
       l_fecha := TO_DATE(TRIM(p_fecha_hora), 'DD/MM/YYYY HH24:MI');
+    END IF;
+
+    -- EL GRADO SE RESUELVE ACA, FUERA DEL INSERT. f_grado_postulacion es privada
+    -- del body y por eso NO se puede llamar desde una sentencia SQL: Oracle corta
+    -- con PLS-00231. Ponerla en el VALUES compilaba en la cabeza pero no en la
+    -- base. De paso solo se consulta la postulacion cuando hace falta: el NVL
+    -- evaluaba los dos argumentos aunque p_grado viniera cargado.
+    l_grado := TRIM(p_grado);
+    IF l_grado IS NULL THEN
+      l_grado := f_grado_postulacion(p_id_postulacion);
     END IF;
 
     INSERT INTO intervenciones (
@@ -639,7 +650,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERV_CRUD_ETHOS AS
         l_id_institucion,
         l_turno,
         p_id_postulacion,
-        NVL(TRIM(p_grado), f_grado_postulacion(p_id_postulacion)),
+        l_grado,                             -- ya resuelto arriba, ver la nota
         NVL(TRIM(p_seccion), l_seccion),
         l_id_enfasis,
         p_motivo_desarrollo)
@@ -689,6 +700,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERV_CRUD_ETHOS AS
     l_usuario_fac    VARCHAR2(100);
     l_manual         VARCHAR2(100);
     l_fecha          DATE;
+    l_grado          VARCHAR2(5);
     l_n              PLS_INTEGER;
   BEGIN
     l_login := f_usuario(p_token);
@@ -714,6 +726,13 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERV_CRUD_ETHOS AS
       l_fecha := TO_DATE(TRIM(p_fecha_hora), 'DD/MM/YYYY HH24:MI');
     END IF;
 
+    -- Igual que en `insertar`: f_grado_postulacion no se puede llamar dentro del
+    -- UPDATE (PLS-00231, es privada del body). Se resuelve antes.
+    l_grado := TRIM(p_grado);
+    IF l_grado IS NULL THEN
+      l_grado := f_grado_postulacion(p_id_postulacion);
+    END IF;
+
     UPDATE intervenciones
        SET id_facilitador    = l_id_facilitador,
            usuario           = l_usuario_fac,
@@ -727,7 +746,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERV_CRUD_ETHOS AS
            id_institucion    = l_id_institucion,
            turno             = l_turno,
            id_postulacion    = p_id_postulacion,
-           grado             = NVL(TRIM(p_grado), f_grado_postulacion(p_id_postulacion)),
+           grado             = l_grado,
            seccion           = NVL(TRIM(p_seccion), l_seccion),
            id_enfasis        = l_id_enfasis,
            motivo_desarrollo = p_motivo_desarrollo

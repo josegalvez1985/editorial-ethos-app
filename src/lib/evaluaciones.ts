@@ -506,11 +506,46 @@ export function nombreTurno(turno: number | null): string | null {
 }
 
 /**
+ * El día de la semana que espera `listas/postulaciones`, a partir de un
+ * `YYYY-MM-DD` (lo que da un `<input type="date">`).
+ *
+ * Devuelve `1`–`5` de lunes a viernes, y **`"TODOS"` el fin de semana**: sábado
+ * y domingo no hay clases, así que filtrar por ese día dejaría la lista vacía.
+ * Es el mismo criterio que ya aplica el backend cuando resuelve el día solo.
+ *
+ * ## POR QUÉ SE PARTE EL STRING EN VEZ DE `new Date(iso)`
+ *
+ * `new Date("2026-08-06")` se interpreta como **UTC**, y `getDay()` devuelve el
+ * día en la zona local: al oeste de Greenwich eso da el día ANTERIOR. Una
+ * intervención del lunes se filtraría como domingo. Construyendo la fecha con
+ * los tres números el `Date` es local desde el arranque y no hay corrimiento.
+ *
+ * `undefined` si el ISO no parsea, y ahí el filtro no viaja: sin fecha válida no
+ * hay día que deducir, y es preferible mostrar de más que esconder la clase que
+ * el usuario está buscando.
+ */
+export function diaDeLaSemana(iso: string): number | "TODOS" | undefined {
+  const [a, m, d] = iso.split("-").map(Number);
+  if (!a || !m || !d) return undefined;
+
+  const fecha = new Date(a, m - 1, d);
+  if (Number.isNaN(fecha.getTime())) return undefined;
+
+  // getDay(): 0=domingo..6=sábado. El backend usa 1=lunes..5=viernes.
+  const js = fecha.getDay();
+  return js >= 1 && js <= 5 ? js : "TODOS";
+}
+
+/**
  * Las postulaciones de un facilitador en una institución.
  *
  * Los dos ids son obligatorios **en el backend** (responde 400 sin ellos), así
  * que la llamada no debe hacerse hasta tenerlos: el `enabled` de la query es
  * responsabilidad de quien la usa.
+ *
+ * **Solo devuelve las pendientes.** Las postulaciones con `ESTADO =
+ * 'Finalizado'` —las que ya completaron su manual— no vienen: ver el `WHERE` de
+ * `lov_postulaciones` en el SQL.
  */
 export async function listarPostulaciones(
   id_facilitador: number,
@@ -519,13 +554,19 @@ export async function listarPostulaciones(
    * Día de la semana. **Por defecto, HOY**: una evaluación se carga el día que se
    * observa la clase, así que las de otros días son ruido.
    *
-   * El cálculo lo hace el BACKEND con la fecha del servidor, no el navegador: la
-   * fecha del teléfono puede estar corrida y el filtro daría otro día.
+   * Sin argumento el cálculo lo hace el BACKEND con la fecha del servidor, que
+   * es lo correcto para el caso normal: la fecha del teléfono puede estar
+   * corrida y el filtro daría otro día.
+   *
+   * Un número `1`–`5` fuerza un día concreto. Lo usa la carga de intervenciones
+   * atrasadas, donde el día que importa es el de la FECHA DEL FORMULARIO y no el
+   * de hoy — ahí la fecha la eligió el usuario, así que sale del navegador por
+   * definición y `diaDeLaSemana()` la traduce.
    *
    * `"TODOS"` lo apaga — es lo que usa el botón "Ver todas". Sábado y domingo el
    * backend también las muestra todas, porque esos días no hay clases.
    */
-  dia?: "TODOS",
+  dia?: "TODOS" | number,
 ): Promise<Postulacion[]> {
   const r = (await authFetch(
     `listas/postulaciones${qs({ id_facilitador, id_institucion, dia })}`,

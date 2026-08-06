@@ -142,7 +142,7 @@ export function PostulacionPicker({
   idInstitucion,
   value,
   onChange,
-  todosPorDefecto = false,
+  dia,
 }: {
   idFacilitador: number | null;
   idInstitucion: number | null;
@@ -154,26 +154,47 @@ export function PostulacionPicker({
    */
   onChange: (p: Postulacion | null) => void;
   /**
-   * Arrancar mostrando TODAS las clases, no solo las de hoy.
+   * El día de la semana por el que filtrar (`1`–`5`), o `"TODOS"`.
    *
-   * Lo usa la carga manual de intervenciones atrasadas, donde el filtro por día
-   * de hoy no sirve por definición: se está cargando una clase de la semana
-   * pasada. En evaluaciones se deja en `false`, que es el caso normal.
+   * **Sin este prop lo resuelve el backend con la fecha del servidor**, que es
+   * lo correcto para evaluaciones: se cargan el día que se observa la clase, y
+   * la fecha del teléfono puede estar corrida.
+   *
+   * La carga de intervenciones sí lo manda, derivado de la FECHA DEL
+   * FORMULARIO: ahí se está cargando una clase de la semana pasada, así que el
+   * día que importa es el de esa fecha y no el de hoy. Ver `diaDeLaSemana()`.
    */
-  todosPorDefecto?: boolean;
+  dia?: number | "TODOS";
 }) {
   const [abierto, setAbierto] = useState(false);
 
   /*
-   * Por defecto se piden SOLO las clases de HOY: una evaluación se carga el día
-   * que se observa la clase, así que las de otros días son ruido. El día lo
-   * resuelve el backend con la fecha del servidor.
+   * El escape manual: mostrar TODAS las clases, ignorando el día.
    *
-   * `todos` es la salida manual, para los casos que el filtro no cubre: cargar
-   * una evaluación al día siguiente, o corregir una vieja. `todosPorDefecto` lo
-   * deja prendido desde el arranque para quien nunca carga en el día.
+   * Existe porque el filtro por día no cubre todos los casos —una clase que se
+   * dio en un día distinto del habitual, un horario mal cargado—, y sin salida
+   * la postulación buscada sería inalcanzable.
    */
-  const [todos, setTodos] = useState(todosPorDefecto);
+  const [todos, setTodos] = useState(false);
+
+  /*
+   * `todos` gana sobre `dia`: es una acción explícita del usuario sobre un
+   * filtro automático.
+   */
+  const diaEfectivo = todos ? "TODOS" : dia;
+
+  /*
+   * Cómo nombrar el filtro vigente. Los tres casos dicen cosas distintas y
+   * confundirlos hace que el usuario busque un problema que no existe:
+   * "no tiene clases hoy" cuando en realidad se filtró por un martes de marzo
+   * manda a revisar la ficha del facilitador al pedo.
+   */
+  const nombreDia =
+    typeof diaEfectivo === "number"
+      ? (["los lunes", "los martes", "los miércoles", "los jueves", "los viernes"][
+          diaEfectivo - 1
+        ] ?? "ese día")
+      : "hoy";
 
   /*
    * Los dos ids son OBLIGATORIOS en el backend, que responde 400 sin ellos. Sin
@@ -183,9 +204,10 @@ export function PostulacionPicker({
   const habilitada = idFacilitador != null && idInstitucion != null;
 
   const { data, isLoading, isError } = useQuery({
-    // `todos` va en la key: sin él, pedir todas devolvería la caché del día.
-    queryKey: ["postulaciones", idFacilitador, idInstitucion, todos],
-    queryFn: () => listarPostulaciones(idFacilitador!, idInstitucion!, todos ? "TODOS" : undefined),
+    // El día va en la key: sin él, cambiar la fecha del formulario devolvería la
+    // caché del día anterior y la lista no se actualizaría.
+    queryKey: ["postulaciones", idFacilitador, idInstitucion, diaEfectivo ?? "HOY"],
+    queryFn: () => listarPostulaciones(idFacilitador!, idInstitucion!, diaEfectivo),
     enabled: habilitada,
     staleTime: STALE_LISTAS,
   });
@@ -223,8 +245,8 @@ export function PostulacionPicker({
         <div className="rounded-xl border border-border/60 bg-muted/40 px-4 py-3">
           <p className="text-[13px] text-muted-foreground">
             {todos
-              ? "Este facilitador no tiene postulaciones cargadas en esta institución para el año lectivo actual."
-              : "No tiene clases hoy en esta institución."}
+              ? "Este facilitador no tiene postulaciones pendientes en esta institución para el año lectivo actual."
+              : `No tiene clases pendientes ${nombreDia} en esta institución.`}
           </p>
           {!todos && (
             <button
@@ -264,7 +286,7 @@ export function PostulacionPicker({
             <DialogHeader className="px-5 pt-5 pb-3 text-left">
               <DialogTitle className="font-display text-xl">Postulación</DialogTitle>
               <DialogDescription className="text-xs">
-                {todos ? "Todas las clases de la semana" : "Las clases de hoy"}
+                {todos ? "Todas las clases de la semana" : `Las clases de ${nombreDia}`}
               </DialogDescription>
               {/* El escape para cuando la evaluación no es del día: cargar una
                   ayer, o corregir una vieja. */}
