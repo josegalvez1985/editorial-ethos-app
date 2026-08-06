@@ -225,6 +225,31 @@ export async function eliminarIntervencion(id: number): Promise<ResultadoElimina
 }
 
 /* -------------------------------------------------------------------------- */
+/* Manuales                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Los manuales, sin repetir. Primer combo de la cascada Manual → Índice.
+ *
+ * ## POR QUÉ NO USA `lista()` COMO LOS OTROS COMBOS
+ *
+ * `INDICES_MANUALES` **no tiene tabla de manuales**: `MANUAL` es un
+ * `VARCHAR2(100)` de la propia fila, y el `SELECT DISTINCT` del backend *es* el
+ * catálogo. Así que el identificador de un manual **es su texto**, no un número.
+ *
+ * `lista()` normaliza todo a `{ id: number, texto }`, y meter esto ahí obligaría
+ * a inventar un id numérico que no existe en ningún lado. Devuelve strings.
+ *
+ * Consecuencia conocida: un typo crea un manual nuevo, porque nada lo valida
+ * contra un catálogo. Hoy no molesta —esas filas las carga el equipo— pero es
+ * la razón por la que el selector es un `<select>` cerrado y no un campo libre.
+ */
+export async function listarManuales(): Promise<string[]> {
+  const r = (await authFetch("listas/manuales")) as { data?: Record<string, unknown>[] };
+  return (r.data ?? []).map((row) => String(row.manual ?? "")).filter(Boolean);
+}
+
+/* -------------------------------------------------------------------------- */
 /* Ubicación del navegador                                                    */
 /* -------------------------------------------------------------------------- */
 

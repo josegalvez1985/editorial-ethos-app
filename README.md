@@ -155,17 +155,34 @@ la tabla que responde la pregunta, y es la única que hay que consultar:
 **Regla de bolsillo:** si tocaste `android/`, `capacitor.config.ts`, o instalaste un paquete con
 código nativo → APK. Si no → `git push`.
 
-### Las dos condiciones, y son las únicas
+### Las tres condiciones
 
-1. **El teléfono tiene que tener la 1.9 o superior.** Las versiones anteriores **no traen el
+1. **Hay que hacer `git push` a `main`, y el workflow tiene que TERMINAR.** Es la que más se
+   olvida: un commit local no publica nada. Tarda ~2 min y se mira en la pestaña **Actions** del
+   repo — si está en amarillo, el bundle todavía no existe y el teléfono no tiene qué bajar.
+   Compilar un APK **no reemplaza** esto: el APK lleva el contenido que había *cuando se
+   compiló*, así que un APK viejo con un push nuevo se actualiza igual, y un APK recién
+   compilado sin push tampoco le sirve a los demás teléfonos.
+2. **El teléfono tiene que tener la 1.9 o superior.** Las versiones anteriores **no traen el
    plugin**, así que no se actualizan solas por más que se publique: hay que instalarles un APK
    a mano **una vez**, y de ahí en adelante ya entran al circuito. Se mira en Ajustes →
    Aplicaciones → Juventud con Valores.
-2. **Se ve al SEGUNDO arranque.** El bundle se descarga cuando abrís la app con internet y se
+3. **Se ve al SEGUNDO arranque.** El bundle se descarga cuando abrís la app con internet y se
    aplica **cuando pasa a segundo plano**. O sea: abrir → salir → volver a entrar. Si abrís una
    sola vez y no ves el cambio, no está roto — falta el segundo arranque. Es deliberado:
    aplicarlo en caliente recarga la WebView y le borraría lo tipeado a quien esté a mitad de una
    evaluación.
+
+### Si pusheaste y el teléfono no cambia, mirá esto en orden
+
+| Chequeo | Dónde | Qué esperar |
+| --- | --- | --- |
+| ¿Terminó el workflow? | pestaña **Actions** del repo | tilde verde, no amarillo |
+| ¿Se publicó el bundle? | <https://www.ethospy.online/ota/updates.json> | un JSON con una versión, no un 404 |
+| ¿La app tiene el plugin? | Ajustes → Aplicaciones → Juventud con Valores | 1.9 o superior |
+| ¿Abriste dos veces? | la app | abrir → salir → volver a entrar |
+
+El primero de esos cuatro que falle es la causa. No hace falta seguir mirando los demás.
 
 Todo el detalle —cómo se publica el bundle, qué pasa sin internet, cómo volver atrás una
 actualización mala— está en [`OTA.md`](OTA.md).

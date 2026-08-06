@@ -65,6 +65,7 @@ import {
   distanciaMetros,
   eliminarIntervencion,
   isoADdmmyyyy,
+  listarManuales,
   ubicacionActual,
   type IntervencionCrud,
   type IntervencionInput,
@@ -80,6 +81,13 @@ type Estado = {
   id_postulacion: number | null;
   /** La postulación elegida, para mostrar grado/turno y proponer el índice. */
   postulacion: Postulacion | null;
+  /**
+   * El manual elegido A MANO. Vacío = se usa el que propone la postulación.
+   *
+   * Existe porque una postulación sin intervenciones previas no propone ninguno,
+   * y sin manual no se puede listar los índices. Ver la nota del componente.
+   */
+  manual: string;
   id_indice: number | null;
   indice_texto: string;
   si_no: "Si" | "No";
@@ -108,6 +116,9 @@ function estadoInicial(previa?: IntervencionCrud): Estado {
     nombre_institucion: previa?.institucion ?? "",
     id_postulacion: previa?.id_postulacion ?? null,
     postulacion: null,
+    // Al editar se precarga el manual guardado: la postulación puede proponer
+    // otro distinto (el siguiente), y eso cambiaría el índice ya elegido.
+    manual: previa?.manual ?? "",
     id_indice: previa?.id_indice ?? null,
     indice_texto: previa
       ? `${previa.nro_indice != null ? `${previa.nro_indice}. ` : ""}${previa.indice_titulo ?? ""}`
@@ -136,11 +147,32 @@ export function IntervencionForm({ previa }: { previa?: IntervencionCrud }) {
     setE((prev) => ({ ...prev, [k]: v }));
 
   /*
-   * El manual sale de la postulación elegida. Los índices se piden de ESE manual
-   * y no de todos: un manual tiene ~15 índices y la lista completa son más de
-   * cien, sin forma de saber cuál corresponde.
+   * ── EL MANUAL: DE DÓNDE SALE Y POR QUÉ HAY UN SELECTOR ──────────────────
+   *
+   * Los índices se piden de UN manual y no de todos: cada manual tiene ~15
+   * índices y la lista completa pasa los cien, sin forma de saber cuál
+   * corresponde a la clase.
+   *
+   * La postulación PROPONE el manual, pero solo cuando ya viene desarrollando
+   * uno: `p.manual` sale del índice siguiente, que el backend calcula a partir
+   * de la última intervención con 'Si'. **Una postulación sin ninguna
+   * intervención cargada no propone nada** (el caso `SIN_INICIAR`), y eso en
+   * carga atrasada es lo habitual — es justamente la clase que nadie registró.
+   *
+   * Por eso el manual se puede elegir a mano. `manualManual` (valga) pisa a la
+   * propuesta cuando el usuario elige uno: si no, cambiar de manual sería
+   * imposible una vez que la postulación propuso el suyo.
    */
-  const manual = e.postulacion?.manual ?? previa?.manual ?? null;
+  const manualPropuesto = e.postulacion?.manual ?? previa?.manual ?? null;
+  const manual = e.manual || manualPropuesto;
+
+  // Devuelve STRINGS, no `Opcion`: el identificador de un manual es su propio
+  // texto porque no hay tabla de manuales. Ver `listarManuales`.
+  const { data: manuales } = useQuery({
+    queryKey: ["manuales"],
+    queryFn: listarManuales,
+    staleTime: STALE_LISTAS,
+  });
 
   const { data: indices } = useQuery({
     queryKey: ["indices", manual],
@@ -359,15 +391,56 @@ export function IntervencionForm({ previa }: { previa?: IntervencionCrud }) {
 
       {/* ── Qué se dio ───────────────────────────────────────────────── */}
       <section className="space-y-3">
+        {/*
+          EL MANUAL, ANTES DEL ÍNDICE. Es la cascada Manual → Índice.
+
+          Se muestra siempre, no solo cuando falta: la postulación propone uno
+          pero puede no ser el correcto —o no proponer ninguno, si es la primera
+          intervención que se le carga—, y en los dos casos hay que poder elegir.
+        */}
+        <div>
+          <label className="mb-1.5 block text-sm font-medium">
+            Manual <span className="text-destructive">*</span>
+          </label>
+          <select
+            value={manual ?? ""}
+            onChange={(ev) =>
+              setE((prev) => ({
+                ...prev,
+                manual: ev.target.value,
+                // Cambiar de manual invalida el índice: los de un manual no
+                // existen en otro, y quedaría uno de otro manual guardado.
+                id_indice: null,
+                indice_texto: "",
+              }))
+            }
+            className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
+          >
+            <option value="">Elegí el manual…</option>
+            {manuales?.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          {/* De dónde salió, cuando lo propuso la postulación: sin esto el campo
+              aparece lleno y no se sabe si lo eligió alguien o vino solo. */}
+          {manualPropuesto && !e.manual && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Propuesto por la postulación · es el que viene desarrollando
+            </p>
+          )}
+        </div>
+
         <PickerModal
-          label={`Índice${manual ? ` · ${manual}` : ""}`}
+          label="Índice"
           // Tal cual vienen: `lista()` ya devuelve `Opcion`, con el `busqueda`
           // que el modal usa para filtrar en memoria.
           opciones={indices ?? []}
           value={e.id_indice}
           valueText={e.indice_texto}
           requerido
-          disabledReason={manual == null ? "Elegí primero la postulación" : undefined}
+          disabledReason={!manual ? "Elegí primero el manual" : undefined}
           onChange={(o) =>
             setE((prev) => ({ ...prev, id_indice: o.id, indice_texto: o.texto }))
           }
