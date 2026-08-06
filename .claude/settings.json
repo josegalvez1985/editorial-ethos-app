@@ -69,7 +69,8 @@
       "Bash(powershell -NoProfile -Command 'Add-Type -AssemblyName System.IO.Compression.FileSystem; $z=[System.IO.Compression.ZipFile]::OpenRead\\('\\\\''c:\\\\Users\\\\josej\\\\OneDrive\\\\Desktop\\\\Proyectos\\\\editorial-ethos-app.git\\\\dist\\\\client\\\\ota\\\\bundle-test-2.zip'\\\\''\\); $ota=$z.Entries | Where-Object { $_.FullName -like '\\\\''*ota*'\\\\'' }; if\\($ota\\){Write-Output '\\\\''MAL: contiene ota/'\\\\''; $ota|ForEach-Object{Write-Output $_.FullName}}else{Write-Output \\('\\\\''OK: sin ota/ adentro. Entradas: '\\\\''+$z.Entries.Count\\)}; $z.Dispose\\(\\)')",
       "Bash(STATIC_BUILD=1 VITE_API_URL=\"https://oracleapex.com/ords/fundcarac/ethos/\" npx vite build)",
       "Bash(powershell -NoProfile -Command 'Add-Type -AssemblyName System.IO.Compression.FileSystem; $z=[System.IO.Compression.ZipFile]::OpenRead\\('\\\\''c:\\\\Users\\\\josej\\\\OneDrive\\\\Desktop\\\\Proyectos\\\\editorial-ethos-app.git\\\\android\\\\app\\\\build\\\\outputs\\\\apk\\\\release\\\\app-release.apk'\\\\''\\); $cfg=$z.GetEntry\\('\\\\''assets/capacitor.config.json'\\\\''\\); $r=New-Object System.IO.StreamReader\\($cfg.Open\\(\\)\\); Write-Output '\\\\''=== capacitor.config.json DENTRO del APK ==='\\\\''; Write-Output $r.ReadToEnd\\(\\); $r.Close\\(\\); $z.Dispose\\(\\)')",
-      "Bash(\"C:/Users/josej/Android/Sdk/build-tools/36.1.0/aapt2.exe\" dump *)"
+      "Bash(\"C:/Users/josej/Android/Sdk/build-tools/36.1.0/aapt2.exe\" dump *)",
+      "PowerShell(gh run list --limit 10)"
     ],
     "additionalDirectories": [
       "c:\\Users\\josej\\OneDrive\\Desktop\\Proyectos\\editorial-ethos-app.git"
