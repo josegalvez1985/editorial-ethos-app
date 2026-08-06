@@ -1,27 +1,17 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
-import { avisarBundleOk } from "./lib/ota";
 import { CACHE_MAX_AGE, reintentar } from "./lib/query-persist";
 import { routeTree } from "./routeTree.gen";
 
 /*
- * ACTUALIZACIÓN OTA: confirmarle al plugin que este bundle arranca bien.
+ * Acá vivía el aviso `notifyAppReady()` del plugin OTA de Capgo, que le
+ * confirmaba que el bundle descargado arrancaba bien.
  *
- * Va ACÁ, en el módulo del router, y no en un componente, porque este archivo se
- * ejecuta apenas el bundle se carga —antes de que React monte nada—. Si el aviso
- * dependiera de que un componente llegue a montarse, un error en cualquier
- * provider de `__root.tsx` haría que el plugin diera por roto un bundle sano y lo
- * revirtiera. Ver `lib/ota.ts`.
- *
- * `typeof window` descarta el SSR: en el servidor no hay app nativa que avisar, y
- * este módulo también corre ahí.
- *
- * Sin `await`: es fire-and-forget y `avisarBundleOk` no lanza. Bloquear la
- * creación del router por el actualizador sería subordinar la app a él.
+ * Se fue el 05/08/2026 con el plugin entero: el APK ya no empaqueta la web ni
+ * descarga bundles. Ahora su WebView apunta a `https://www.ethospy.online/` con
+ * `server.url`, así que carga el sitio publicado en cada arranque y no hay nada
+ * que confirmar ni que revertir. Ver `capacitor.config.ts`.
  */
-if (typeof window !== "undefined") {
-  void avisarBundleOk();
-}
 
 export const getRouter = () => {
   const queryClient = new QueryClient({

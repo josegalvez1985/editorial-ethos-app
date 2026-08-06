@@ -163,30 +163,16 @@ jobs:
           fi
           ls -la dist/client
 
-      # El bundle que descargan los APK ya instalados. Ver OTA.md.
+      # Acá se generaba el bundle OTA (`ota/updates.json` + `ota/bundle-<sha>.zip`)
+      # que descargaban los APK instalados.
       #
-      # Va DESPUÉS de preparar la salida, no antes: el bundle tiene que llevar el
-      # index.html que el paso anterior copia desde _shell.html. Al revés,
-      # empaquetaría una carpeta sin punto de entrada y la app quedaría en blanco
-      # (build-ota.mjs corta con un error si eso pasa).
+      # Se quitó el 05/08/2026 junto con el plugin de Capgo: el APK ya no
+      # empaqueta la web ni descarga bundles. Su WebView apunta directo a este
+      # mismo sitio con `server.url` (ver capacitor.config.ts), así que lo que
+      # publica este workflow ES lo que ven los teléfonos, sin paso intermedio.
       #
-      # SOLO CON DOMINIO PROPIO. La URL del .zip queda absoluta dentro del JSON, y
-      # `updateUrl` en capacitor.config.ts apunta al dominio: publicarlo bajo el
-      # github.io generaría un manifiesto que ningún teléfono consulta. Si algún
-      # día se apaga el dominio, hay que revisar OTA.md antes de tocar esto.
-      - name: Generar el bundle OTA
-        if: env.CUSTOM_DOMAIN != ''
-        run: |
-          # El SHA del commit como versión. El plugin compara por DESIGUALDAD
-          # contra la instalada, no por orden, así que lo único que se le pide al
-          # valor es ser distinto en cada deploy — y un SHA lo garantiza.
-          #
-          # Un semver acá sería peor: habría que acordarse de subirlo a mano en
-          # cada push y, si se repite, los teléfonos no actualizan EN SILENCIO.
-          node scripts/build-ota.mjs \
-            --dist dist/client \
-            --version "${GITHUB_SHA::12}" \
-            --site "https://$CUSTOM_DOMAIN"
+      # Los `ota/*` que quedaron publicados de deploys anteriores se van solos:
+      # cada deploy reemplaza el sitio entero por el artefacto nuevo.
 
       - uses: actions/upload-pages-artifact@v3
         with:

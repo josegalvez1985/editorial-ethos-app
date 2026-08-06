@@ -44,8 +44,7 @@ npm run dev
 | `npm run build:static` | Build estático para GitHub Pages — ver [`DESPLIEGUE.md`](DESPLIEGUE.md) |
 | `npm run preview` | Sirve el build |
 | `npm run lint` | ESLint |
-| `npm run apk` | APK de Android con esta misma web dentro — ver [`APK.md`](APK.md) |
-| `npm run ota` | Bundle de actualización remota del APK — ver [`OTA.md`](OTA.md) |
+| `npm run apk` | APK de Android — una cáscara que carga este sitio, ver [`APK.md`](APK.md) |
 
 **En producción el sitio se sirve en <https://www.ethospy.online/> desde GitHub Pages** (el
 `github.io` responde un `301` hacia el dominio), que es hosting estático: el proxy **no** corre y
@@ -137,9 +136,22 @@ No son bugs:
 
 ## ¿Hay que repartir un APK nuevo? Casi nunca
 
-**Una página nueva NO necesita un APK nuevo.** Desde la versión **1.9** el APK trae el plugin
-de actualización remota: `git push` a `main` y los teléfonos levantan el cambio solos. Esta es
-la tabla que responde la pregunta, y es la única que hay que consultar:
+**El APK no contiene la app: es una cáscara que carga <https://www.ethospy.online/> en su
+WebView.** Cada vez que se abre, pide esa URL. Así que lo que publica GitHub Pages es lo que el
+usuario ve, y `git push` alcanza para actualizar todos los teléfonos.
+
+```
+Celular → APK (WebView) → https://www.ethospy.online/ → la app web
+                                     ↑
+                       git push → Actions → deploy a Pages
+```
+
+**La regla de oro para no romperlo:** el sitio de Pages es la fuente de verdad. Antes de
+compilar cualquier APK, abrí esa URL en el navegador del celular. **Si ahí funciona, el APK va a
+funcionar** — porque el APK no es más que ese mismo sitio dentro de una WebView. Y si ahí no
+funciona, compilar un APK no lo va a arreglar.
+
+Esta es la tabla que responde la pregunta:
 
 | Lo que cambiaste | ¿APK nuevo? |
 | --- | --- |
@@ -155,34 +167,52 @@ la tabla que responde la pregunta, y es la única que hay que consultar:
 **Regla de bolsillo:** si tocaste `android/`, `capacitor.config.ts`, o instalaste un paquete con
 código nativo → APK. Si no → `git push`.
 
-### Las tres condiciones
+### Las dos condiciones
 
-1. **Hay que hacer `git push` a `main`, y el workflow tiene que TERMINAR.** Es la que más se
-   olvida: un commit local no publica nada. Tarda ~2 min y se mira en la pestaña **Actions** del
-   repo — si está en amarillo, el bundle todavía no existe y el teléfono no tiene qué bajar.
-   Compilar un APK **no reemplaza** esto: el APK lleva el contenido que había *cuando se
-   compiló*, así que un APK viejo con un push nuevo se actualiza igual, y un APK recién
-   compilado sin push tampoco le sirve a los demás teléfonos.
-2. **El teléfono tiene que tener la 1.9 o superior.** Las versiones anteriores **no traen el
-   plugin**, así que no se actualizan solas por más que se publique: hay que instalarles un APK
-   a mano **una vez**, y de ahí en adelante ya entran al circuito. Se mira en Ajustes →
-   Aplicaciones → Juventud con Valores.
-3. **Se ve al SEGUNDO arranque.** El bundle se descarga cuando abrís la app con internet y se
-   aplica **cuando pasa a segundo plano**. O sea: abrir → salir → volver a entrar. Si abrís una
-   sola vez y no ves el cambio, no está roto — falta el segundo arranque. Es deliberado:
-   aplicarlo en caliente recarga la WebView y le borraría lo tipeado a quien esté a mitad de una
-   evaluación.
+1. **Hay que hacer `git push` a `main`, y el workflow tiene que TERMINAR.** Un commit local no
+   publica nada. Tarda ~2 min y se mira en la pestaña **Actions** del repo: si está en amarillo,
+   el sitio todavía es el anterior.
+2. **El teléfono tiene que tener la 2.0 o superior.** Es la primera versión con `server.url`;
+   las anteriores empaquetaban la web adentro y no se actualizan solas. Hay que instalarles un
+   APK a mano **una vez** y listo. Se mira en Ajustes → Aplicaciones → Juventud con Valores.
 
-### Si pusheaste y el teléfono no cambia, mirá esto en orden
+Nada más. No hay bundle que descargar, ni segundo arranque, ni caché que esperar: la WebView
+pide la URL cada vez que se abre la app.
+
+### Si pusheaste y el teléfono no cambia
 
 | Chequeo | Dónde | Qué esperar |
 | --- | --- | --- |
 | ¿Terminó el workflow? | pestaña **Actions** del repo | tilde verde, no amarillo |
-| ¿Se publicó el bundle? | <https://www.ethospy.online/ota/updates.json> | un JSON con una versión, no un 404 |
-| ¿La app tiene el plugin? | Ajustes → Aplicaciones → Juventud con Valores | 1.9 o superior |
-| ¿Abriste dos veces? | la app | abrir → salir → volver a entrar |
+| ¿El sitio tiene el cambio? | <https://www.ethospy.online/> en el navegador **del celular** | el cambio a la vista |
+| ¿La app es 2.0+? | Ajustes → Aplicaciones → Juventud con Valores | 2.0 o superior |
 
-El primero de esos cuatro que falle es la causa. No hace falta seguir mirando los demás.
+El primero que falle es la causa. **El segundo es el que más informa:** si el sitio en el
+navegador del celular no muestra el cambio, el problema no es el APK y compilar uno nuevo no
+sirve de nada.
+
+### Historia: por qué ya no hay OTA
+
+Hasta el 05/08/2026 el APK empaquetaba la web adentro y se actualizaba con
+[`@capgo/capacitor-updater`](https://github.com/Cap-go/capacitor-updater): el workflow publicaba
+un `.zip` y un `updates.json`, el teléfono los descargaba y los aplicaba al pasar a segundo
+plano.
+
+**No funcionó en la práctica.** El bundle se publicaba bien —verificado— pero los cambios no
+llegaban al teléfono, y cada intento de diagnóstico costaba compilar y repartir un APK. El
+mecanismo tenía demasiados pasos que fallaban en silencio: descargar, verificar checksum,
+aplicar al ir a background, y un `resetWhenUpdate` que descartaba el bundle en cada instalación
+—así que instalar un APK para probar **retrocedía** el contenido web—.
+
+`server.url` no tiene ninguno de esos pasos. Se fueron el plugin, `src/lib/ota.ts`,
+`scripts/build-ota.mjs`, el paso del workflow y `OTA.md`.
+
+**El costo, que es real:** la app **ya no abre sin internet**. Antes los assets viajaban dentro
+del APK; ahora sin conexión aparece la pantalla de error del navegador. Se acepta porque la app
+es 100% online igual —cada consulta va a Oracle—, así que sin red no se podía usar de todos
+modos. Si algún día molesta, la salida es un service worker con **network-first para el HTML**
+(nunca cache-first: eso congela la app en la versión cacheada y rompe justo lo que este cambio
+vino a arreglar).
 
 Todo el detalle —cómo se publica el bundle, qué pasa sin internet, cómo volver atrás una
 actualización mala— está en [`OTA.md`](OTA.md).
