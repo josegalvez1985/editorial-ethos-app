@@ -242,7 +242,8 @@ export async function eliminarIntervencion(id: number): Promise<ResultadoElimina
  *
  * Consecuencia conocida: un typo crea un manual nuevo, porque nada lo valida
  * contra un catálogo. Hoy no molesta —esas filas las carga el equipo— pero es
- * la razón por la que el selector es un `<select>` cerrado y no un campo libre.
+ * la razón por la que el selector es una lista cerrada (`SelectorModal`) y no
+ * un campo de texto libre.
  */
 export async function listarManuales(): Promise<string[]> {
   const r = (await authFetch("listas/manuales")) as { data?: Record<string, unknown>[] };

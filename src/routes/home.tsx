@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { ActividadChart } from "@/components/actividad-chart";
+import { SelectorModal } from "@/components/selector-modal";
 import { PuntualidadChart } from "@/components/puntualidad-chart";
 import { PuntualidadModal } from "@/components/puntualidad-modal";
 import { UbicacionChart } from "@/components/ubicacion-chart";
@@ -12,9 +14,11 @@ import {
   actividadPorDia,
   agruparPorFacilitador,
   agruparPorUbicacion,
+  filtrarPorDesarrollo,
   keysIntervenciones,
   listarIntervenciones,
   MESES,
+  type FiltroDesarrollo,
   type ResumenFacilitador,
   type ResumenUbicacion,
 } from "@/lib/intervenciones";
@@ -72,9 +76,31 @@ function Puntualidad() {
   const ahora = new Date();
   const [anio, setAnio] = useState(String(ahora.getFullYear()));
   const [mes, setMes] = useState(ahora.getMonth() + 1);
+  /*
+   * ¿Se desarrolló el índice? Manda sobre los TRES gráficos.
+   *
+   * Arranca en "TODOS" —el tablero completo, lo que se veía antes de que este
+   * filtro existiera—. Ver `FiltroDesarrollo` en `lib/intervenciones.ts`.
+   */
+  const [desarrollo, setDesarrollo] = useState<FiltroDesarrollo>("TODOS");
   // Qué barra se tocó en cada gráfico. `null` = ese modal está cerrado.
   const [elegido, setElegido] = useState<ResumenFacilitador | null>(null);
   const [elegidoUbi, setElegidoUbi] = useState<ResumenUbicacion | null>(null);
+
+  /*
+   * Puntualidad ARRANCA OCULTA, a pedido (14/08/2026).
+   *
+   * Es el gráfico que expone a personas con nombre y apellido, así que abrir la
+   * app frente a otro no lo pone en pantalla solo: hay que pedirlo con el ojo.
+   * Los otros dos siguen visibles — Ubicación muestra menos y Actividad es
+   * agregada.
+   *
+   * OJO: esconderlo NO ahorra la consulta. `listarIntervenciones` alimenta
+   * también al gráfico de Ubicación, así que se pide igual; lo que se oculta es
+   * el dibujo, no la llamada. Si algún día Ubicación deja de depender de esa
+   * query, ahí sí conviene condicionarla.
+   */
+  const [verPuntualidad, setVerPuntualidad] = useState(false);
 
   /*
    * UNA sola llamada para LOS DOS gráficos.
@@ -88,8 +114,20 @@ function Puntualidad() {
     queryFn: () => listarIntervenciones(anio, mes),
   });
 
-  const resumen = data ? agruparPorFacilitador(data) : [];
-  const ubicacion = data ? agruparPorUbicacion(data) : [];
+  /*
+   * El filtro de desarrollo se aplica ACÁ, en memoria, y NO en la query.
+   *
+   * `listarIntervenciones` ya trajo las filas crudas con su `si_no`, así que
+   * las tres opciones del filtro salen de la MISMA respuesta: cambiar el
+   * selector no dispara una descarga nueva y el cambio es instantáneo. Meterlo
+   * en la query key traería tres veces el mismo mes.
+   *
+   * El gráfico de Actividad no puede hacer esto —viene agregado por día— y por
+   * eso ese sí filtra en el backend. Ver `actividadPorDia`.
+   */
+  const filtradas = data ? filtrarPorDesarrollo(data, desarrollo) : [];
+  const resumen = filtradas.length ? agruparPorFacilitador(filtradas) : [];
+  const ubicacion = filtradas.length ? agruparPorUbicacion(filtradas) : [];
 
   /*
    * La actividad diaria va en SU PROPIA consulta, y no se deriva de `data`.
@@ -104,88 +142,144 @@ function Puntualidad() {
     isLoading: cargandoDias,
     isError: errorDias,
   } = useQuery({
-    queryKey: keysIntervenciones.porDia(anio, mes),
-    queryFn: () => actividadPorDia(anio, mes),
+    queryKey: keysIntervenciones.porDia(anio, mes, desarrollo),
+    queryFn: () => actividadPorDia(anio, mes, desarrollo),
   });
 
   // Los últimos cinco años, del actual hacia atrás: no hay tabla de años para
   // este módulo y pedirla sería una consulta más para llenar un combo.
   const anios = Array.from({ length: 5 }, (_, i) => String(ahora.getFullYear() - i));
 
+  /*
+   * La coletilla que los mensajes de "no hay nada" le agregan al período.
+   *
+   * Sin esto, filtrar por "solo las que no desarrollaron" y quedarse sin datos
+   * dice "Sin desvíos en Agosto de 2026", que se lee como si el mes estuviera
+   * limpio cuando en realidad lo vació el filtro. Nombrarlo es lo que evita
+   * que alguien saque una conclusión al revés.
+   */
+  const coletilla =
+    desarrollo === "SI"
+      ? ", entre las que desarrollaron el índice"
+      : desarrollo === "NO"
+        ? ", entre las que no desarrollaron el índice"
+        : "";
+
   return (
     <>
       {/*
-        Los filtros mandan sobre LOS DOS gráficos, así que van una sola vez y
+        Los filtros mandan sobre LOS TRES gráficos, así que van una sola vez y
         arriba de todo. Duplicarlos por gráfico dejaría cambiar el mes en uno y
         no en el otro, y dos tableros del mismo período mostrando meses
         distintos es la peor forma de leer esto.
       */}
       <div className="mt-7 mb-3 flex gap-2">
-        <select
-          value={mes}
-          onChange={(e) => setMes(Number(e.target.value))}
-          aria-label="Mes"
-          className="h-10 min-w-0 flex-1 rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
-        >
-          {MESES.map((m, i) => (
-            <option key={m} value={i + 1}>
-              {m}
-            </option>
-          ))}
-        </select>
-        <select
-          value={anio}
-          onChange={(e) => setAnio(e.target.value)}
-          aria-label="Año"
-          className="h-10 w-24 shrink-0 rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
-        >
-          {anios.map((a) => (
-            <option key={a} value={a}>
-              {a}
-            </option>
-          ))}
-        </select>
+        <SelectorModal
+          label="Mes"
+          mostrarLabel={false}
+          value={String(mes)}
+          onChange={(v) => setMes(Number(v))}
+          opciones={MESES.map((m, i) => ({ valor: String(i + 1), texto: m }))}
+          className="h-10 px-3 text-sm"
+        />
+        {/*
+          El año NO es `flex-1`: con doce meses y tres opciones de desarrollo al
+          lado, dejarlo crecer le da un ancho que cuatro dígitos no usan.
+        */}
+        <div className="w-24 shrink-0">
+          <SelectorModal
+            label="Año"
+            mostrarLabel={false}
+            value={anio}
+            onChange={setAnio}
+            opciones={anios.map((a) => ({ valor: a, texto: a }))}
+            className="h-10 px-3 text-sm"
+          />
+        </div>
+        {/*
+          El filtro de desarrollo, en la MISMA fila que mes y año.
+
+          En el BOTÓN el texto es corto —"Desarrollados"— porque comparte la
+          fila con otros dos controles; adentro del modal, donde el ancho no
+          aprieta, cada opción se explica entera. Es lo que un `<select>` no
+          permitía: ahí las dos cosas eran el mismo string.
+        */}
+        <SelectorModal
+          label="Desarrollo del índice"
+          mostrarLabel={false}
+          descripcion="Qué intervenciones entran en los tres gráficos"
+          value={desarrollo}
+          onChange={(v) => setDesarrollo(v as FiltroDesarrollo)}
+          opciones={[
+            { valor: "TODOS", texto: "Todas", extra: "Sin filtrar por desarrollo del índice" },
+            { valor: "SI", texto: "Desarrollados", extra: "Solo las que desarrollaron el índice" },
+            { valor: "NO", texto: "No desarrollados", extra: "Solo las que no lo desarrollaron" },
+          ]}
+          className="h-10 px-3 text-sm"
+        />
       </div>
 
       {/* ── Gráfico 1: horarios ──────────────────────────────────────────── */}
       <section>
-        <div className="mb-3">
-          <h2 className="font-display text-xl font-bold">Puntualidad</h2>
-          {/*
-            "Fuera de horario" y no "atraso": el backend manda las marcaciones
-            que se apartan 15+ min EN CUALQUIER DIRECCIÓN, así que en el total
-            también entran las marcaciones muy anticipadas.
-          */}
-          <p className="text-xs text-muted-foreground">
-            Total marcado fuera de horario · desvíos de 15 min o más
-          </p>
+        {/*
+          El ojo va en la CABECERA y no adentro de la tarjeta: lo que se oculta
+          es la tarjeta entera, así que el control tiene que sobrevivirla.
+        */}
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="font-display text-xl font-bold">Puntualidad</h2>
+            {/*
+              "Fuera de horario" y no "atraso": el backend manda las marcaciones
+              que se apartan 15+ min EN CUALQUIER DIRECCIÓN, así que en el total
+              también entran las marcaciones muy anticipadas.
+            */}
+            <p className="text-xs text-muted-foreground">
+              Total marcado fuera de horario · desvíos de 15 min o más
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setVerPuntualidad((v) => !v)}
+            aria-expanded={verPuntualidad}
+            aria-label={
+              verPuntualidad
+                ? "Ocultar el gráfico de puntualidad"
+                : "Mostrar el gráfico de puntualidad"
+            }
+            className="tap grid size-10 shrink-0 place-items-center rounded-full text-muted-foreground hover:text-foreground"
+          >
+            {verPuntualidad ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </button>
         </div>
 
-        <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
-          {isLoading ? (
-            <div className="h-40 animate-pulse rounded-xl bg-muted" />
-          ) : isError ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No se pudo cargar la puntualidad.
-            </p>
-          ) : !resumen.length ? (
-            /*
+        {verPuntualidad && (
+          <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
+            {isLoading ? (
+              <div className="h-40 animate-pulse rounded-xl bg-muted" />
+            ) : isError ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No se pudo cargar la puntualidad.
+              </p>
+            ) : !resumen.length ? (
+              /*
               Dos causas posibles y el texto no las separa a propósito: o no hay
               marcaciones cargadas, o todas cayeron dentro de los 15 minutos.
               Las dos son "no hay nada que revisar".
             */
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              Sin desvíos de 15 minutos o más en {MESES[mes - 1]} de {anio}.
-            </p>
-          ) : (
-            <>
-              <PuntualidadChart datos={resumen} onSeleccionar={setElegido} />
-              <p className="mt-3 border-t border-border/60 pt-2.5 text-center text-[11px] text-muted-foreground">
-                Tocá una barra para ver el detalle
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Sin desvíos de 15 minutos o más en {MESES[mes - 1]} de {anio}
+                {coletilla}.
               </p>
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                <PuntualidadChart datos={resumen} onSeleccionar={setElegido} />
+                <p className="mt-3 border-t border-border/60 pt-2.5 text-center text-[11px] text-muted-foreground">
+                  Tocá una barra para ver el detalle
+                </p>
+              </>
+            )}
+          </div>
+        )}
       </section>
 
       {/* ── Gráfico 2: ubicación ─────────────────────────────────────────── */}
@@ -214,7 +308,8 @@ function Puntualidad() {
               `intervenciones.sql`.
             */
             <p className="py-6 text-center text-sm text-muted-foreground">
-              Sin marcaciones fuera de rango en {MESES[mes - 1]} de {anio}.
+              Sin marcaciones fuera de rango en {MESES[mes - 1]} de {anio}
+              {coletilla}.
             </p>
           ) : (
             <>
@@ -235,8 +330,18 @@ function Puntualidad() {
             "Todas" es el dato que evita el malentendido: los dos gráficos de
             arriba muestran solo desvíos, y sin esta aclaración se leería como
             si estas barras también fueran problemas.
+
+            Con el filtro de desarrollo puesto ya NO son todas, así que el texto
+            lo dice: dejarlo fijo en "Todas" mientras el backend cuenta un
+            subconjunto sería la única línea de la pantalla que miente.
           */}
-          <p className="text-xs text-muted-foreground">Todas las intervenciones, por día del mes</p>
+          <p className="text-xs text-muted-foreground">
+            {desarrollo === "TODOS"
+              ? "Todas las intervenciones, por día del mes"
+              : desarrollo === "SI"
+                ? "Intervenciones que desarrollaron el índice, por día del mes"
+                : "Intervenciones que no desarrollaron el índice, por día del mes"}
+          </p>
         </div>
 
         <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
@@ -248,7 +353,8 @@ function Puntualidad() {
             </p>
           ) : !dias?.length ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              Sin intervenciones registradas en {MESES[mes - 1]} de {anio}.
+              Sin intervenciones registradas en {MESES[mes - 1]} de {anio}
+              {coletilla}.
             </p>
           ) : (
             <ActividadChart datos={dias} />

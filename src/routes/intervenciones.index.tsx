@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
+import { SelectorModal } from "@/components/selector-modal";
 import { nombreTurno } from "@/lib/evaluaciones";
 import {
   keysCrud,
@@ -125,33 +126,31 @@ function IntervencionesPage() {
 
         {/* ── Período ──────────────────────────────────────────────────── */}
         <div className="mb-4 flex gap-2">
-          <select
-            value={mes}
-            onChange={(e) => setMes(e.target.value === "" ? "" : Number(e.target.value))}
-            aria-label="Mes"
-            className="h-10 min-w-0 flex-1 rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
-          >
-            {/* "Todo el año" primero: al buscar una intervención vieja no
-                siempre se recuerda de qué mes era. */}
-            <option value="">Todo el año</option>
-            {MESES.map((m, i) => (
-              <option key={m} value={i + 1}>
-                {m}
-              </option>
-            ))}
-          </select>
-          <select
-            value={anio}
-            onChange={(e) => setAnio(e.target.value)}
-            aria-label="Año"
-            className="h-10 w-24 shrink-0 rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
-          >
-            {anios.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
+          <SelectorModal
+            label="Mes"
+            mostrarLabel={false}
+            value={String(mes)}
+            // `""` es "todo el año" y NO es un mes: por eso vuelve como string
+            // vacío y no pasa por `Number`, que lo convertiría en 0.
+            onChange={(v) => setMes(v === "" ? "" : Number(v))}
+            opciones={[
+              // "Todo el año" primero: al buscar una intervención vieja no
+              // siempre se recuerda de qué mes era.
+              { valor: "", texto: "Todo el año" },
+              ...MESES.map((m, i) => ({ valor: String(i + 1), texto: m })),
+            ]}
+            className="h-10 px-3 text-sm"
+          />
+          <div className="w-24 shrink-0">
+            <SelectorModal
+              label="Año"
+              mostrarLabel={false}
+              value={anio}
+              onChange={setAnio}
+              opciones={anios.map((a) => ({ valor: a, texto: a }))}
+              className="h-10 px-3 text-sm"
+            />
+          </div>
         </div>
 
         {/* ── Resultado ────────────────────────────────────────────────── */}
@@ -235,11 +234,9 @@ function Fila({ i }: { i: IntervencionCrud }) {
             </span>
             {i.manual && <span>{i.manual}</span>}
             {i.nro_indice != null && <span>Índice {i.nro_indice}</span>}
-            {[i.grado, i.seccion && `Sec. ${i.seccion}`, turno]
-              .filter(Boolean)
-              .map((t) => (
-                <span key={t as string}>{t}</span>
-              ))}
+            {[i.grado, i.seccion && `Sec. ${i.seccion}`, turno].filter(Boolean).map((t) => (
+              <span key={t as string}>{t}</span>
+            ))}
             {/* (0,0) es lo que se guarda cuando no hubo GPS. Marcarlo evita que
                 alguien lea la fila como "marcó en el Golfo de Guinea". */}
             {i.latitud === "0" && i.longitud === "0" && (

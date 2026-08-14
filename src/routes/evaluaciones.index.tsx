@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Search,
   SlidersHorizontal,
+  UserCheck,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -282,6 +283,32 @@ function Tarjeta({ g }: { g: EvaluacionAgrupada }) {
             <MapPin className="size-3.5 shrink-0" />
             <span className="truncate">{g.ciudad ?? `#${g.id_ciudad}`}</span>
           </p>
+          {/*
+            QUIÉN EVALUÓ. Va acá arriba, con la institución y la ciudad, y no en
+            la fila de abajo: esa ya tiene el período y la calificación, y un
+            tercer dato la aprieta hasta que las fechas se cortan.
+
+            Es texto tipeado a mano —no una FK—, así que puede venir vacío en
+            cargas viejas; ahí no se dibuja la línea en vez de mostrar un guion,
+            que ocuparía el mismo alto para no decir nada.
+          */}
+          {g.evaluado_por.trim() ? (
+            <p className="mt-0.5 flex items-center gap-1.5 text-[13px] text-muted-foreground">
+              <UserCheck className="size-3.5 shrink-0" />
+              {/*
+                "Evaluador:" delante del nombre. Las otras dos líneas se
+                explican solas por su ícono —un edificio es la institución, un
+                pin es la ciudad—, pero acá hay DOS personas en la tarjeta: el
+                título es el facilitador evaluado y este es quien lo evaluó.
+                Sin la palabra, el ícono solo no distingue una de la otra.
+
+                La etiqueta no se recorta (`shrink-0`); lo que cede es el
+                nombre, que es lo único que puede pasarse de ancho.
+              */}
+              <span className="shrink-0">Evaluador:</span>
+              <span className="truncate">{g.evaluado_por}</span>
+            </p>
+          ) : null}
         </div>
         <ChevronRight className="mt-1 size-4 shrink-0 text-muted-foreground" />
       </div>

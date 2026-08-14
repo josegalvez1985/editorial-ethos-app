@@ -151,6 +151,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // lados, memoria y localStorage, o el próximo login la restauraría.
     qc.clear();
     borrarCachePersistida();
+
+    // EL BORRADOR DE "NUEVA EVALUACIÓN" **NO** SE BORRA ACÁ, a propósito.
+    //
+    // Es la excepción a la regla de arriba, pedida explícitamente (14/08/2026):
+    // el token vence a las 6 h y quien está cargando una evaluación en la
+    // escuela vuelve a loguearse y tiene que encontrar su formulario donde lo
+    // dejó. Borrarlo acá haría que el logout —o el vencimiento del token, que
+    // pasa por el mismo camino— perdiera justo lo que el borrador vino a salvar.
+    //
+    // El costo, que es real: queda en `localStorage` en texto plano y sin sesión
+    // abierta, con el nombre del facilitador y los aspectos redactados. Mismo
+    // criterio que la contraseña recordada. Caduca solo a la semana y se borra
+    // al guardar con éxito. Ver `lib/borrador.ts`.
   }, [qc]);
 
   const user = useMemo(

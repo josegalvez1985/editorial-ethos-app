@@ -7,6 +7,7 @@ import { IndiceSiguienteCard } from "@/components/indice-siguiente-card";
 import { PickerModal } from "@/components/picker-modal";
 import { PostulacionPicker } from "@/components/postulacion-picker";
 import { CalificacionDisplay, StarToggle } from "@/components/star-rating";
+import { guardarBorrador, type ContenidoBorrador } from "@/lib/borrador";
 import {
   ESCALA_MAXIMA,
   formatearNombre,
@@ -228,26 +229,66 @@ function AreaDetalle({
 
 export function EvaluacionForm({
   inicial,
+  restaurado,
+  autoguardar = false,
   guardando,
   onSubmit,
   textoBoton,
 }: {
   inicial?: EvaluacionAgrupada;
+  /**
+   * Un borrador recuperado del disco, para arrancar con él en vez de en blanco.
+   *
+   * Solo lo usa "Nueva evaluación". Al EDITAR no se pasa nunca: ahí el estado
+   * inicial sale de `inicial`, que son los datos reales de Oracle, y pisarlos
+   * con un borrador de otra evaluación sería corromper una fila existente.
+   */
+  restaurado?: ContenidoBorrador;
+  /**
+   * Si guarda lo tipeado en el disco mientras se escribe.
+   *
+   * **Solo en "Nueva".** Al editar no se autoguarda: el registro ya existe en
+   * Oracle y un borrador local competiría con él —quedaría ofreciendo cambios
+   * viejos sobre una fila que alguien más pudo haber tocado—.
+   */
+  autoguardar?: boolean;
   guardando: boolean;
   onSubmit: (cab: Cabecera, detalles: Detalle[]) => void;
   textoBoton: string;
 }) {
-  const [cab, setCab] = useState<Cabecera>(() => cabeceraInicial(inicial));
-  const [areas, setAreas] = useState(() => areasIniciales(inicial));
-  const [detalles, setDetalles] = useState<Detalle[]>(() => inicial?.detalles ?? []);
+  const [cab, setCab] = useState<Cabecera>(() => restaurado?.cab ?? cabeceraInicial(inicial));
+  const [areas, setAreas] = useState(() => restaurado?.areas ?? areasIniciales(inicial));
+  const [detalles, setDetalles] = useState<Detalle[]>(
+    () => restaurado?.detalles ?? inicial?.detalles ?? [],
+  );
   const [error, setError] = useState<string | null>(null);
 
   // Textos de los combos ya elegidos, para no tener que abrir la hoja al editar.
-  const [textos, setTextos] = useState({
-    facilitador: inicial?.facilitador ?? null,
-    institucion: inicial?.institucion ?? null,
-    ciudad: inicial?.ciudad ?? null,
-  });
+  const [textos, setTextos] = useState(
+    () =>
+      restaurado?.textos ?? {
+        facilitador: inicial?.facilitador ?? null,
+        institucion: inicial?.institucion ?? null,
+        ciudad: inicial?.ciudad ?? null,
+      },
+  );
+
+  /*
+   * ── EL AUTOGUARDADO ─────────────────────────────────────────────────────
+   *
+   * Cada cambio del formulario reescribe el borrador. Sin debounce a propósito:
+   * `localStorage` es sincrónico pero lo que se escribe son unos pocos KB, y el
+   * costo de perder el último tecleo es peor que el de escribir de más. El
+   * throttle de la caché de react-query existe porque ahí se reescribe TODA la
+   * caché; acá es solo este formulario.
+   *
+   * `guardarBorrador` decide solo si hay algo que guardar: un formulario recién
+   * abierto y sin tocar no deja rastro. Ver `tieneContenido`.
+   */
+  useEffect(() => {
+    if (!autoguardar) return;
+    guardarBorrador({ cab, areas, detalles, textos });
+  }, [autoguardar, cab, areas, detalles, textos]);
 
   /*
    * Cuántas áreas hay en total, para saber cuándo ya se agregaron todas y dejar

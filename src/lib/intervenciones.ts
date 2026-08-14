@@ -191,6 +191,61 @@ export async function listarIntervenciones(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Filtro por "¿se desarrolló el índice?"                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Los tres estados del filtro de desarrollo.
+ *
+ * `"TODOS"` es el valor por defecto y **no** filtra nada: es el tablero
+ * completo, que es lo que se veía antes de que este filtro existiera.
+ */
+export type FiltroDesarrollo = "TODOS" | "SI" | "NO";
+
+/**
+ * Normaliza `si_no` a `"SI"` / `"NO"`, o `null` si no se puede decidir.
+ *
+ * ## POR QUÉ NO SE COMPARA CONTRA `'Si'` DIRECTO
+ *
+ * `SI_NO` es **texto libre** en la base: la columna no tiene CHECK ni dominio.
+ * El CRUD de hoy escribe `INITCAP(TRIM(...))` —o sea `'Si'` / `'No'`— pero los
+ * datos históricos entraron por APEX y por otras vías, así que pueden traer
+ * `'SI'`, `'si'`, `' Si '` o vacío. Comparar con `=== "Si"` dejaría filas afuera
+ * en silencio, que es justo lo que un filtro no puede hacer.
+ *
+ * `null` cubre el vacío y cualquier cosa que no sea reconocible: esas filas
+ * **no** se cuentan ni como Sí ni como No. Ver `cumpleDesarrollo`.
+ */
+export function estadoDesarrollo(i: Intervencion): "SI" | "NO" | null {
+  const v = (i.si_no ?? "").trim().toUpperCase();
+  if (v === "SI") return "SI";
+  if (v === "NO") return "NO";
+  return null;
+}
+
+/**
+ * Si la marcación pasa el filtro de desarrollo.
+ *
+ * **Con `"TODOS"` pasa todo**, incluidas las filas sin `si_no` legible. Al
+ * elegir `"SI"` o `"NO"` esas filas quedan afuera: no se sabe de qué lado van, y
+ * meterlas en cualquiera de los dos grupos inventaría un dato que la base no
+ * tiene.
+ */
+export function cumpleDesarrollo(i: Intervencion, filtro: FiltroDesarrollo): boolean {
+  if (filtro === "TODOS") return true;
+  return estadoDesarrollo(i) === filtro;
+}
+
+/** Aplica el filtro a una lista de marcaciones. */
+export function filtrarPorDesarrollo(
+  filas: Intervencion[],
+  filtro: FiltroDesarrollo,
+): Intervencion[] {
+  if (filtro === "TODOS") return filas;
+  return filas.filter((f) => cumpleDesarrollo(f, filtro));
+}
+
+/* -------------------------------------------------------------------------- */
 /* El agrupado para el gráfico                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -290,9 +345,29 @@ export type ActividadDia = {
  *
  * Los días sin actividad **no vienen** en la respuesta: un sábado sin clases no
  * es un cero que haya que dibujar. Ver `rellenarDias` si se los quiere igual.
+ *
+ * ## EL FILTRO DE DESARROLLO VIAJA AL BACKEND, NO SE APLICA ACÁ
+ *
+ * Es la diferencia con los otros dos gráficos. Este endpoint devuelve el conteo
+ * **ya agregado por día**, así que en el front no quedan las filas individuales
+ * sobre las que se podría filtrar: hay que pedirle al SQL que cuente solo las
+ * que corresponden. Por eso `si_no` es un parámetro de la consulta y por eso
+ * entra en la query key.
+ *
+ * `"TODOS"` no manda el parámetro — ver `qs`, que descarta los vacíos.
  */
-export async function actividadPorDia(anio?: string, mes?: number): Promise<ActividadDia[]> {
-  const r = (await authFetch(`intervenciones/por-dia${qs({ anio, mes: nombreMes(mes) })}`)) as {
+export async function actividadPorDia(
+  anio?: string,
+  mes?: number,
+  desarrollo: FiltroDesarrollo = "TODOS",
+): Promise<ActividadDia[]> {
+  const r = (await authFetch(
+    `intervenciones/por-dia${qs({
+      anio,
+      mes: nombreMes(mes),
+      si_no: desarrollo === "TODOS" ? undefined : desarrollo,
+    })}`,
+  )) as {
     data?: Record<string, unknown>[];
   };
 
@@ -475,7 +550,18 @@ export function formatearAtraso(minutos: number | null): string {
   return m ? `${h} h ${m} min` : `${h} h`;
 }
 
+/**
+ * Las claves de caché.
+ *
+ * **`porDia` lleva el filtro de desarrollo y `historial` no**, y la asimetría es
+ * a propósito: `por-dia` filtra en el backend, así que cada valor del filtro es
+ * una respuesta distinta y necesita su propia entrada. `historial` trae las
+ * filas crudas y el filtro se aplica en memoria, así que las tres opciones se
+ * sirven de la MISMA respuesta — meterlo en la clave forzaría tres descargas
+ * idénticas del mismo mes.
+ */
 export const keysIntervenciones = {
   historial: (anio: string, mes: number) => ["intervenciones", anio, mes] as const,
-  porDia: (anio: string, mes: number) => ["intervenciones-por-dia", anio, mes] as const,
+  porDia: (anio: string, mes: number, desarrollo: FiltroDesarrollo = "TODOS") =>
+    ["intervenciones-por-dia", anio, mes, desarrollo] as const,
 };

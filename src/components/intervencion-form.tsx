@@ -47,6 +47,7 @@ import { toast } from "sonner";
 
 import { PickerModal } from "@/components/picker-modal";
 import { PostulacionPicker } from "@/components/postulacion-picker";
+import { SelectorModal } from "@/components/selector-modal";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -149,8 +150,7 @@ export function IntervencionForm({ previa }: { previa?: IntervencionCrud }) {
   const [confirmarBorrado, setConfirmarBorrado] = useState(false);
   const [ubicando, setUbicando] = useState(false);
 
-  const set = <K extends keyof Estado>(k: K, v: Estado[K]) =>
-    setE((prev) => ({ ...prev, [k]: v }));
+  const set = <K extends keyof Estado>(k: K, v: Estado[K]) => setE((prev) => ({ ...prev, [k]: v }));
 
   /*
    * ── EL MANUAL: DE DÓNDE SALE Y POR QUÉ HAY UN SELECTOR ──────────────────
@@ -409,30 +409,28 @@ export function IntervencionForm({ previa }: { previa?: IntervencionCrud }) {
           intervención que se le carga—, y en los dos casos hay que poder elegir.
         */}
         <div>
-          <label className="mb-1.5 block text-sm font-medium">
-            Manual <span className="text-destructive">*</span>
-          </label>
-          <select
+          <SelectorModal
+            label="Manual"
+            requerido
+            descripcion="Elegí el manual que se está desarrollando"
+            placeholder="Elegí el manual…"
             value={manual ?? ""}
-            onChange={(ev) =>
+            onChange={(v) =>
               setE((prev) => ({
                 ...prev,
-                manual: ev.target.value,
+                manual: v,
                 // Cambiar de manual invalida el índice: los de un manual no
                 // existen en otro, y quedaría uno de otro manual guardado.
                 id_indice: null,
                 indice_texto: "",
               }))
             }
-            className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
-          >
-            <option value="">Elegí el manual…</option>
-            {manuales?.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+            // El nombre del manual ES la clave: no hay tabla de manuales, así
+            // que el texto libre de la columna es el identificador. Ver
+            // `lib/intervenciones-crud.ts`.
+            opciones={(manuales ?? []).map((m) => ({ valor: m, texto: m }))}
+            className="min-h-12 px-4 py-2.5 text-base"
+          />
           {/* De dónde salió, cuando lo propuso la postulación: sin esto el campo
               aparece lleno y no se sabe si lo eligió alguien o vino solo. */}
           {manualPropuesto && !e.manual && (
@@ -451,9 +449,7 @@ export function IntervencionForm({ previa }: { previa?: IntervencionCrud }) {
           valueText={e.indice_texto}
           requerido
           disabledReason={!manual ? "Elegí primero el manual" : undefined}
-          onChange={(o) =>
-            setE((prev) => ({ ...prev, id_indice: o.id, indice_texto: o.texto }))
-          }
+          onChange={(o) => setE((prev) => ({ ...prev, id_indice: o.id, indice_texto: o.texto }))}
         />
 
         {/* ¿Se desarrolló? Dos botones y no un select: son dos opciones y el
@@ -545,7 +541,11 @@ export function IntervencionForm({ previa }: { previa?: IntervencionCrud }) {
           disabled={ubicando}
           className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-input bg-card text-sm font-medium disabled:opacity-60"
         >
-          {ubicando ? <Loader2 className="size-4 animate-spin" /> : <Crosshair className="size-4" />}
+          {ubicando ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Crosshair className="size-4" />
+          )}
           {ubicando ? "Buscando…" : e.latitud ? "Actualizar ubicación" : "Usar mi ubicación"}
         </button>
 
@@ -580,9 +580,9 @@ export function IntervencionForm({ previa }: { previa?: IntervencionCrud }) {
           <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
             <p className="text-[11px] leading-snug text-muted-foreground">
-              Sin ubicación se guarda como <span className="font-medium">no registrada</span>, y
-              no cuenta en el gráfico de ubicación. Usá el botón solo si estás en la institución:
-              tu posición actual no es donde se dio la clase.
+              Sin ubicación se guarda como <span className="font-medium">no registrada</span>, y no
+              cuenta en el gráfico de ubicación. Usá el botón solo si estás en la institución: tu
+              posición actual no es donde se dio la clase.
             </p>
           </div>
         )}

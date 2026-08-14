@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
@@ -94,6 +94,20 @@ function EditarPage() {
           <h1 className="font-display mt-1 truncate text-[2rem] leading-none font-bold">
             {data?.facilitador ?? "Editar"}
           </h1>
+          {/*
+            Quién evaluó, debajo del nombre del evaluado. Los dos son personas y
+            el título solo muestra al facilitador: sin esta línea hay que bajar
+            hasta el campo del formulario para saber de quién es la evaluación
+            que se está por editar.
+
+            El campo sigue estando abajo y es el que se edita; esto es la ficha.
+          */}
+          {data?.evaluado_por.trim() ? (
+            <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-muted-foreground">
+              <UserCheck className="size-3.5 shrink-0" />
+              <span className="truncate">Evaluado por {data.evaluado_por}</span>
+            </p>
+          ) : null}
         </div>
 
         {/*

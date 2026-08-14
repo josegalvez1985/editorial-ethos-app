@@ -184,11 +184,14 @@ CREATE OR REPLACE PACKAGE PKG_INTERVENCIONES_ETHOS AS
   --
   -- p_anio: 'YYYY' como TEXTO ('2026'). Sin el, el año en curso.
   -- p_mes:  EL NOMBRE DEL MES como TEXTO ('Agosto'). Sin el, el mes en curso.
+  -- p_si_no: 'SI' / 'NO' para contar solo los indices desarrollados o solo los
+  --          que no. Sin el (o con 'TODOS'), cuenta las dos cosas.
   ------------------------------------------------------------------------------
   PROCEDURE por_dia(
       p_token IN VARCHAR2,
       p_anio  IN VARCHAR2 DEFAULT NULL,
-      p_mes   IN VARCHAR2 DEFAULT NULL);
+      p_mes   IN VARCHAR2 DEFAULT NULL,
+      p_si_no IN VARCHAR2 DEFAULT NULL);
 
 END PKG_INTERVENCIONES_ETHOS;
 /
@@ -766,16 +769,33 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
   PROCEDURE por_dia(
       p_token IN VARCHAR2,
       p_anio  IN VARCHAR2 DEFAULT NULL,
-      p_mes   IN VARCHAR2 DEFAULT NULL
+      p_mes   IN VARCHAR2 DEFAULT NULL,
+      p_si_no IN VARCHAR2 DEFAULT NULL
   ) IS
     l_usuario  VARCHAR2(255);
     l_anio     VARCHAR2(4);
     l_mes      NUMBER;
+    l_si_no    VARCHAR2(10);
   BEGIN
     l_usuario := f_usuario(p_token);
     IF l_usuario IS NULL THEN
       p_error(401, 'Unauthorized', 'Token invalido o expirado');
       RETURN;
+    END IF;
+
+    -- EL FILTRO DE DESARROLLO: 'SI', 'NO', o NULL = las dos cosas.
+    --
+    -- Cualquier otro valor se trata como NULL en vez de rechazarse con un 400:
+    -- este es un endpoint de tablero, y un parametro mal escrito tiene que
+    -- devolver el grafico completo, no dejar la pantalla en blanco.
+    --
+    -- SI_NO es texto libre en la vista (sin CHECK ni dominio), asi que la
+    -- comparacion de abajo normaliza los DOS lados con UPPER(TRIM(...)): los
+    -- datos historicos traen 'Si', 'SI' y ' si '. Comparar contra 'Si' pelado
+    -- perderia filas en silencio.
+    l_si_no := UPPER(TRIM(p_si_no));
+    IF l_si_no NOT IN ('SI', 'NO') THEN
+      l_si_no := NULL;
     END IF;
 
     -- Mismo criterio que `listar`, para que los tres graficos del inicio miren
@@ -801,6 +821,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
     APEX_JSON.WRITE('anio',    l_anio);
     -- El mes TAL COMO SE COMPARO ('AGOSTO'), no como lo mando el front.
     APEX_JSON.WRITE('mes',     l_mes);
+    -- El filtro TAL COMO SE APLICO: si vino basura, acá sale null y se ve que
+    -- no se filtro nada. Sin esto, un valor mal escrito daria el total completo
+    -- sin ninguna pista de por que.
+    APEX_JSON.WRITE('si_no',   l_si_no);
     -- Contra que se comparo, y cuantas filas hay de cada lado del filtro. Sin
     -- esto, un resultado vacio no distingue "no hay datos" de "el filtro no
     -- matchea", y hay que ir a la base a adivinar cual de las dos es.
@@ -835,6 +859,13 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
            -- SELECT no hay donde atrapar el ORA-01843, y una sola fila con
            -- basura tumbaria la consulta entera.
            AND REGEXP_LIKE(TRIM(fecha), '^\d{2}/\d{2}/\d{4}$')
+           -- El filtro de desarrollo. Con l_si_no NULL no filtra nada.
+           --
+           -- Las filas con SI_NO vacio o ilegible quedan AFUERA cuando el
+           -- filtro esta puesto, igual que en el front (`estadoDesarrollo`):
+           -- no se sabe de que lado van y contarlas en cualquiera de los dos
+           -- grupos inventaria un dato que la base no tiene.
+           AND (l_si_no IS NULL OR UPPER(TRIM(si_no)) = l_si_no)
          GROUP BY TO_CHAR(TO_DATE(fecha, 'DD/MM/YYYY'), 'DD')
          ORDER BY 1
     ) LOOP
@@ -922,7 +953,7 @@ END;
       p_access_method      => 'IN');
 
   ----------------------------------------------------------------------------
-  -- intervenciones/por-dia  ?anio=&mes=
+  -- intervenciones/por-dia  ?anio=&mes=&si_no=
   --
   -- Prioridad 1, MAS ALTA que 'intervenciones' (0): ORDS evalua por prioridad y
   -- sin esto la ruta con barra podria caer en el handler generico.
@@ -956,7 +987,9 @@ BEGIN
         p_token => l_token,
         p_anio  => :anio,
         -- Idem `listar`: el mes es TEXTO ('Agosto').
-        p_mes   => :mes);
+        p_mes   => :mes,
+        -- 'SI' / 'NO'. Sin el, cuenta las dos cosas.
+        p_si_no => :si_no);
 END;
 ~');
 
