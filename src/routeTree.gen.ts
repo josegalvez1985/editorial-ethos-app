@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as HomeRouteImport } from './routes/home'
+import { Route as AgendasIndexRouteImport } from './routes/agendas.index'
 import { Route as EvaluacionesIndexRouteImport } from './routes/evaluaciones.index'
 import { Route as EvaluacionesIdRouteImport } from './routes/evaluaciones.$id'
 import { Route as EvaluacionesNuevaRouteImport } from './routes/evaluaciones.nueva'
@@ -33,6 +34,11 @@ const AccountRoute = AccountRouteImport.update({
 const HomeRoute = HomeRouteImport.update({
   id: '/home',
   path: '/home',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgendasIndexRoute = AgendasIndexRouteImport.update({
+  id: '/agendas/',
+  path: '/agendas/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EvaluacionesIndexRoute = EvaluacionesIndexRouteImport.update({
@@ -79,6 +85,7 @@ export interface FileRoutesByFullPath {
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
+  '/agendas/': typeof AgendasIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
@@ -91,6 +98,7 @@ export interface FileRoutesByTo {
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
+  '/agendas': typeof AgendasIndexRoute
   '/evaluaciones': typeof EvaluacionesIndexRoute
   '/intervenciones': typeof IntervencionesIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
@@ -104,6 +112,7 @@ export interface FileRoutesById {
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
+  '/agendas/': typeof AgendasIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
     | '/evaluaciones/nueva'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
+    | '/agendas/'
     | '/evaluaciones/'
     | '/intervenciones/'
     | '/api/ords/$'
@@ -130,6 +140,7 @@ export interface FileRouteTypes {
     | '/evaluaciones/nueva'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
+    | '/agendas'
     | '/evaluaciones'
     | '/intervenciones'
     | '/api/ords/$'
@@ -142,6 +153,7 @@ export interface FileRouteTypes {
     | '/evaluaciones/nueva'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
+    | '/agendas/'
     | '/evaluaciones/'
     | '/intervenciones/'
     | '/api/ords/$'
@@ -155,6 +167,7 @@ export interface RootRouteChildren {
   EvaluacionesNuevaRoute: typeof EvaluacionesNuevaRoute
   IntervencionesIdRoute: typeof IntervencionesIdRoute
   IntervencionesNuevaRoute: typeof IntervencionesNuevaRoute
+  AgendasIndexRoute: typeof AgendasIndexRoute
   EvaluacionesIndexRoute: typeof EvaluacionesIndexRoute
   IntervencionesIndexRoute: typeof IntervencionesIndexRoute
   ApiOrdsSplatRoute: typeof ApiOrdsSplatRoute
@@ -181,6 +194,13 @@ declare module '@tanstack/react-router' {
       path: '/home'
       fullPath: '/home'
       preLoaderRoute: typeof HomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agendas/': {
+      id: '/agendas/'
+      path: '/agendas'
+      fullPath: '/agendas/'
+      preLoaderRoute: typeof AgendasIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/evaluaciones/': {
@@ -243,6 +263,7 @@ const rootRouteChildren: RootRouteChildren = {
   EvaluacionesNuevaRoute: EvaluacionesNuevaRoute,
   IntervencionesIdRoute: IntervencionesIdRoute,
   IntervencionesNuevaRoute: IntervencionesNuevaRoute,
+  AgendasIndexRoute: AgendasIndexRoute,
   EvaluacionesIndexRoute: EvaluacionesIndexRoute,
   IntervencionesIndexRoute: IntervencionesIndexRoute,
   ApiOrdsSplatRoute: ApiOrdsSplatRoute,

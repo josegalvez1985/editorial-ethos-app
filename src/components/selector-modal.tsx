@@ -88,9 +88,19 @@ export function SelectorModal({
   };
 
   return (
-    <div className={mostrarLabel ? undefined : "min-w-0 flex-1"}>
+    /*
+     * `min-w-0` SIEMPRE, con o sin etiqueta.
+     *
+     * Sin él, dentro de una grilla o un flex un valor largo —"Colegio Nacional
+     * Dr. Luis Alberto de Herrera"— estira la celda en vez de dejar que el
+     * `truncate` de adentro haga su trabajo, y la fila entera queda despareja.
+     *
+     * El `flex-1` sigue solo en el caso sin etiqueta: ahí el control vive en
+     * una fila flex y tiene que repartirse el ancho.
+     */
+    <div className={mostrarLabel ? "min-w-0" : "min-w-0 flex-1"}>
       {mostrarLabel ? (
-        <label className="mb-1.5 block text-sm font-medium">
+        <label className="mb-1.5 block truncate text-sm font-medium">
           {label}
           {requerido ? <span className="ml-0.5 text-destructive">*</span> : null}
         </label>

@@ -15,7 +15,14 @@
  * y el costo de dejarla armada es una línea por grupo.
  */
 
-import { CalendarClock, ClipboardList, Home, Settings, type LucideIcon } from "lucide-react";
+import {
+  CalendarClock,
+  CalendarDays,
+  ClipboardList,
+  Home,
+  Settings,
+  type LucideIcon,
+} from "lucide-react";
 
 export type ItemNav = {
   to: string;
@@ -62,6 +69,17 @@ export const MENU: GrupoNav[] = [
         label: "Intervenciones",
         icon: CalendarClock,
         descripcion: "Carga manual de intervenciones",
+      },
+    ],
+  },
+  {
+    titulo: "Reportes",
+    items: [
+      {
+        to: "/agendas",
+        label: "Agendas",
+        icon: CalendarDays,
+        descripcion: "Horario semanal de los facilitadores",
       },
     ],
   },
