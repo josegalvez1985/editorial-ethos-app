@@ -23,14 +23,12 @@ GitHub Pages sirve **archivos estáticos**. No hay Node, así que
 [`src/routes/api/ords.$.ts`](src/routes/api/ords.$.ts) —el proxy que reenvía a Oracle— no se
 ejecuta. El build estático lo saca del bundle y apunta `VITE_API_URL` **directo a ORDS**.
 
-El README ya anticipaba esto: *"Si se sirviera como sitio estático, el proxy no correría y habría
-que apuntar `VITE_API_URL` directo a ORDS y depender de los headers CORS."* Eso es exactamente lo
-que pasa ahora, y tiene tres consecuencias que conviene tener presentes:
+O sea que en producción `VITE_API_URL` apunta directo a ORDS y todo depende de sus headers CORS
+(el proxy solo corre en `npm run dev`). Tiene tres consecuencias que conviene tener presentes:
 
 1. **El sitio depende del CORS abierto de ORDS.** Si algún día se cierra
-   (`Access-Control-Allow-Origin`), el login deja de funcionar en la web. Ya eran dos los clientes
-   que dependen de eso —el APK y ahora el sitio—, así que ese header pasó a ser parte del
-   contrato, no un detalle.
+   (`Access-Control-Allow-Origin`), el login deja de funcionar en la web y en el APK, que carga
+   este mismo sitio. Ese header es parte del contrato, no un detalle.
 2. **El token viaja del navegador a Oracle directamente**, sin pasar por un mismo origen. Antes el
    proxy lo mantenía fuera de la URL y del alcance de otros orígenes.
 3. **La URL de ORDS es pública**: está embebida en el JS y cualquiera puede leerla. No es un
@@ -150,15 +148,14 @@ Si alguna vez hay que volver al `github.io`, son tres cosas y **las tres hacen f
 El build vuelve a colgar de `/editorial-ethos-app/`, así que el sitio queda en
 `https://josegalvez1985.github.io/editorial-ethos-app/`.
 
-### 3. Opcional: apuntar a otro ORDS
+### 3. Si el backend se muda: la URL de ORDS
 
-Si el backend se muda, **Settings → Secrets and variables → Actions → Variables → New variable**:
+Está **escrita en el workflow**: `VITE_API_URL`, en el `env` del paso *Build estático* de
+[`deploy.yml`](.github/workflows/deploy.yml). Se cambia ahí. No es una variable de Settings, a
+propósito: así un clon nuevo del repo se despliega solo, sin depender de configuración invisible.
+Tampoco es un secreto: termina embebida en el JS público.
 
-- Nombre: `VITE_API_URL`
-- Valor: `https://oracleapex.com/ords/<otro>/ethos/`
-
-El workflow la usa si existe, y si no cae en la de `fundcarac`. Es una *variable*, no un *secret*:
-termina embebida en el JS público, así que no tiene sentido ocultarla.
+El APK no hay que tocarlo: usa el ORDS del sitio publicado.
 
 ---
 
@@ -279,8 +276,11 @@ solo; el JSX quedó intacto.
 
 ## Qué NO se despliega acá
 
-- **El backend.** Los scripts de [`backend/`](backend/) se corren a mano en APEX. Un push no
-  toca Oracle.
-- **La app Expo de `mobile/`.** No forma parte del sitio.
-- **El APK no se recompila solo.** Si cambiás el front, el sitio se actualiza con el push pero el
-  APK instalado en los celulares no: hay que correr `npm run apk` y repartirlo de nuevo.
+- **El backend.** Los scripts de [`backend/`](backend/) se corren a mano en APEX; un push no
+  toca Oracle. **Si un cambio toca los dos lados, primero el `.sql` y después el push**: el sitio
+  se publica apenas termina el workflow, y al revés la pantalla nueva queda llamando a un
+  endpoint que todavía no existe.
+- **La app Expo de `mobile/`.** No forma parte del sitio y ya no se compila.
+- **El APK no se recompila, y no hace falta.** Su WebView carga este mismo sitio (`server.url`),
+  así que el push también actualiza los teléfonos que tienen la 2.0 o superior. Solo un cambio
+  nativo pide APK nuevo: ver el [README](README.md#hay-que-repartir-un-apk-nuevo-casi-nunca).

@@ -2,10 +2,10 @@
 -- EVALUACIONES_FACILITADORES — migracion + CRUD + listas de valores.
 --
 -- Ejecutar completo como el DUEÑO DEL ESQUEMA (el mismo que corrio
--- backend/ethos_auth.sql). Idempotente: se puede volver a correr.
+-- backend/auth.sql). Idempotente: se puede volver a correr.
 --
 -- REQUISITOS PREVIOS
---   1. backend/ethos_auth.sql ya corrido -> PKG_AUTH_ETHOS y el modulo ORDS
+--   1. backend/auth.sql ya corrido -> PKG_AUTH_ETHOS y el modulo ORDS
 --      'ethos'. Este script NO define el modulo ni habilita el esquema en ORDS:
 --      solo agrega handlers al modulo que ya esta.
 --   2. Tablas EVALUACIONES_FACILITADORES (+ su trigger y su tabla _JN),
@@ -140,12 +140,13 @@
 --    mismo nombre en departamentos distintos, en el combo se ven iguales.
 --    Pasame el DDL de DEPARTAMENTOS y le agrego el departamento al texto.
 --
--- 11. El usuario que queda en la bitacora: el trigger usa
---     NVL(V('APP_USER'), USER) y fuera de APEX V('APP_USER') es NULL, asi que
---     el JN registra el usuario del esquema, no quien uso la app. Este paquete
---     deja el usuario del token en CLIENT_IDENTIFIER; en la seccion 2 esta la
---     linea alternativa lista para usar, comentada, porque cambiar que se
---     registra en la auditoria es una decision tuya, no mia.
+-- 11. El usuario que queda en la bitacora (decidido el 24/09/2026): el trigger
+--     usa NVL(V('APP_USER'), NVL(CLIENT_IDENTIFIER, USER)). Antes era
+--     NVL(V('APP_USER'), USER), y como fuera de APEX V('APP_USER') es NULL, el
+--     JN registraba el usuario del esquema y no quien uso la app. El
+--     CLIENT_IDENTIFIER lo deja PKG_AUTH_ETHOS.VALIDAR_TOKEN en cada request
+--     (y f_usuario de este paquete, que ya lo hacia). Las filas viejas de la
+--     bitacora siguen a nombre del esquema: no hay de donde recuperar quien fue.
 --
 -- 12. Si ya corriste el ethos_catalogos.sql que te pase antes, quedo obsoleto
 --     (esas listas genericas las reemplazan los endpoints listas/* de aca).
@@ -523,10 +524,13 @@ BEGIN
       :NEW.ID_POSTULACION,
       :NEW.ID_INDICE,
       'INS',
-      -- Para que la bitacora guarde el usuario de la app y no el del esquema,
-      -- reemplazar por (el paquete deja el usuario en CLIENT_IDENTIFIER):
-      --   NVL(V('APP_USER'), NVL(SYS_CONTEXT('USERENV','CLIENT_IDENTIFIER'), USER))
-      NVL(V('APP_USER'), USER),
+      -- Quien uso la app, no el esquema: PKG_AUTH_ETHOS.VALIDAR_TOKEN deja el
+      -- usuario del token en CLIENT_IDENTIFIER. APP_USER primero, porque dentro
+      -- de APEX el CLIENT_IDENTIFIER es 'USUARIO:SESION'. El SUBSTR es por
+      -- JN_ORACLE_USER VARCHAR2(30): un usuario mas largo haria fallar el INSERT
+      -- de la bitacora y, con el, la operacion del negocio. Es la misma
+      -- expresion que usa pr_crear_trigger_auditoria (auditoria.sql).
+      SUBSTR(NVL(V('APP_USER'), NVL(SYS_CONTEXT('USERENV', 'CLIENT_IDENTIFIER'), USER)), 1, 30),
       SYSDATE,
       NULL,
       SYS_CONTEXT('USERENV', 'MODULE'),
@@ -576,7 +580,7 @@ BEGIN
       :NEW.ID_POSTULACION,
       :NEW.ID_INDICE,
       'UPD',
-      NVL(V('APP_USER'), USER),
+      SUBSTR(NVL(V('APP_USER'), NVL(SYS_CONTEXT('USERENV', 'CLIENT_IDENTIFIER'), USER)), 1, 30),
       SYSDATE,
       NULL,
       SYS_CONTEXT('USERENV', 'MODULE'),
@@ -626,7 +630,7 @@ BEGIN
       :OLD.ID_POSTULACION,
       :OLD.ID_INDICE,
       'DEL',
-      NVL(V('APP_USER'), USER),
+      SUBSTR(NVL(V('APP_USER'), NVL(SYS_CONTEXT('USERENV', 'CLIENT_IDENTIFIER'), USER)), 1, 30),
       SYSDATE,
       NULL,
       SYS_CONTEXT('USERENV', 'MODULE'),
@@ -2503,7 +2507,7 @@ END PKG_EVAL_FACILITADORES_ETHOS;
 --------------------------------------------------------------------------------
 -- === 4) ENDPOINTS ORDS ======================================================
 --
--- Se agregan al modulo 'ethos' que ya creo ethos_auth.sql.
+-- Se agregan al modulo 'ethos' que ya creo auth.sql.
 -- Igual que en auth/*: el PAQUETE emite MIME_HEADER/HTTP_HEADER_CLOSE, el
 -- handler NO. Headers duplicados = respuesta corrupta.
 --
@@ -2829,7 +2833,7 @@ EXCEPTION
   WHEN OTHERS THEN
     ROLLBACK;
     DBMS_OUTPUT.PUT_LINE('[ERROR] No se pudieron publicar los handlers: ' || SQLERRM);
-    DBMS_OUTPUT.PUT_LINE('        Revisa que el modulo ORDS ethos exista (corre backend/ethos_auth.sql).');
+    DBMS_OUTPUT.PUT_LINE('        Revisa que el modulo ORDS ethos exista (corre backend/auth.sql).');
     RAISE;
 END;
 /
@@ -2993,7 +2997,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('               evaluaciones?id_area=N | ciudades?buscar=asu');
   EXCEPTION
     WHEN NO_DATA_FOUND THEN
-      DBMS_OUTPUT.PUT_LINE('[ERROR] El esquema no esta REST-enabled. Corre backend/ethos_auth.sql.');
+      DBMS_OUTPUT.PUT_LINE('[ERROR] El esquema no esta REST-enabled. Corre backend/auth.sql.');
   END;
 END;
 /

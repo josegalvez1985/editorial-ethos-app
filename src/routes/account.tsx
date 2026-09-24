@@ -193,7 +193,7 @@ function AccountPage() {
             <div
               role="radiogroup"
               aria-label="Paleta de colores"
-              className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4"
+              className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6"
             >
               {paletaOptions.map((opt) => {
                 const active = palette === opt.value;

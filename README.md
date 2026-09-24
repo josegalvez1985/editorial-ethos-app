@@ -6,28 +6,36 @@
 > Android la trate como una app distinta y deje de instalarse encima de la que ya está en
 > los teléfonos. Ver [`APK.md`](APK.md).
 
-Login real contra Oracle APEX/ORDS, con **dos frontends** que comparten el backend:
+Sistema de gestión sobre Oracle APEX/ORDS: un sitio web que también se instala en Android.
 
-| Carpeta | Qué es | Salida |
+| Carpeta | Qué es | Dónde termina |
 | --- | --- | --- |
-| [`backend/`](backend/) | Oracle: tabla de tokens, `PKG_AUTH_ETHOS` y endpoints ORDS | — |
-| raíz (`src/`) | Sitio web — TanStack Start + Vite | dominio, con servidor Node |
-| [`mobile/`](mobile/) | App Android — Expo / React Native | APK instalable |
+| [`backend/`](backend/) | Oracle: un script por módulo, con su paquete PL/SQL y sus endpoints ORDS | se corre a mano en APEX |
+| raíz (`src/`) | Sitio web — TanStack Start + Vite + React Query | <https://www.ethospy.online/>, en GitHub Pages |
+| [`android/`](android/) | APK de Capacitor: una cáscara que abre el sitio publicado | APK que se reparte a mano |
+| [`mobile/`](mobile/) | App Expo / React Native de una etapa anterior | **ya no se compila** |
 
-Los dos frontends **no comparten código**: son dos implementaciones del mismo diseño y del
-mismo contrato de API. Un cambio de UI hay que hacerlo en ambos.
+**Hay un solo frontend vivo: el sitio.** El APK no tiene pantallas propias —su WebView carga el
+sitio— y `mobile/` quedó con login, inicio y cuenta. Un cambio de UI se hace una sola vez, en
+`src/`.
 
 ## 1. Backend (obligatorio, primero)
 
-Nada funciona sin esto. Ver [`backend/README.md`](backend/README.md).
+Nada funciona sin esto. Hay un script por módulo, todos idempotentes; el orden y el detalle de
+cada uno están en [`backend/README.md`](backend/README.md).
 
-1. APEX → SQL Workshop → SQL Scripts → sube y corre
-   [`backend/ethos_auth.sql`](backend/ethos_auth.sql).
-2. Copia la **URL base** que imprime al final.
-3. Ponla en `.env` (web) y en `mobile/app.json` → `expo.extra.apiUrl` (móvil).
+1. APEX → SQL Workshop → SQL Scripts → sube y corre [`backend/auth.sql`](backend/auth.sql):
+   login, token y el módulo ORDS `ethos`. Después, el script de cada módulo.
+2. Copia la **URL base** que imprime `auth.sql` al final.
+3. Ponla en `.env` (desarrollo) y en el `VITE_API_URL` de
+   [`deploy.yml`](.github/workflows/deploy.yml) (producción).
 
-Endpoints: `POST auth/login`, `POST auth/logout`, `GET auth/me`.
-Token opaco de **6 horas** que viaja en `Authorization: Bearer`.
+Login: `POST auth/login`, `POST auth/logout`, `GET auth/me`. Token opaco de **6 horas** que
+viaja en `Authorization: Bearer`.
+
+> **Un `.sql` no se aplica solo, y un push publica enseguida.** Si un cambio toca el backend y
+> el front, primero se corre el script en APEX y después se pushea: al revés, la pantalla nueva
+> queda llamando a un endpoint que todavía no existe.
 
 ## 2. Sitio web
 
@@ -47,16 +55,58 @@ npm run dev
 | `npm run apk` | APK de Android — una cáscara que carga este sitio, ver [`APK.md`](APK.md) |
 
 **En producción el sitio se sirve en <https://www.ethospy.online/> desde GitHub Pages** (el
-`github.io` responde un `301` hacia el dominio), que es hosting estático: el proxy **no** corre y
-el navegador le pega directo a ORDS. Ver [`DESPLIEGUE.md`](DESPLIEGUE.md).
+`github.io` responde un `301` hacia el dominio). Cada push a `main` lo publica en unos dos
+minutos: ver [`DESPLIEGUE.md`](DESPLIEGUE.md).
 
-**El navegador nunca llama a ORDS directo.** Va a `/api/ords/...` y el proxy server-side
-[`src/routes/api/ords.$.ts`](src/routes/api/ords.$.ts) reenvía a Oracle: mismo origen, sin
-CORS, y el token no queda en la URL.
+Cómo llega el navegador a Oracle depende de dónde corre el sitio:
 
-Eso implica un **deploy con servidor Node** (el proxy es código de servidor). Si se sirviera
-como sitio estático, el proxy no correría y habría que apuntar `VITE_API_URL` directo a ORDS
-y depender de los headers CORS.
+| Dónde | Cómo llega a ORDS |
+| --- | --- |
+| `npm run dev` (y el build SSR) | Por el proxy [`src/routes/api/ords.$.ts`](src/routes/api/ords.$.ts): el navegador va a `/api/ords/...`, mismo origen, sin CORS |
+| Producción (Pages) y el APK | **Directo a ORDS.** Pages es estático y el proxy no corre, así que depende del CORS abierto de ORDS |
+
+## Módulos
+
+El menú sale de `MENU`, en [`src/lib/navegacion.ts`](src/lib/navegacion.ts). Sumar un módulo es
+una entrada ahí y su archivo en `src/routes/`, y aparece solo en la sidebar, en la barra del
+celular y en la hoja "Menú".
+
+| Grupo | Módulo | Ruta | Backend |
+| --- | --- | --- | --- |
+| — | **Inicio**: gráficos de puntualidad, ubicación y actividad del mes | `/home` | `intervenciones.sql` |
+| Operación | **Evaluaciones** de facilitadores | `/evaluaciones` | `evaluaciones_facilitadores.sql` |
+| Operación | **Intervenciones**: carga manual de las que quedaron sin registrar | `/intervenciones` | `intervenciones_crud.sql` |
+| Reportes | **Agendas**: el horario semanal | `/agendas` | `agendas.sql` |
+| Administrador | **Auditoría**: qué tablas tienen bitácora y quién cambió qué | `/auditoria` | `auditoria.sql` |
+| Sistema | **Mi cuenta**: tema, color y cierre de sesión | `/account` | — |
+
+En **Auditoría**, la vista *Movimientos* tiene un buscador que mira en todos los campos de
+cada tabla, y tocar un movimiento abre la historia del registro con **todos sus campos** y los
+modificados resaltados, con su valor de antes y de después. Lo puede abrir cualquier usuario
+con sesión (decidido el 24/09/2026). Los detalles están en
+[`backend/README.md`](backend/README.md) → *Auditoría*.
+
+## Pantallas: todo el ancho, en columnas
+
+Desde el 24/09/2026 **no hay tope de ancho**: el contenido usa todo lo que deja la sidebar
+([`src/components/app-shell.tsx`](src/components/app-shell.tsx)). Antes se centraba en 1152px
+en escritorio —y en 480px en tablet— y en un monitor grande quedaban franjas vacías a los
+costados.
+
+Sin tope, cada pantalla reparte su contenido en columnas en lugar de estirar una sola:
+
+| Pantalla | Columnas |
+| --- | --- |
+| Listados de Evaluaciones e Intervenciones | 1, 2 desde `md`, 3 desde `2xl` |
+| Auditoría | hasta 4 tarjetas de tablas y los 6 filtros en una fila |
+| Formularios de evaluación e intervención | 1, 2 desde `lg` |
+
+**El celular y el APK se ven igual que antes**: todo está detrás de los breakpoints de tablet y
+escritorio. Una pantalla nueva sigue el mismo criterio: grillas con `md:` / `lg:grid-cols-*`,
+nunca un `max-w-*` que la encierre.
+
+En escritorio, el botón **Guardar** del formulario de evaluación es *sticky* dentro del
+contenido y no *fixed*: fixed ocupaba toda la ventana y tapaba el pie de la sidebar.
 
 ## Marca y temas
 
@@ -103,36 +153,33 @@ Para agregar una paleta: un bloque `[data-palette="x"]` y otro `.dark[data-palet
 el CSS, el nombre en `PALETAS`, su fila en `COLOR_BARRA` y la muestra en
 [`src/routes/account.tsx`](src/routes/account.tsx).
 
-`mobile/src/theme/colors.ts` es **espejo** de la paleta de marca: si tocás uno, tocá el otro.
+`mobile/src/theme/colors.ts` es **espejo** de la paleta de marca. Solo importa mantenerlo si
+algún día se retoma `mobile/`, que hoy no se compila.
 
 ## 3. App Android
 
-Ver [`mobile/README.md`](mobile/README.md).
+Es un APK de Capacitor que abre el sitio publicado. Cómo compilarlo, firmarlo y repartirlo está
+en [`APK.md`](APK.md); casi nunca hace falta uno nuevo (ver más abajo).
 
-```bash
-cd mobile
-npm install
-npm start          # QR para Expo Go
-npm run build:apk  # APK vía EAS
-```
+`mobile/` (Expo) ya no se compila. Queda en el repo como referencia
+—[`mobile/README.md`](mobile/README.md)—, pero "el APK" es el de Capacitor.
 
-La app **sí** pega directo a ORDS, lo cual es válido porque el `fetch` de React Native no
-aplica CORS. No usa el proxy.
+## Sesión y datos en el dispositivo
 
-## Diferencias entre los dos frontends
+Vale igual en la web y en el APK, que es el mismo sitio:
 
-No son bugs:
-
-- **El módulo de evaluaciones está solo en la web.** `mobile/` tiene login, inicio y cuenta.
-- **Biometría solo en `mobile/`** (`expo-local-authentication`), que es la app que ya no se
-  compila. Se implementó en el APK de Capacitor y **se quitó** el 31/07/2026; ver
-  [`APK.md`](APK.md) → *No hay acceso biométrico*.
-- **El token nunca persiste**, en ningún frontend: vive en memoria y cada arranque pasa por
-  el login. Lo que sí puede quedar guardado es **la contraseña**, con el check "Recordar
-  usuario y contraseña", igual en la web que en el APK: en `localStorage` y **en texto plano**.
-  Sin Keystore no hay otro lugar donde ponerla. Es opt-in, el login lo advierte en pantalla, y
-  con esa contraseña se rehace el login — nunca se revive la sesión.
-- La web pasa por proxy; la app va directo.
+- **El token nunca persiste**: vive en memoria y cada arranque pasa por el login.
+- **La contraseña sí puede quedar guardada**, con el check "Recordar usuario y contraseña": en
+  `localStorage` y **en texto plano** (sin Keystore no hay otro lugar donde ponerla). Es
+  opt-in, el login lo advierte en pantalla, y con esa contraseña se rehace el login: nunca se
+  revive la sesión.
+- **La caché de consultas se guarda** en `localStorage` (`ethos-query-cache`, ver
+  [`src/lib/query-persist.ts`](src/lib/query-persist.ts)) y se borra al cerrar sesión. **Las de
+  Auditoría no**: llevan `meta: { persistir: false }`, porque la bitácora trae datos de todas
+  las tablas.
+- **No hay biometría.** Se implementó en el APK y se quitó el 31/07/2026; ver
+  [`APK.md`](APK.md) → *No hay acceso biométrico*. La app Expo de `mobile/` la tenía, pero ya
+  no se compila.
 
 ## ¿Hay que repartir un APK nuevo? Casi nunca
 
@@ -214,10 +261,14 @@ modos. Si algún día molesta, la salida es un service worker con **network-firs
 (nunca cache-first: eso congela la app en la versión cacheada y rompe justo lo que este cambio
 vino a arreglar).
 
-Todo el detalle —cómo se publica el bundle, qué pasa sin internet, cómo volver atrás una
-actualización mala— está en [`OTA.md`](OTA.md).
+El mecanismo actual está explicado en [`capacitor.config.ts`](capacitor.config.ts), y cómo
+compilar en [`APK.md`](APK.md).
 
 ### Cuando sí toca compilar
 
 `npm run apk` (ver [`APK.md`](APK.md)). **Antes hay que subir `versionCode`** en
-`android/app/build.gradle`, o Android se niega a instalar encima. Hoy va en `14` / `"1.9.2"`.
+`android/app/build.gradle`, o Android se niega a instalar encima. Hoy va en `15` / `"2.0"`.
+
+> **En la PC actual todavía no se puede compilar** (verificado el 24/09/2026): faltan el JDK
+> 21, el SDK de Android y, lo más delicado, la clave de firma. Ver [`APK.md`](APK.md) →
+> *Requisitos*.

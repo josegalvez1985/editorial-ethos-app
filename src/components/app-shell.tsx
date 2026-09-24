@@ -12,14 +12,17 @@ import { useSession } from "@/lib/session";
  *
  * | | Navegación | Ancho del contenido |
  * | --- | --- | --- |
- * | Celular y APK (`< lg`) | tab bar abajo + hoja "Menú" | columna de 480px |
- * | Escritorio (`≥ lg`) | sidebar fija a la izquierda | ancho real, hasta 1152px |
+ * | Celular y APK (`< lg`) | tab bar abajo + hoja "Menú" | el de la pantalla |
+ * | Escritorio (`≥ lg`) | sidebar fija a la izquierda | todo lo que deja la sidebar |
  *
- * Antes la columna de 480px era para TODOS los tamaños: la web se veía como un
- * teléfono estirado en el medio de un monitor. Servía cuando la app era solo
- * evaluaciones desde el celular, pero un ERP con módulos de tablas y formularios
- * necesita el ancho. En el celular no cambió nada, así que **el APK se ve igual
- * que antes** (su WebView nunca llega a `lg`).
+ * SIN TOPE DE ANCHO, a pedido (24/09/2026). Hasta entonces el escritorio
+ * centraba el contenido en 1152px (`max-w-6xl`) y entre 640 y 1024px lo metía
+ * en una columna de 480px: en un monitor grande quedaban dos franjas vacías a
+ * los costados. Ahora cada pantalla usa todo el ancho y reparte en columnas lo
+ * que tiene (`md:`/`lg:`/`xl:grid-cols-*`) en vez de estirar una sola.
+ *
+ * **El celular y el APK se ven igual que antes**: los teléfonos son más angostos
+ * que 480px, así que esa columna nunca los limitaba.
  *
  * También hace de **guarda de sesión** para todo lo que envuelve: sin sesión, al
  * login. Es el único lugar por donde pasan las pantallas protegidas, así que la
@@ -78,14 +81,13 @@ export function AppShell({
           pb-28 solo en celular: es el hueco de la barra fija. En escritorio no
           hay barra abajo, así que ese espacio sobraba al final de cada página.
         */}
-        <main className="mx-auto w-full max-w-[480px] flex-1 pb-28 sm:border-x sm:border-border/60 lg:mx-0 lg:max-w-none lg:border-x-0 lg:pb-10">
+        <main className="w-full flex-1 pb-28 lg:pb-10">
           {/*
-            En escritorio esto solo ENSANCHA y centra: no pone padding lateral
-            propio, a propósito. El `px-5` que cada pantalla ya trae sigue siendo
-            el único responsable del margen, así que no hay que tocar las seis
-            páginas existentes ni se duplica el aire a los costados.
+            Sin padding lateral propio, a propósito: el `px-5` que cada pantalla
+            ya trae es el único responsable del margen, así no se duplica el aire
+            a los costados.
           */}
-          <div className="lg:mx-auto lg:max-w-6xl lg:pt-2">{children}</div>
+          <div className="lg:pt-2">{children}</div>
         </main>
 
         {nav ? <BottomNav /> : null}

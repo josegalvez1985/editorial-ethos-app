@@ -8,7 +8,7 @@
 --   2. (Re)crea FN_ANIO_LECTIVO_ACTUAL, que resuelve el año vigente leyendo esa
 --      tabla.
 --
--- CORRER **ANTES** de ethos_evaluaciones_facilitadores.sql: el paquete de
+-- CORRER **ANTES** de evaluaciones_facilitadores.sql: el paquete de
 -- evaluaciones llama a la funcion, y si no existe no compila.
 --
 --   SQL Workshop -> SQL Scripts -> Upload -> este archivo -> Run
@@ -221,7 +221,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('OJO: hay ' || l_activos || ' años activos. Deberia haber uno.');
     DBMS_OUTPUT.PUT_LINE('Revisá si anios_lectivos_ux_activo se llego a crear.');
   ELSE
-    DBMS_OUTPUT.PUT_LINE('OK. Seguí con ethos_evaluaciones_facilitadores.sql');
+    DBMS_OUTPUT.PUT_LINE('OK. Seguí con evaluaciones_facilitadores.sql');
   END IF;
 END;
 /

@@ -17,6 +17,7 @@
  */
 
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
+import { defaultShouldDehydrateQuery, type Query } from "@tanstack/react-query";
 import type { Persister } from "@tanstack/react-query-persist-client";
 
 import { esSinConexion } from "@/lib/api";
@@ -53,6 +54,18 @@ export const persister: Persister =
         // localStorage de forma sincrónica y se siente en el scroll.
         throttleTime: 1000,
       });
+
+/**
+ * Qué consultas se escriben en el disco: todas las que react-query guardaría
+ * por defecto, **salvo las marcadas con `meta: { persistir: false }`**.
+ *
+ * Existe por la auditoría (`lib/auditoria.ts`): la bitácora trae datos de todas
+ * las tablas y no tiene por qué sobrevivir en el equipo. Una consulta nueva se
+ * persiste como siempre; para excluirla basta con el `meta`, sin tocar esto.
+ */
+export function debePersistir(query: Query): boolean {
+  return defaultShouldDehydrateQuery(query) && query.meta?.persistir !== false;
+}
 
 /** Borra la caché del disco. Se llama al cerrar sesión. */
 export function borrarCachePersistida() {

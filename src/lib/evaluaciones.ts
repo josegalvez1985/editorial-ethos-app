@@ -1,7 +1,7 @@
 /**
  * Cliente de evaluaciones de facilitadores y sus listas de valores.
  *
- * Contrato del backend: `backend/ethos_evaluaciones_facilitadores.sql`.
+ * Contrato del backend: `backend/evaluaciones_facilitadores.sql`.
  * Todo pasa por `authFetch`, que mete el Bearer y detecta el token vencido.
  *
  * ============================================================================

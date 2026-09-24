@@ -1,8 +1,11 @@
-﻿# Genera el APK de Editorial Ethos empaquetando el sitio web con Capacitor.
+﻿# Genera el APK de Juventud con Valores: una cáscara de Capacitor que abre el
+# sitio publicado (`server.url` en capacitor.config.ts).
 # Uso:  .\scripts\build-apk.ps1 [-config debug|release]
 # Doc:  APK.md
 #
-# Pasos: Java 21 -> build web en modo SPA -> cap sync -> gradle -> reporte.
+# Pasos: Java 21 -> SDK -> build web en modo SPA -> cap sync -> gradle -> reporte.
+# El build web solo existe porque `cap sync` exige `webDir`: mientras haya
+# `server.url`, esa copia no se muestra.
 # Cada paso corta el script si falla: un error de build no debe llegar
 # disfrazado de APK viejo.
 
@@ -10,9 +13,9 @@ param(
     [ValidateSet("debug", "release")]
     [string]$config = "debug",
 
-    # URL de ORDS que queda EMBEBIDA en el APK. Dentro del APK no hay servidor
-    # Node, así que el proxy `/api/ords/` no corre y el front tiene que pegarle
-    # directo a Oracle. Funciona porque ORDS responde con CORS abierto.
+    # URL de ORDS de la copia local, la que NO se muestra mientras exista
+    # `server.url`. El ORDS que usan los teléfonos es el del sitio publicado
+    # (VITE_API_URL en .github/workflows/deploy.yml), no este.
     [string]$apiUrl = "https://oracleapex.com/ords/fundcarac/ethos/"
 )
 

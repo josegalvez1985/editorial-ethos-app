@@ -302,56 +302,64 @@ export function IntervencionForm({ previa }: { previa?: IntervencionCrud }) {
   const ocupado = guardar.isPending || borrar.isPending;
 
   return (
-    <div className="space-y-5 pb-28">
-      {/* ── Quién y dónde ────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <PickerModal
-          label="Facilitador"
-          nombre="facilitadores"
-          value={e.id_facilitador}
-          valueText={e.nombre_facilitador}
-          incluirId={previa?.id_facilitador ?? null}
-          requerido
-          onChange={(o) =>
-            setE((prev) => ({
-              ...prev,
-              id_facilitador: o.id,
-              nombre_facilitador: o.texto,
-              // Cambiar de facilitador invalida todo lo que colgaba de él. Sin
-              // esto quedaría una postulación de otra persona seleccionada.
-              id_institucion: null,
-              nombre_institucion: "",
-              id_postulacion: null,
-              postulacion: null,
-              id_indice: null,
-              indice_texto: "",
-            }))
-          }
-        />
+    // pb-28 es el hueco del footer fijo; desde md el footer va en el flujo.
+    <div className="space-y-5 pb-28 md:pb-6">
+      {/*
+        Dos columnas desde lg: a la izquierda qué clase y qué se dio, a la
+        derecha cuándo, dónde y la observación. En el celular es una sola, en
+        el mismo orden.
+      */}
+      <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+        <div className="space-y-5">
+          {/* ── Quién y dónde ────────────────────────────────────────────── */}
+          <section className="space-y-3">
+            <PickerModal
+              label="Facilitador"
+              nombre="facilitadores"
+              value={e.id_facilitador}
+              valueText={e.nombre_facilitador}
+              incluirId={previa?.id_facilitador ?? null}
+              requerido
+              onChange={(o) =>
+                setE((prev) => ({
+                  ...prev,
+                  id_facilitador: o.id,
+                  nombre_facilitador: o.texto,
+                  // Cambiar de facilitador invalida todo lo que colgaba de él. Sin
+                  // esto quedaría una postulación de otra persona seleccionada.
+                  id_institucion: null,
+                  nombre_institucion: "",
+                  id_postulacion: null,
+                  postulacion: null,
+                  id_indice: null,
+                  indice_texto: "",
+                }))
+              }
+            />
 
-        <PickerModal
-          label="Institución"
-          nombre="instituciones"
-          value={e.id_institucion}
-          valueText={e.nombre_institucion}
-          idFacilitador={e.id_facilitador}
-          incluirId={previa?.id_institucion ?? null}
-          requerido
-          disabledReason={e.id_facilitador == null ? "Elegí primero el facilitador" : undefined}
-          onChange={(o) =>
-            setE((prev) => ({
-              ...prev,
-              id_institucion: o.id,
-              nombre_institucion: o.texto,
-              id_postulacion: null,
-              postulacion: null,
-              id_indice: null,
-              indice_texto: "",
-            }))
-          }
-        />
+            <PickerModal
+              label="Institución"
+              nombre="instituciones"
+              value={e.id_institucion}
+              valueText={e.nombre_institucion}
+              idFacilitador={e.id_facilitador}
+              incluirId={previa?.id_institucion ?? null}
+              requerido
+              disabledReason={e.id_facilitador == null ? "Elegí primero el facilitador" : undefined}
+              onChange={(o) =>
+                setE((prev) => ({
+                  ...prev,
+                  id_institucion: o.id,
+                  nombre_institucion: o.texto,
+                  id_postulacion: null,
+                  postulacion: null,
+                  id_indice: null,
+                  indice_texto: "",
+                }))
+              }
+            />
 
-        {/*
+            {/*
           EL DÍA SALE DE LA FECHA DEL FORMULARIO, no de hoy: en carga atrasada se
           está registrando una clase de la semana pasada, así que las únicas
           postulaciones que pueden corresponder son las de ESE día de la semana.
@@ -359,251 +367,259 @@ export function IntervencionForm({ previa }: { previa?: IntervencionCrud }) {
           Cambiar la fecha vuelve a filtrar la lista — el día está en la
           queryKey del picker.
         */}
-        <PostulacionPicker
-          idFacilitador={e.id_facilitador}
-          idInstitucion={e.id_institucion}
-          value={e.id_postulacion}
-          dia={diaDeLaSemana(e.fecha)}
-          onChange={(p) =>
-            setE((prev) => ({
-              ...prev,
-              id_postulacion: p?.id_postulacion ?? null,
-              postulacion: p,
-              // El índice que propone la postulación: es el que le toca a esa
-              // clase según lo ya desarrollado. Se puede cambiar abajo.
-              id_indice: p?.id_indice ?? prev.id_indice,
-              indice_texto:
-                p?.indice_titulo != null
-                  ? `${p.nro_indice != null ? `${p.nro_indice}. ` : ""}${p.indice_titulo}`
-                  : prev.indice_texto,
-            }))
-          }
-        />
+            <PostulacionPicker
+              idFacilitador={e.id_facilitador}
+              idInstitucion={e.id_institucion}
+              value={e.id_postulacion}
+              dia={diaDeLaSemana(e.fecha)}
+              onChange={(p) =>
+                setE((prev) => ({
+                  ...prev,
+                  id_postulacion: p?.id_postulacion ?? null,
+                  postulacion: p,
+                  // El índice que propone la postulación: es el que le toca a esa
+                  // clase según lo ya desarrollado. Se puede cambiar abajo.
+                  id_indice: p?.id_indice ?? prev.id_indice,
+                  indice_texto:
+                    p?.indice_titulo != null
+                      ? `${p.nro_indice != null ? `${p.nro_indice}. ` : ""}${p.indice_titulo}`
+                      : prev.indice_texto,
+                }))
+              }
+            />
 
-        {/* Lo que se deriva de la postulación, a la vista: son campos que se van
+            {/* Lo que se deriva de la postulación, a la vista: son campos que se van
             a guardar y que el formulario no pide. */}
-        {e.postulacion && (
-          <div className="rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
-            Se guarda con{" "}
-            <span className="font-medium text-foreground">
-              {[
-                e.postulacion.grado,
-                e.postulacion.seccion && `Sec. ${e.postulacion.seccion}`,
-                nombreTurno(e.postulacion.turno),
-                e.postulacion.enfasis,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </span>
-          </div>
-        )}
-      </section>
+            {e.postulacion && (
+              <div className="rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+                Se guarda con{" "}
+                <span className="font-medium text-foreground">
+                  {[
+                    e.postulacion.grado,
+                    e.postulacion.seccion && `Sec. ${e.postulacion.seccion}`,
+                    nombreTurno(e.postulacion.turno),
+                    e.postulacion.enfasis,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </div>
+            )}
+          </section>
 
-      {/* ── Qué se dio ───────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        {/*
+          {/* ── Qué se dio ───────────────────────────────────────────────── */}
+          <section className="space-y-3">
+            {/*
           EL MANUAL, ANTES DEL ÍNDICE. Es la cascada Manual → Índice.
 
           Se muestra siempre, no solo cuando falta: la postulación propone uno
           pero puede no ser el correcto —o no proponer ninguno, si es la primera
           intervención que se le carga—, y en los dos casos hay que poder elegir.
         */}
-        <div>
-          <SelectorModal
-            label="Manual"
-            requerido
-            descripcion="Elegí el manual que se está desarrollando"
-            placeholder="Elegí el manual…"
-            value={manual ?? ""}
-            onChange={(v) =>
-              setE((prev) => ({
-                ...prev,
-                manual: v,
-                // Cambiar de manual invalida el índice: los de un manual no
-                // existen en otro, y quedaría uno de otro manual guardado.
-                id_indice: null,
-                indice_texto: "",
-              }))
-            }
-            // El nombre del manual ES la clave: no hay tabla de manuales, así
-            // que el texto libre de la columna es el identificador. Ver
-            // `lib/intervenciones-crud.ts`.
-            opciones={(manuales ?? []).map((m) => ({ valor: m, texto: m }))}
-            className="min-h-12 px-4 py-2.5 text-base"
-          />
-          {/* De dónde salió, cuando lo propuso la postulación: sin esto el campo
+            <div>
+              <SelectorModal
+                label="Manual"
+                requerido
+                descripcion="Elegí el manual que se está desarrollando"
+                placeholder="Elegí el manual…"
+                value={manual ?? ""}
+                onChange={(v) =>
+                  setE((prev) => ({
+                    ...prev,
+                    manual: v,
+                    // Cambiar de manual invalida el índice: los de un manual no
+                    // existen en otro, y quedaría uno de otro manual guardado.
+                    id_indice: null,
+                    indice_texto: "",
+                  }))
+                }
+                // El nombre del manual ES la clave: no hay tabla de manuales, así
+                // que el texto libre de la columna es el identificador. Ver
+                // `lib/intervenciones-crud.ts`.
+                opciones={(manuales ?? []).map((m) => ({ valor: m, texto: m }))}
+                className="min-h-12 px-4 py-2.5 text-base"
+              />
+              {/* De dónde salió, cuando lo propuso la postulación: sin esto el campo
               aparece lleno y no se sabe si lo eligió alguien o vino solo. */}
-          {manualPropuesto && !e.manual && (
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Propuesto por la postulación · es el que viene desarrollando
-            </p>
-          )}
-        </div>
+              {manualPropuesto && !e.manual && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Propuesto por la postulación · es el que viene desarrollando
+                </p>
+              )}
+            </div>
 
-        <PickerModal
-          label="Índice"
-          // Tal cual vienen: `lista()` ya devuelve `Opcion`, con el `busqueda`
-          // que el modal usa para filtrar en memoria.
-          opciones={indices ?? []}
-          value={e.id_indice}
-          valueText={e.indice_texto}
-          requerido
-          disabledReason={!manual ? "Elegí primero el manual" : undefined}
-          onChange={(o) => setE((prev) => ({ ...prev, id_indice: o.id, indice_texto: o.texto }))}
-        />
+            <PickerModal
+              label="Índice"
+              // Tal cual vienen: `lista()` ya devuelve `Opcion`, con el `busqueda`
+              // que el modal usa para filtrar en memoria.
+              opciones={indices ?? []}
+              value={e.id_indice}
+              valueText={e.indice_texto}
+              requerido
+              disabledReason={!manual ? "Elegí primero el manual" : undefined}
+              onChange={(o) =>
+                setE((prev) => ({ ...prev, id_indice: o.id, indice_texto: o.texto }))
+              }
+            />
 
-        {/* ¿Se desarrolló? Dos botones y no un select: son dos opciones y el
+            {/* ¿Se desarrolló? Dos botones y no un select: son dos opciones y el
             valor cambia qué campos siguen siendo obligatorios. */}
-        <div>
-          <label className="mb-1.5 block text-sm font-medium">¿Se desarrolló?</label>
-          <div className="grid grid-cols-2 gap-2">
-            {(["Si", "No"] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => set("si_no", v)}
-                className={`h-11 rounded-xl border text-sm font-semibold transition-colors ${
-                  e.si_no === v
-                    ? v === "Si"
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-destructive bg-destructive text-white"
-                    : "border-input bg-card text-muted-foreground"
-                }`}
-              >
-                {v === "Si" ? "Sí, se desarrolló" : "No se desarrolló"}
-              </button>
-            ))}
-          </div>
-        </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">¿Se desarrolló?</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["Si", "No"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => set("si_no", v)}
+                    className={`h-11 rounded-xl border text-sm font-semibold transition-colors ${
+                      e.si_no === v
+                        ? v === "Si"
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-destructive bg-destructive text-white"
+                        : "border-input bg-card text-muted-foreground"
+                    }`}
+                  >
+                    {v === "Si" ? "Sí, se desarrolló" : "No se desarrolló"}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {/*
+            {/*
           El motivo aparece SOLO con 'No', y ahí es obligatorio: lo exige
           TRG_INTERV_SINO_MOTIVO con un RAISE_APPLICATION_ERROR. Con 'Si' el
           trigger lo borra, así que mostrarlo sería ofrecer escribir algo que se
           va a descartar.
         */}
-        {e.si_no === "No" && (
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">
-              Motivo <span className="text-destructive">*</span>
-            </label>
-            <textarea
-              value={e.motivo_desarrollo}
-              onChange={(ev) => set("motivo_desarrollo", ev.target.value)}
-              rows={2}
-              maxLength={500}
-              placeholder="Por qué no se desarrolló la clase"
-              className="w-full rounded-xl border border-input bg-card px-3 py-2.5 text-sm outline-none focus:border-primary/40"
-            />
-          </div>
-        )}
-      </section>
-
-      {/* ── Cuándo ───────────────────────────────────────────────────── */}
-      <section>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">
-              Fecha <span className="text-destructive">*</span>
-            </label>
-            <input
-              type="date"
-              value={e.fecha}
-              onChange={(ev) => set("fecha", ev.target.value)}
-              className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">
-              Hora <span className="text-destructive">*</span>
-            </label>
-            <input
-              type="time"
-              value={e.hora}
-              onChange={(ev) => set("hora", ev.target.value)}
-              className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
-            />
-          </div>
+            {e.si_no === "No" && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Motivo <span className="text-destructive">*</span>
+                </label>
+                <textarea
+                  value={e.motivo_desarrollo}
+                  onChange={(ev) => set("motivo_desarrollo", ev.target.value)}
+                  rows={2}
+                  maxLength={500}
+                  placeholder="Por qué no se desarrolló la clase"
+                  className="w-full rounded-xl border border-input bg-card px-3 py-2.5 text-sm outline-none focus:border-primary/40"
+                />
+              </div>
+            )}
+          </section>
         </div>
-        {/* Por qué la hora importa: sin esto se completa cualquier cosa y el
-            gráfico de puntualidad queda con datos inventados. */}
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
-          La hora es la que se marcó, no la de la clase: de ahí sale el atraso.
-        </p>
-      </section>
 
-      {/* ── Ubicación ────────────────────────────────────────────────── */}
-      <section>
-        <label className="mb-1.5 block text-sm font-medium">Ubicación</label>
-        <button
-          type="button"
-          onClick={capturarUbicacion}
-          disabled={ubicando}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-input bg-card text-sm font-medium disabled:opacity-60"
-        >
-          {ubicando ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Crosshair className="size-4" />
-          )}
-          {ubicando ? "Buscando…" : e.latitud ? "Actualizar ubicación" : "Usar mi ubicación"}
-        </button>
-
-        {e.latitud && e.longitud ? (
-          <div className="mt-2 flex items-start gap-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2">
-            <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <p className="font-mono text-[11px] break-all">
-                {e.latitud}, {e.longitud}
-              </p>
-              {distancia != null && (
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  A {formatearDistancia(distancia)} de la ubicación anterior
-                </p>
-              )}
+        <div className="space-y-5">
+          {/* ── Cuándo ───────────────────────────────────────────────────── */}
+          <section>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Fecha <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={e.fecha}
+                  onChange={(ev) => set("fecha", ev.target.value)}
+                  className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Hora <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="time"
+                  value={e.hora}
+                  onChange={(ev) => set("hora", ev.target.value)}
+                  className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
+                />
+              </div>
             </div>
+            {/* Por qué la hora importa: sin esto se completa cualquier cosa y el
+            gráfico de puntualidad queda con datos inventados. */}
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              La hora es la que se marcó, no la de la clase: de ahí sale el atraso.
+            </p>
+          </section>
+
+          {/* ── Ubicación ────────────────────────────────────────────────── */}
+          <section>
+            <label className="mb-1.5 block text-sm font-medium">Ubicación</label>
             <button
               type="button"
-              onClick={() => setE((prev) => ({ ...prev, latitud: "", longitud: "" }))}
-              aria-label="Descartar ubicación"
-              className="shrink-0 rounded-lg p-1 text-muted-foreground hover:bg-muted"
+              onClick={capturarUbicacion}
+              disabled={ubicando}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-input bg-card text-sm font-medium disabled:opacity-60"
             >
-              <X className="size-3.5" />
+              {ubicando ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Crosshair className="size-4" />
+              )}
+              {ubicando ? "Buscando…" : e.latitud ? "Actualizar ubicación" : "Usar mi ubicación"}
             </button>
-          </div>
-        ) : (
-          /*
+
+            {e.latitud && e.longitud ? (
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2">
+                <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-mono text-[11px] break-all">
+                    {e.latitud}, {e.longitud}
+                  </p>
+                  {distancia != null && (
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      A {formatearDistancia(distancia)} de la ubicación anterior
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setE((prev) => ({ ...prev, latitud: "", longitud: "" }))}
+                  aria-label="Descartar ubicación"
+                  className="shrink-0 rounded-lg p-1 text-muted-foreground hover:bg-muted"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              /*
             LA ADVERTENCIA QUE EVITA UNA INFRACCIÓN FALSA. El GPS dice dónde
             estás AHORA; en una carga atrasada eso no es donde estuvo el
             facilitador ese día.
           */
-          <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              Sin ubicación se guarda como <span className="font-medium">no registrada</span>, y no
-              cuenta en el gráfico de ubicación. Usá el botón solo si estás en la institución: tu
-              posición actual no es donde se dio la clase.
-            </p>
-          </div>
-        )}
-      </section>
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Sin ubicación se guarda como <span className="font-medium">no registrada</span>, y
+                  no cuenta en el gráfico de ubicación. Usá el botón solo si estás en la
+                  institución: tu posición actual no es donde se dio la clase.
+                </p>
+              </div>
+            )}
+          </section>
 
-      {/* ── Observación ──────────────────────────────────────────────── */}
-      <section>
-        <label className="mb-1.5 block text-sm font-medium">Observación</label>
-        <textarea
-          value={e.observacion}
-          onChange={(ev) => set("observacion", ev.target.value)}
-          rows={3}
-          maxLength={1000}
-          placeholder="Opcional"
-          className="w-full rounded-xl border border-input bg-card px-3 py-2.5 text-sm outline-none focus:border-primary/40"
-        />
-      </section>
+          {/* ── Observación ──────────────────────────────────────────────── */}
+          <section>
+            <label className="mb-1.5 block text-sm font-medium">Observación</label>
+            <textarea
+              value={e.observacion}
+              onChange={(ev) => set("observacion", ev.target.value)}
+              rows={3}
+              maxLength={1000}
+              placeholder="Opcional"
+              className="w-full rounded-xl border border-input bg-card px-3 py-2.5 text-sm outline-none focus:border-primary/40"
+            />
+          </section>
+        </div>
+      </div>
 
       {/* ── Acciones ─────────────────────────────────────────────────── */}
       <div className="fixed inset-x-0 bottom-0 border-t border-border/60 bg-card/95 p-4 backdrop-blur md:relative md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
-        <div className="mx-auto flex max-w-2xl gap-2">
+        {/* Desde md, alineado a la derecha: a lo ancho del formulario el botón
+            quedaría de 1000px. */}
+        <div className="mx-auto flex max-w-2xl gap-2 md:mr-0 md:max-w-md">
           {editando && (
             <button
               type="button"

@@ -180,7 +180,9 @@ function IntervencionesPage() {
               {data!.total} intervención{data!.total === 1 ? "" : "es"}
               {filas.length < data!.total && ` · mostrando ${filas.length}`}
             </p>
-            <ul className="space-y-2">
+            {/* Grilla y no pila: sin tope de ancho (ver AppShell) una sola
+                columna quedaba del ancho del monitor. */}
+            <ul className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
               {filas.map((i) => (
                 <Fila key={i.id_intervencion} i={i} />
               ))}
@@ -206,7 +208,7 @@ function Fila({ i }: { i: IntervencionCrud }) {
       <Link
         to="/intervenciones/$id"
         params={{ id: String(i.id_intervencion) }}
-        className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3.5 shadow-soft"
+        className="flex h-full items-center gap-3 rounded-2xl border border-border/60 bg-card p-3.5 shadow-soft"
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

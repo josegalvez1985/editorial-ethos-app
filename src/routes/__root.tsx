@@ -14,7 +14,7 @@ import appCss from "../styles.css?url";
 import { asset, assetAbsoluto } from "../lib/asset";
 import { ThemeProvider } from "../lib/theme";
 import { SessionProvider } from "../lib/session";
-import { CACHE_BUSTER, CACHE_MAX_AGE, persister } from "../lib/query-persist";
+import { CACHE_BUSTER, CACHE_MAX_AGE, debePersistir, persister } from "../lib/query-persist";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -173,7 +173,12 @@ function RootComponent() {
     // comporta igual que el provider común. Ver `lib/query-persist.ts`.
     <PersistQueryClientProvider
       client={queryClient}
-      persistOptions={{ persister, maxAge: CACHE_MAX_AGE, buster: CACHE_BUSTER }}
+      persistOptions={{
+        persister,
+        maxAge: CACHE_MAX_AGE,
+        buster: CACHE_BUSTER,
+        dehydrateOptions: { shouldDehydrateQuery: debePersistir },
+      }}
     >
       <ThemeProvider>
         <SessionProvider>

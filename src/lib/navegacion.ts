@@ -19,6 +19,7 @@ import {
   CalendarClock,
   CalendarDays,
   ClipboardList,
+  History,
   Home,
   Settings,
   type LucideIcon,
@@ -80,6 +81,17 @@ export const MENU: GrupoNav[] = [
         label: "Agendas",
         icon: CalendarDays,
         descripcion: "Horario semanal de los facilitadores",
+      },
+    ],
+  },
+  {
+    titulo: "Administrador",
+    items: [
+      {
+        to: "/auditoria",
+        label: "Auditoría",
+        icon: History,
+        descripcion: "Consultas de auditoría",
       },
     ],
   },

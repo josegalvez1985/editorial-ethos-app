@@ -142,10 +142,11 @@ jobs:
           # en el dominio y manda un 301 desde el github.io hacia allá. Sin él,
           # el github.io sirve el sitio directo.
           #
-          # HOY EL DOMINIO ESTÁ APAGADO, así que el archivo NO debe existir. Se
-          # borra por las dudas: un CNAME que se cuele en el artefacto le
-          # reactiva el dominio propio a Pages y vuelve el bucle de redirecciones.
-          # `rm -f` no falla si no está, que es el caso normal.
+          # CON EL DOMINIO APAGADO (`CUSTOM_DOMAIN: ""`) el archivo NO debe
+          # existir, y se borra por las dudas: un CNAME que se cuele en el
+          # artefacto le reactiva el dominio propio a Pages y vuelve el bucle de
+          # redirecciones. Hoy el dominio está PRENDIDO, así que este `if` no
+          # hace nada. `rm -f` no falla si el archivo no está.
           if [ -z "$CUSTOM_DOMAIN" ]; then
             rm -f dist/client/CNAME
           fi

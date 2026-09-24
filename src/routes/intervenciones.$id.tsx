@@ -30,7 +30,7 @@ function EditarIntervencionPage() {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-2xl px-5 pt-5">
+      <div className="px-5 pt-5">
         <Link
           to="/intervenciones"
           className="mb-3 -ml-1 inline-flex items-center gap-1 text-sm text-muted-foreground"

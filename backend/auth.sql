@@ -125,6 +125,10 @@ CREATE OR REPLACE PACKAGE PKG_AUTH_ETHOS AS
 
   -- Devuelve el usuario dueño del token, o NULL si es invalido/expirado.
   -- La usan TODOS los paquetes de negocio para autorizar.
+  --
+  -- Ademas deja ese usuario en CLIENT_IDENTIFIER (o lo limpia, si el token no
+  -- sirve): es de donde los triggers de auditoria sacan QUIEN hizo el cambio.
+  -- Ver fijar_identificador en el body.
   FUNCTION validar_token(p_token IN VARCHAR2) RETURN VARCHAR2;
 
 END PKG_AUTH_ETHOS;
@@ -143,10 +147,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_AUTH_ETHOS AS
 ------------------------------------------------------------------------------
 
 -- Abre la respuesta HTTP en JSON.
--- CORS abierto por el unico cliente que pega directo a ORDS: la app Expo de
--- mobile/. El sitio web NO lo necesita, porque pasa por su proxy server-side
--- (src/routes/api/ords.$.ts) y por lo tanto es mismo origen.
--- Se deja abierto igual: no cuesta nada y cubre pruebas desde el navegador.
+-- CORS abierto, y OBLIGATORIO: el sitio publicado (GitHub Pages es estatico,
+-- el proxy src/routes/api/ords.$.ts no corre) y el APK (que carga ese mismo
+-- sitio) le pegan DIRECTO a ORDS. Solo el desarrollo local pasa por el proxy.
+-- Cerrarlo deja sin login a la web y al APK.
 PROCEDURE abrir_json IS
 BEGIN
     OWA_UTIL.MIME_HEADER('application/json', FALSE);
@@ -173,6 +177,38 @@ BEGIN
     APEX_JSON.WRITE('message', p_message);
     APEX_JSON.CLOSE_OBJECT;
 END p_error;
+
+------------------------------------------------------------------------------
+-- Quien esta usando la app, para la auditoria
+------------------------------------------------------------------------------
+
+-- Deja el usuario del token en CLIENT_IDENTIFIER, o lo limpia con NULL.
+--
+-- POR QUE: los triggers de auditoria (los AUDITORIA_* que genera
+-- pr_crear_trigger_auditoria, ver auditoria.sql) anotan
+-- NVL(V('APP_USER'), NVL(CLIENT_IDENTIFIER, USER)). Desde ORDS no hay sesion
+-- APEX y V('APP_USER') es NULL: sin esto, todo lo que se edita desde la app
+-- nueva queda en la bitacora a nombre del esquema.
+--
+-- POR QUE TAMBIEN SE LIMPIA: ORDS reusa las sesiones de base entre requests.
+-- Un token invalido que no borrara el identificador dejaria puesto el del
+-- request anterior —de otra persona— y un DML posterior quedaria a su nombre.
+--
+-- Va aca y no en cada paquete porque TODO request protegido pasa por
+-- validar_token: un modulo nuevo queda cubierto sin acordarse de nada.
+--
+-- Nunca rompe el request: sin permiso sobre DBMS_SESSION se pierde el rastro
+-- del usuario, no la operacion.
+PROCEDURE fijar_identificador(p_usuario IN VARCHAR2) IS
+BEGIN
+    IF p_usuario IS NULL THEN
+        DBMS_SESSION.CLEAR_IDENTIFIER;
+    ELSE
+        DBMS_SESSION.SET_IDENTIFIER(SUBSTR(p_usuario, 1, 64));
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END fijar_identificador;
 
 ------------------------------------------------------------------------------
 -- Credenciales
@@ -357,9 +393,12 @@ BEGIN
      WHERE TOKEN = UPPER(p_token)
        AND ACTIVO = 'S'
        AND FECHA_EXPIRACION > SYSTIMESTAMP;
+    fijar_identificador(l_usuario);
     RETURN l_usuario;
 EXCEPTION
-    WHEN NO_DATA_FOUND THEN RETURN NULL;
+    WHEN NO_DATA_FOUND THEN
+        fijar_identificador(NULL);
+        RETURN NULL;
 END validar_token;
 
 END PKG_AUTH_ETHOS;
@@ -419,15 +458,29 @@ BEGIN
 END;
 /
 
--- 4.2 Modulo.
+-- 4.2 Modulo. SOLO SI NO EXISTE.
+--
+-- ORDS.DEFINE_MODULE sobre un modulo que ya existe lo BORRA con todos sus
+-- templates y lo vuelve a crear vacio. Como los endpoints de evaluaciones,
+-- intervenciones, agendas y auditoria viven en este mismo modulo pero los
+-- publican OTROS scripts, re-correr este archivo sin el chequeo se los llevaba
+-- puestos a todos, sin ningun error a la vista.
+DECLARE
+  l_ya NUMBER;
 BEGIN
-  ORDS.DEFINE_MODULE(
-      p_module_name    => 'ethos',
-      p_base_path      => '/ethos/',
-      p_items_per_page => 0,
-      p_status         => 'PUBLISHED');
-  COMMIT;
-  DBMS_OUTPUT.PUT_LINE('[OK]   Modulo ORDS ethos definido.');
+  SELECT COUNT(*) INTO l_ya FROM USER_ORDS_MODULES WHERE NAME = 'ethos';
+  IF l_ya = 0 THEN
+    ORDS.DEFINE_MODULE(
+        p_module_name    => 'ethos',
+        p_base_path      => '/ethos/',
+        p_items_per_page => 0,
+        p_status         => 'PUBLISHED');
+    COMMIT;
+    DBMS_OUTPUT.PUT_LINE('[OK]   Modulo ORDS ethos definido.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[SKIP] Modulo ORDS ethos ya existia: no se redefine (borraria');
+    DBMS_OUTPUT.PUT_LINE('       los endpoints que publican los otros scripts).');
+  END IF;
 END;
 /
 
@@ -564,9 +617,10 @@ END;
 
 -- 4.4 Preflight CORS (OPTIONS), en bloque aparte y a prueba de fallos.
 --
--- El preflight solo lo dispara un navegador pegandole DIRECTO a ORDS. Con la
--- arquitectura actual eso no pasa: el sitio web va por su proxy server-side
--- (mismo origen) y la app Expo no aplica CORS. O sea que esto es opcional.
+-- El preflight lo dispara un navegador pegandole DIRECTO a ORDS con el header
+-- Authorization, y eso es lo que hacen hoy el sitio publicado (GitHub Pages,
+-- sin proxy) y el APK. Antes el sitio iba por su proxy y esto era opcional; ya
+-- no lo es.
 --
 -- Va en bloque aparte porque algunas versiones de ORDS solo aceptan
 -- GET/POST/PUT/DELETE en p_method y rechazan OPTIONS. Si eso pasa preferimos un
@@ -600,9 +654,9 @@ EXCEPTION
   WHEN OTHERS THEN
     ROLLBACK;
     DBMS_OUTPUT.PUT_LINE('[WARN] Esta version de ORDS no acepta handlers OPTIONS: ' || SQLERRM);
-    DBMS_OUTPUT.PUT_LINE('       No bloquea nada: el sitio web va por su proxy server-side y la');
-    DBMS_OUTPUT.PUT_LINE('       app Expo no aplica CORS. Solo importa si algun dia se sirve el');
-    DBMS_OUTPUT.PUT_LINE('       front web como sitio estatico, sin servidor Node.');
+    DBMS_OUTPUT.PUT_LINE('       REVISAR: el sitio publicado (estatico, sin proxy) y el APK le');
+    DBMS_OUTPUT.PUT_LINE('       pegan directo a ORDS. Si el login falla por CORS en el navegador,');
+    DBMS_OUTPUT.PUT_LINE('       el problema esta aca.');
 END;
 /
 

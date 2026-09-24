@@ -2,13 +2,21 @@
 
 | Archivo | Qué trae | Orden |
 | --- | --- | --- |
-| **[`ethos_auth.sql`](ethos_auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
-| **[`ethos_anios_lectivos.sql`](ethos_anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` | 2º |
-| **[`ethos_evaluaciones_facilitadores.sql`](ethos_evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos y de la tarjeta de dirección (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
-| **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`) | 4º (independiente) |
+| **[`auth.sql`](auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
+| **[`anios_lectivos.sql`](anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` | 2º |
+| **[`evaluaciones_facilitadores.sql`](evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos y de la tarjeta de dirección (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
+| **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`) | independiente |
+| **[`intervenciones_crud.sql`](intervenciones_crud.sql)** | Carga manual de intervenciones (`PKG_INTERV_CRUD_ETHOS`) | independiente |
+| **[`agendas.sql`](agendas.sql)** | Horario semanal sobre `V_AGENDA` (`PKG_AGENDAS_ETHOS`) | independiente |
+| **[`auditoria.sql`](auditoria.sql)** | Consulta de las bitácoras `_JN` (`PKG_AUDITORIA_ETHOS`) + `pr_crear_trigger_auditoria` | independiente |
 
-Los tres son idempotentes. El tercero **no** define el módulo ni habilita el esquema:
-agrega handlers al módulo `ethos` que creó el primero.
+Todos son idempotentes. Solo `auth.sql` define el módulo y habilita el esquema; los demás
+agregan handlers al módulo `ethos` que creó él. Los "independiente" solo necesitan `auth.sql`.
+
+> **`auth.sql` se puede volver a correr sin perder los demás endpoints** desde el 24/09/2026.
+> Antes llamaba a `ORDS.DEFINE_MODULE` sin preguntar si el módulo existía, y sobre un
+> módulo existente ORDS lo borra con todos sus templates: re-correrlo se llevaba puestos
+> los endpoints de todos los otros scripts. Ahora lo define solo si no está.
 
 **El orden importa entre el 2º y el 3º:** el paquete de evaluaciones llama a
 `FN_ANIO_LECTIVO_ACTUAL()`. Si no existe, no compila.
@@ -17,7 +25,7 @@ agrega handlers al módulo `ethos` que creó el primero.
 > *Juventud con Valores* el 04/08/2026. Renombrarlos obliga a tocar la URL base, el `.env`,
 > el workflow de deploy y el APK ya instalado: mucho riesgo para un cambio cosmético.
 
-## Qué contiene
+## `auth.sql`: qué contiene
 
 | Sección | Objeto |
 | --- | --- |
@@ -32,11 +40,21 @@ El script es **idempotente**: se puede volver a correr sin romper nada.
 ## Cómo correrlo
 
 1. Entra a [oracleapex.com](https://oracleapex.com/) con el workspace **fundcarac**.
-2. **SQL Workshop → SQL Scripts → Upload** → sube `ethos_auth.sql`.
-3. **Run**. Al terminar mira la salida: cada paso imprime `[OK]`, `[SKIP]`, `[WARN]` o `[ERROR]`.
-4. Copia la **URL BASE** que imprime el bloque final. Es la que va en el frontend.
+2. **SQL Workshop → SQL Scripts → Upload** → sube el script: `auth.sql` primero, después los
+   demás en el orden de la tabla de arriba.
+3. **Run**. Al terminar mira la salida: cada paso imprime `[OK]`, `[SKIP]`, `[WARN]` o
+   `[ERROR]`, y el resumen tiene que decir **0 sentencias con errores**.
+4. Solo con `auth.sql`: copia la **URL BASE** que imprime el bloque final. Es la que va en el
+   frontend (`.env` y `deploy.yml`).
 
 Tiene que correrlo el usuario **dueño del esquema** del workspace, no `SYS`.
+
+**Si el front va a usar un endpoint nuevo, el script va antes del push**: el sitio se publica
+apenas termina el workflow y, si el endpoint todavía no existe, esa pantalla falla.
+
+**Recién corrido un script**, Oracle puede rechazar una vez la primera llamada de cada conexión
+de ORDS que tenía cargada la versión anterior del paquete (`ORA-04068`). Si una pantalla falla
+justo después de correrlo, salir y volver a entrar una vez antes de buscar otra causa.
 
 ## Los dos valores que quizá tengas que ajustar
 
@@ -59,6 +77,9 @@ SELECT PARSING_SCHEMA, PATTERN FROM USER_ORDS_SCHEMAS;
 ## Endpoints
 
 Base: `https://oracleapex.com/ords/<pattern>/ethos/`
+
+Esta tabla es la de `auth.sql` y `evaluaciones_facilitadores.sql`. Los de los demás scripts
+están en la sección de cada uno, más abajo.
 
 | Método | Ruta | Auth | Cuerpo / respuesta |
 | --- | --- | --- | --- |
@@ -150,39 +171,127 @@ Dos cosas que conviene saber antes de tocarla:
 El teléfono sale de `INSTITUCIONES_DIRECTORES.NRO_TELEFONO` —el de esa persona en
 esa institución— y cae al de `DIRECTORES` cuando no está cargado.
 
-## Puntualidad (`intervenciones.sql`)
+## Auditoría (`auditoria.sql`)
 
-Dos endpoints de **solo lectura** sobre `V_HISTORIAL_INTERVENCIONES`. No dependen del
-paquete de evaluaciones; solo de `ethos_auth.sql` (el módulo ORDS y el token).
+Tres endpoints de **solo lectura** sobre las bitácoras, y el procedimiento que las genera.
 
 | Método | Ruta | Devuelve |
 | --- | --- | --- |
-| GET | `intervenciones/resumen` `?anio=&mes=` | Una fila por facilitador: `promedio`, `peor`, `marcaciones`, `con_atraso`. **Ya ordenado de mayor a menor.** |
-| GET | `intervenciones` `?id_facilitador=&anio=&mes=&limite=` | El detalle de las marcaciones de uno (`id_facilitador` obligatorio) |
+| GET | `auditoria/tablas` | Cada tabla auditada con sus triggers, sus columnas cruzadas contra la `_JN` y el trigger, y sus conteos |
+| GET | `auditoria/movimientos` `?tabla=&operacion=&usuario=&desde=&hasta=&id_auditoria=&limite=&pagina=&buscar=` | La bitácora de todas las tablas (o una), de lo más nuevo a lo más viejo. `buscar`: contiene, en cualquier columna de datos |
+| GET | `auditoria/historial` `?tabla=&id_auditoria=` | Toda la vida de un registro: sus filas de bitácora y cómo está hoy en la tabla |
 
-`anio` por defecto es el lectivo activo; `?anio=TODOS` lo apaga. `mes` va **como
-número 1–12** y el backend lo traduce al nombre en español que guarda la vista.
+**Tabla auditada = existe `X_JN` con `JN_OPERATION` y `JN_DATETIME`.** No se decide por el
+nombre del trigger porque conviven dos convenciones, y **no guardan lo mismo en un UPDATE**:
 
-### La cuenta del atraso
+| Trigger | En `UPD` guarda |
+| --- | --- |
+| `AUDITORIA_<TABLA>` (lo genera `pr_crear_trigger_auditoria`) | `:OLD`, el valor **anterior** |
+| `EVALUACIONES_FACILITADORES_JNTRG` (escrito a mano) | `:NEW`, el valor **nuevo** |
 
-`atraso = hora que marcó − hora en que empezaba la clase`, en minutos. Tres decisiones
-que están en el SQL y conviene no revertir sin pensarlas:
+El backend deduce cuál es leyendo la fuente del trigger (`guarda_en_update`) y el front arma
+el antes/después con eso (`src/lib/auditoria.ts` → `reconstruir`).
 
-- **Los adelantos cuentan como cero** (`GREATEST(x, 0)`). Se mide atraso, no puntualidad
-  neta: sin esto, quien un día llega 20 antes y otro 20 tarde promedia 0 y parece
-  puntual cuando en realidad es irregular.
-- **El promedio es por marcación, no por grado.** Una marcación que cubre 7mo y 8vo es
-  **una** llegada. La subconsulta `por_marcacion` agrupa antes de promediar, replicando
-  el `GROUP BY` de la consulta original; sin eso, quien da dos grados a la misma hora
-  pesaría el doble.
-- **Las filas sin hora se descartan, no valen 0.** Un 0 diría "llegó puntual", que el
-  dato no respalda. `AVG` de Oracle ignora los `NULL`, así que no ensucian el promedio.
+Lo que conviene saber:
 
-El mes se traduce con una tabla fija y **no** con `TO_CHAR(fecha,'MONTH')`: ese depende
-de `NLS_DATE_LANGUAGE` de la sesión, que en ORDS no está garantizado, y el día que la
-sesión viniera en inglés el filtro dejaría de matchear en silencio.
+- **No usar `USER_TRIGGER_COLS`: en oracleapex.com se cuelga** (medido el 24/09/2026: un
+  `COUNT(*)` filtrado por una sola tabla no volvía nunca). `auditoria/tablas` la consultaba una
+  vez por trigger, así que el endpoint no terminaba y ORDS respondía su 500 genérico. Qué columnas
+  lee cada trigger se saca ahora de su fuente (`p_columnas_trigger`, sobre `USER_SOURCE`).
 
-### El filtro por año lectivo
+- **`pr_crear_trigger_auditoria` quedó versionado acá**, y el script **regenera** todos los
+  `AUDITORIA_*` al correrse. Cambios respecto del que había en la base: `JN_ORACLE_USER`
+  registra el usuario de la app (ver abajo) y `:NEW.ID_AUDITORIA` ya no se asigna en un
+  DELETE. **No correrlo sobre `EVALUACIONES_FACILITADORES`**: le crearía un segundo trigger
+  que escribe la misma bitácora.
+- **Quién hizo el cambio.** Desde ORDS `V('APP_USER')` es NULL, así que la bitácora anotaba
+  el usuario del esquema. Ahora `PKG_AUTH_ETHOS.VALIDAR_TOKEN` deja el usuario del token en
+  `CLIENT_IDENTIFIER` (y lo limpia si el token no sirve, porque ORDS reusa sesiones) y los
+  triggers anotan `NVL(V('APP_USER'), NVL(CLIENT_IDENTIFIER, USER))`. Las filas viejas
+  siguen a nombre del esquema.
+- **Las horas vuelven en hora de Paraguay.** `JN_DATETIME` es `SYSDATE` del servidor (UTC):
+  el paquete le resta 3 h al devolverla y corre los filtros al revés. Si salen corridas, se
+  toca `c_desfase`.
+- **SQL dinámico, pero con nombres del diccionario.** El nombre de tabla que llega del front
+  se valida contra `USER_TABLES` (`f_tabla`) y todo nombre pasa por
+  `DBMS_ASSERT.ENQUOTE_NAME`. Los filtros van siempre como binds.
+- **`buscar` mira en todas las columnas de datos de cada bitácora** (no en las `JN_*` ni en
+  `ID_AUDITORIA`, que tienen sus propios filtros). Es un "contiene" que no distingue mayúsculas
+  pero **sí tildes**. Las fechas se comparan como se ven en pantalla (`DD/MM/YYYY`), y lo que
+  apunta a otra tabla está guardado como ID: se encuentra por el número, no por el nombre. Va
+  dentro de cada rama del `UNION ALL` (`f_filtro_busqueda`), porque afuera solo quedan las
+  columnas de control. Ningún índice la ayuda: con "Todas" recorre cada bitácora entera (28 al
+  24/09/2026).
+
+**Acceso: cualquier usuario con sesión** (decidido el 24/09/2026), aunque la bitácora tenga
+datos de todas las tablas. Si hay que restringirlo, el lugar es `f_usuario` del paquete.
+
+### Si Auditoría responde el 500 genérico de ORDS
+
+Una respuesta como `{"code":"InternalServerError", …, "instance":"tag:oracle.com,2020:ecid/…"}`
+**no viene del paquete**: sus tres procedimientos atrapan los errores y responden
+`{"success":false,"message":"Error: ORA-…"}`. Si llega la de ORDS, el error ocurrió al llamar al
+paquete o ORDS cortó el request por tiempo. Así se encontró lo de `USER_TRIGGER_COLS`: corriendo
+por separado en SQL Commands cada consulta de diccionario que usa el endpoint, hasta ver cuál no
+volvía.
+
+## Gráficos del Inicio (`intervenciones.sql`)
+
+Dos endpoints de **solo lectura** sobre `V_HISTORIAL_INTERVENCIONES`, una vista que ya existía
+en la base: el script no la crea ni la modifica. Solo necesitan `auth.sql`.
+
+| Método | Ruta | Devuelve | Gráfico |
+| --- | --- | --- | --- |
+| GET | `intervenciones` `?anio=&mes=&id_facilitador=&limite=` | Las marcaciones **desviadas**: 15 minutos o más del horario (tarde o antes) o a más de 1.000 m de la institución. Una fila por marcación, con los grados agrupados | Puntualidad y Ubicación |
+| GET | `intervenciones/por-dia` `?anio=&mes=&si_no=` | Cuántas intervenciones hubo cada día del mes: **todas**, no solo las desviadas | Actividad |
+
+Sin `anio` se usa el año en curso (el del reloj, no el lectivo); `?anio=TODOS` lo apaga.
+
+Lo que conviene saber:
+
+- **El agrupado lo hace el front** (`agruparPorFacilitador` y `agruparPorUbicacion`, en
+  `src/lib/intervenciones.ts`). Son pocas filas por mes, y un endpoint agregado aparte obligaría
+  a mantener el mismo criterio en dos consultas.
+- **`diferencia_minutos` tiene dos rarezas a propósito**: el signo está invertido (positivo =
+  llegó *antes*) y está en **horas**, no en minutos. Es la cuenta de la consulta que se usaba en
+  APEX, y se conserva para que los números coincidan. El front la convierte con `desvioMinutos()`.
+- **El mes se filtra con `EXTRACT(MONTH FROM fecha_hora)`, nunca con la columna `MES`.** La
+  vista arma `MES` con `TO_CHAR(fecha_hora, 'Month')` y hereda el idioma de la sesión: `'Agosto'`
+  en SQL Workshop, `'August   '` en ORDS. Comparar contra ella apagaba el filtro en silencio
+  (05/08/2026).
+- **La ubicación de referencia de cada institución se deduce** de la mediana de sus propias
+  marcaciones: la columna de ubicación de la institución guarda links de Google Maps acortados,
+  no coordenadas.
+
+## Agendas (`agendas.sql`)
+
+**Solo lectura** sobre `V_AGENDA`, otra vista que ya existía (la agenda se arma desde
+`POSTULACIONES`). Solo necesita `auth.sql`.
+
+| Método | Ruta | Devuelve |
+| --- | --- | --- |
+| GET | `agendas` `?anio=&manual=&id_facilitador=&id_institucion=&turno=&dia=&departamento=&ciudad=&buscar=&estado=&limite=&pagina=` | El horario semanal |
+| GET | `agendas/filtros` `?anio=&dia=&departamento=&ciudad=&turno=&id_facilitador=&id_institucion=&manual=` | Los valores que existen en los datos, para los combos (lo que en APEX eran las facetas) |
+
+Departamento y ciudad se filtran **por nombre**, con `UPPER` de los dos lados: la vista expone
+solo el nombre, no los IDs, y pueden venir vacíos si la institución no los tiene cargados.
+
+## Carga manual de intervenciones (`intervenciones_crud.sql`)
+
+| Método | Ruta |
+| --- | --- |
+| GET | `intervenciones-crud` `?anio=&mes=&id_facilitador=&id_institucion=&buscar=&limite=&pagina=` |
+| GET | `intervenciones-crud/:id` |
+| POST | `intervenciones-crud` |
+| PUT | `intervenciones-crud/:id` |
+| DELETE | `intervenciones-crud/:id` |
+
+**Es un módulo aparte del de los gráficos, a propósito:** aquel es de solo lectura y devuelve
+solo las marcaciones desviadas de una vista; este escribe sobre la tabla `INTERVENCIONES` y
+devuelve todas. Las reglas de la carga —la postulación como eje, los triggers que completan o
+validan campos— están en el encabezado del script. Solo necesita `auth.sql`.
+
+## El filtro por año lectivo (`anios_lectivos.sql` y las listas de evaluaciones)
 
 **Los dos combos de personas filtran por el año lectivo activo POR DEFECTO**, sin que el
 front mande nada. El año sale de `FN_ANIO_LECTIVO_ACTUAL()`, que devuelve el `ANIO` de la
@@ -214,7 +323,7 @@ Oracle convierta la columna y se pierda el índice `IDX_POST_INST_FAC_ANIO`.
 
 ### Un solo año activo a la vez
 
-`ethos_anios_lectivos.sql` crea un **índice único funcional** que solo indexa las filas con
+`anios_lectivos.sql` crea un **índice único funcional** que solo indexa las filas con
 `ESTADO = 'A'`, así que la base rechaza un segundo año activo. Activar uno nuevo obliga a
 desactivar el anterior en la misma transacción.
 
@@ -353,8 +462,8 @@ curl "https://oracleapex.com/ords/fundcarac/ethos/auth/me" \
   -H "Authorization: Bearer A1B2..."
 ```
 
-Si `curl` funciona pero el front no, el problema está en el proxy o en la URL configurada,
-no en la base.
+Si `curl` funciona pero el front no, el problema está en el CORS (producción), en el proxy
+(desarrollo) o en la URL configurada, no en la base.
 
 ## Decisiones de fondo
 
@@ -365,10 +474,11 @@ no en la base.
   workspace (*Administration → Manage Users*). Si Editorial Ethos necesita su propia tabla
   de usuarios, lo único que se reescribe es `credenciales_validas` — hay un ejemplo comentado
   ahí mismo. Nada más del paquete cambia.
-- **CORS abierto** (`Access-Control-Allow-Origin: *`) por el único cliente que pega directo a
-  ORDS: la app Expo de `mobile/`. El sitio web no lo necesita, porque pasa por su proxy
-  server-side (`src/routes/api/ords.$.ts`) y por lo tanto es mismo origen. Si la sección 4.4
-  imprimió `[WARN]`, no bloquea nada con esta arquitectura.
+- **CORS abierto** (`Access-Control-Allow-Origin: *`), y **es obligatorio**: el sitio publicado
+  (GitHub Pages es estático, el proxy no corre) y el APK (que carga ese mismo sitio) le pegan
+  directo a ORDS. Solo el desarrollo local pasa por el proxy (`src/routes/api/ords.$.ts`). Si
+  la sección 4.4 de `auth.sql` imprime `[WARN]`, revisarlo: el navegador dispara el preflight
+  porque las llamadas llevan `Authorization`.
 - **`UPPER()` en usuario y token** en todos lados. No cambies el criterio a medias.
 
 ## Agregar un endpoint de negocio

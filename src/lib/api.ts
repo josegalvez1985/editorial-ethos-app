@@ -1,9 +1,10 @@
 /**
  * Cliente de la API de Editorial Ethos (ORDS / Oracle APEX).
  *
- * Contrato del backend: `backend/ethos_auth.sql`.
- * Pega contra el proxy de mismo origen (`src/routes/api/ords.$.ts`), no contra
- * ORDS directo: así el navegador nunca ve una petición cross-origin.
+ * Contrato del backend: `backend/auth.sql`.
+ * Pega contra `VITE_API_URL`. En desarrollo es el proxy de mismo origen
+ * (`src/routes/api/ords.$.ts`); en producción (GitHub Pages) y en el APK es
+ * ORDS directo, porque ahí no corre servidor: ver DESPLIEGUE.md.
  */
 
 const BASE = import.meta.env.VITE_API_URL ?? "/api/ords/";

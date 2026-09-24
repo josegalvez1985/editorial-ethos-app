@@ -1,74 +1,72 @@
 # Generar el APK de Juventud con Valores (Capacitor)
 
-El APK **empaqueta el sitio web adentro**: Capacitor copia `dist/client` a los assets nativos y
-la WebView carga esos archivos locales. Config en [`capacitor.config.ts`](capacitor.config.ts)
-(`webDir: "dist/client"`, sin `server.url`).
+**El APK es una cáscara**: su WebView abre <https://www.ethospy.online/> con `server.url` (ver
+[`capacitor.config.ts`](capacitor.config.ts)) cada vez que arranca. No trae las pantallas
+adentro, así que **un `git push` actualiza los teléfonos** sin compilar nada, siempre que tengan
+la 2.0 o superior.
 
-> **YA NO HACE FALTA REGENERAR EL APK POR CADA CAMBIO DEL FRONT.** Desde el 05/08/2026 hay
-> actualización OTA: un cambio de pantalla, formulario, lógica o estilos llega a los teléfonos
-> con un `git push`, sin compilar nada. **Ver [`OTA.md`](OTA.md).**
->
-> Este documento sigue siendo el que manda para lo que OTA **no** puede actualizar: plugins
-> nativos, ícono, splash, nombre visible, permisos del manifest y `versionCode`. Para eso sí
-> hay que compilar y repartir un APK.
+Este documento es para lo que el push **no** cambia: un plugin nativo, el ícono, el splash, el
+nombre visible, los permisos del manifest, la URL del sitio y el `versionCode`. La tabla de qué
+pide APK nuevo y qué no está en el
+[README](README.md#hay-que-repartir-un-apk-nuevo-casi-nunca).
 
-## Lo que este proyecto hace distinto
+> Hasta la 1.9.2 el APK empaquetaba la web y se actualizaba con el plugin OTA de Capgo, que no
+> funcionó en la práctica. Se reemplazó el 05/08/2026; la historia está en el README y en
+> `capacitor.config.ts`. `OTA.md` ya no existe.
 
-Dos cosas no son opcionales acá, y las dos las resuelve el script:
+## Lo que conviene saber antes de compilar
 
-**1. El build es SPA, no SSR.** El sitio normal se sirve con un servidor Node; dentro del APK no
-hay servidor. Con `APK_BUILD=1`, [`vite.config.ts`](vite.config.ts) apaga nitro y prende el modo
-SPA de TanStack Start, que prerrenderiza un shell estático en `dist/client/_shell.html`. Capacitor
-exige que el punto de entrada se llame `index.html`, así que el script lo copia con ese nombre.
+**1. El script sigue haciendo el build web, pero eso no es lo que se ve.** `npx cap sync` exige
+que exista `webDir` (`dist/client`), así que el script compila el sitio en modo SPA
+(`APK_BUILD=1`, ver [`vite.config.ts`](vite.config.ts)) y Capacitor lo copia adentro. Mientras
+`server.url` esté puesta **esos archivos no se usan**: quedan como último recurso por si algún
+día se quita la URL. Por lo mismo, el `-apiUrl` del script solo afecta a esa copia; el ORDS que
+usan los teléfonos es el del sitio publicado, que se define en
+[`deploy.yml`](.github/workflows/deploy.yml).
 
-**2. El APK no puede usar el proxy.** La web pega a `/api/ords/` y
-[`src/routes/api/ords.$.ts`](src/routes/api/ords.$.ts) reenvía a Oracle — pero eso es **código de
-servidor** y en el APK no corre. Por eso el build del APK embebe la URL de ORDS **directa** en
-`VITE_API_URL`. Funciona porque ORDS responde con `Access-Control-Allow-Origin: *` (ver
-[`backend/README.md`](backend/README.md), donde el CORS abierto está justamente para el cliente
-móvil) y porque `androidScheme: "https"` deja el origen en `https://localhost`, sin contenido
-mixto.
+**2. Ni el APK ni el sitio publicado usan el proxy.** GitHub Pages es estático, así que
+[`src/routes/api/ords.$.ts`](src/routes/api/ords.$.ts) no corre y el navegador —o la WebView—
+le pega directo a ORDS. Funciona porque ORDS responde con `Access-Control-Allow-Origin: *`. Si
+algún día se cierra ese CORS, **dejan de poder loguear el sitio y el APK**.
 
-Si algún día se cierra el CORS de ORDS, **este APK deja de poder loguear** y habría que meter un
-plugin de HTTP nativo de Capacitor.
+**3. La regla de oro:** antes de compilar, abrí <https://www.ethospy.online/> en el navegador
+del celular. Si ahí funciona, el APK va a funcionar, porque es ese mismo sitio en una WebView.
+Si ahí no funciona, un APK nuevo no lo arregla.
 
 ## Requisitos
 
-- **Node 18+** (para `npx cap`).
-- **JDK 21** en `C:\Program Files\Java\jdk-21.0.11` — Capacitor 8 / AGP 8 no compila con Java 17.
-  Ya está instalado en esta máquina.
-- **Android SDK** — ✅ **ya instalado** en `C:\Users\josej\Android\Sdk`, con licencias aceptadas:
+| Qué | Dónde lo busca el build | En la PC actual (`C:\Users\joseg\…`, 24/09/2026) |
+| --- | --- | --- |
+| **JDK 21** | `C:\Program Files\Java\jdk-21.0.11`, ruta fija en [`scripts/build-apk.ps1`](scripts/build-apk.ps1) | **No está.** El `java` del PATH es `C:\orant\jdk`, que no sirve |
+| **Android SDK**: `platforms;android-36`, `build-tools;36.1.0`, `platform-tools` | `sdk.dir` en `android/local.properties`, que no se commitea | **No está**, y tampoco `local.properties` |
+| **Clave de firma**: `ethos-release.jks` + `android/keystore.properties` | la raíz del repo y `android/`; no se commitean | **No está.** Ver [Firma](#firma) |
+| Node 18+ | — | sí |
 
-  | Paquete | Versión |
-  | --- | --- |
-  | `cmdline-tools` | `latest` (build 13114758) |
-  | `platforms;android-36` | ✅ |
-  | `build-tools;36.1.0` | ✅ |
-  | `platform-tools` | ✅ (r37) |
+Todo eso estaba en la PC anterior (`C:\Users\josej\…`): el JDK en la misma ruta y el SDK en
+`C:\Users\josej\Android\Sdk`. **Antes de instalar nada, confirmá que de verdad falta** (el SDK
+son ~1,1 GB) y, sobre todo, **recuperá la clave de firma del respaldo**: sin ella no se puede
+actualizar la app que ya está en los teléfonos.
 
-  Las versiones son las que piden `compileSdkVersion` / `targetSdkVersion` en
-  [`android/variables.gradle`](android/variables.gradle). La ruta se fija en
-  `android/local.properties` (`sdk.dir=...`), que **no se commitea**.
+Capacitor 8 / AGP 8 no compila con Java 17: tiene que ser el 21. Las versiones del SDK son las
+que piden `compileSdkVersion` / `targetSdkVersion` en
+[`android/variables.gradle`](android/variables.gradle).
 
-> **NO VOLVER A DESCARGARLO.** Ya está. Si `npm run apk` falla en el paso 2, es que la carpeta
-> se movió o se borró: verificá primero con `Test-Path "C:\Users\josej\Android\Sdk"` y con
-> `Get-ChildItem C:\Users\josej\Android\Sdk` antes de bajar un solo byte. Instalar de nuevo
-> encima son ~1,1 GB al pedo.
+### Instalar las herramientas en una PC nueva
 
-### Si hay que instalarlo en otra máquina
+Verificando antes que no estén ya:
 
-Solo en ese caso, y verificando antes que no esté ya:
-
-1. Descargar *Command line tools only* de <https://developer.android.com/studio#command-tools>.
-2. Descomprimir de modo que quede exactamente
+1. **JDK 21** en `C:\Program Files\Java\jdk-21.0.11`, o en otra ruta corrigiendo la línea
+   `$env:JAVA_HOME` de [`scripts/build-apk.ps1`](scripts/build-apk.ps1).
+2. Descargar *Command line tools only* de <https://developer.android.com/studio#command-tools>.
+3. Descomprimir de modo que quede exactamente
    `<SDK>\cmdline-tools\latest\bin\sdkmanager.bat`
    (la carpeta tiene que llamarse `latest`; si queda `cmdline-tools\cmdline-tools`, renombrala).
    **Extraer a una ruta corta**: las rutas internas de `smali` pasan el límite de 260 caracteres
    de Windows y la extracción falla a mitad de camino con `DirectoryNotFoundException`.
-3. Instalar los componentes y aceptar las licencias:
+4. Instalar los componentes y aceptar las licencias:
 
    ```powershell
-   $sdk = "C:\Users\josej\Android\Sdk"
+   $sdk = "C:\Users\joseg\Android\Sdk"
    $env:JAVA_HOME = "C:\Program Files\Java\jdk-21.0.11"
    & "$sdk\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root=$sdk `
        "platform-tools" "platforms;android-36" "build-tools;36.1.0"
@@ -76,7 +74,15 @@ Solo en ese caso, y verificando antes que no esté ya:
    $(1..30 | ForEach-Object { "y" }) | & "$sdk\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root=$sdk --licenses
    ```
 
-Si lo instalás en otra ruta, corregí `sdk.dir` en `android/local.properties` y nada más.
+5. Crear `android/local.properties` apuntando al SDK, con las barras escapadas como las escribe
+   Android Studio:
+
+   ```properties
+   sdk.dir=C\:\\Users\\joseg\\Android\\Sdk
+   ```
+
+6. Traer `ethos-release.jks` (a la raíz del repo) y `keystore.properties` (a `android/`) desde el
+   respaldo. Ver [Firma](#firma).
 
 ## Build
 
@@ -87,11 +93,9 @@ npm run apk          # release firmado con la clave propia  <- el que se reparte
 npm run apk:debug    # debug: compila más rápido, pero Play Protect lo bloquea
 ```
 
-Para apuntar a otro ORDS sin editar nada:
-
-```powershell
-powershell -File scripts\build-apk.ps1 -config release -apiUrl "https://oracleapex.com/ords/otro/ethos/"
-```
+El script acepta `-apiUrl`, pero **no cambia el ORDS que usan los teléfonos**: solo el de la
+copia local que no se muestra (ver arriba). El de los teléfonos es el del sitio publicado, en
+[`deploy.yml`](.github/workflows/deploy.yml).
 
 ### Los pasos a mano
 
@@ -100,7 +104,7 @@ proyecto** y ejecutar en orden:
 
 ```powershell
 # 1. Ir a la raíz del proyecto
-cd C:\Users\josej\OneDrive\Desktop\Proyectos\editorial-ethos-app.git
+cd C:\Users\joseg\Desktop\scripts\editorial-ethos-app
 
 # 2. Configurar Java 21 solo para esta sesión (no afecta JAVA_HOME global)
 $env:JAVA_HOME = "C:\Program Files\Java\jdk-21.0.11"
@@ -109,7 +113,8 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 # 3. Verificar que Java 21 está activo
 java --version
 
-# 4. Build web en modo SPA, con la URL de ORDS embebida
+# 4. Build web en modo SPA. Es la copia local que exige `cap sync` y que no se
+#    muestra mientras exista server.url (ver arriba).
 #    APK_BUILD=1 apaga nitro y prende el modo SPA (ver vite.config.ts).
 $env:APK_BUILD = "1"
 $env:VITE_API_URL = "https://oracleapex.com/ords/fundcarac/ethos/"
@@ -172,11 +177,11 @@ explorer .\android\app\build\outputs\apk\release\
 
 ## Instalar en el celular
 
-1. Copiar `app-debug.apk` al teléfono.
-2. Habilitar "Instalar apps de fuentes desconocidas" para el navegador o el gestor de archivos.
+1. Copiar `app-release.apk` al teléfono. Se reparte el release: el debug lo bloquea Play
+   Protect (ver [Firma](#firma)).
+2. Habilitar "Instalar apps de fuentes desconocidas" para la app con la que se abre el archivo
+   (el navegador o el gestor de archivos).
 3. Abrir el APK e instalar.
-
-El APK debug ya viene firmado con la debug key, así que no hay pasos extra.
 
 El `appId` es `com.editorialethos.app`, **el mismo** que declara la app Expo en
 [`mobile/app.json`](mobile/app.json). Si alguna vez llegaste a instalar un APK compilado con EAS,
@@ -184,22 +189,25 @@ Android va a rechazar este por firma distinta: desinstalá el anterior primero.
 
 ## ¿Cuándo hay que regenerar el APK?
 
-Siempre que cambie algo que viaje dentro del APK:
+Solo cuando cambia algo del binario:
 
-- **Cambios del front** (rutas, componentes, estilos, lógica de `src/`): SÍ, porque la web está
-  empaquetada. Un deploy del sitio **no** actualiza la app instalada.
-- **Cambios nativos**: ícono, `appName`, `appId`, plugins de Capacitor, `versionName` /
-  `versionCode`.
-- **Cambio de la URL de ORDS**: SÍ, queda embebida en el bundle.
+- **Cambios nativos**: un plugin de Capacitor, el ícono, el splash, `appName`, los permisos del
+  manifest, `minSdkVersion` / `targetSdkVersion`.
+- **La URL del sitio** (`server.url`): está horneada en el APK.
 
-Un cambio del backend (`backend/*.sql`) no necesita APK nuevo, salvo que cambie el contrato de la
-API.
+**No** hace falta por un cambio del front (pantallas, formularios, estilos, lógica de `src/`),
+ni por la URL de ORDS —la define el sitio publicado—, ni por un `.sql` del backend. Todo eso
+llega con el push o con correr el script en APEX.
+
+La excepción es un teléfono que todavía no tiene la 2.0: hay que instalarle un APK a mano
+**una vez**, porque las versiones anteriores traían la web adentro y no se actualizan solas.
 
 ## Versión
 
 [`android/app/build.gradle`](android/app/build.gradle) → `versionCode` / `versionName`
-(actualmente **`10` / `"1.7.1"`**). Subirlos antes de repartir una versión nueva; Android se
-niega a instalar encima un `versionCode` menor o igual.
+(actualmente **`15` / `"2.0"`**). Subirlos antes de repartir una versión nueva; Android se
+niega a instalar encima un `versionCode` menor o igual. El historial de cada versión está
+comentado ahí mismo.
 
 ## Identidad de la app
 
@@ -266,10 +274,15 @@ Los dos están en `.gitignore` y **no se commitean**.
 > Android exige que toda actualización esté firmada con la misma clave. No hay recuperación. La
 > única salida sería publicar con otro `appId` y que todos reinstalen desde cero.
 
+> **En la PC actual no están** (verificado el 24/09/2026): el repo viene de GitHub y estos
+> archivos nunca viajan con él. Antes de compilar un release hay que traerlos del respaldo o de
+> la PC anterior. Mientras el APK siga siendo una cáscara pesa poco —un cambio de web no pide
+> APK—, pero el día que haga falta uno nuevo, sin esta clave no se va a poder instalar encima.
+
 Verificar con qué clave quedó firmado un APK:
 
 ```powershell
-$bt = "C:\Users\josej\Android\Sdk\build-tools\36.1.0"
+$bt = "C:\Users\joseg\Android\Sdk\build-tools\36.1.0"   # o donde esté el SDK
 & "$bt\apksigner.bat" verify --print-certs --verbose android\app\build\outputs\apk\release\app-release.apk
 ```
 
@@ -340,7 +353,9 @@ con el código JS perfecto y el celular con lector.
 `BIOMETRY_CURRENT_SET`, porque este último invalida la credencial cuando el usuario registra
 una huella nueva y el acceso deja de andar sin explicación.
 
-### 2. "Fuentes desconocidas" es por app instaladora, no por APK
+## Cosas que conviene saber
+
+### "Fuentes desconocidas" es por app instaladora, no por APK
 
 El permiso se concede a **la app que abre el archivo**, no al archivo. Si lo
 habilitaste para Chrome pero después abrís el APK desde el gestor de archivos,
@@ -349,7 +364,7 @@ Android lo vuelve a bloquear: hay que habilitarlo también para el gestor.
 Y Android **no abre el instalador solo** al terminar una descarga web: el usuario
 tiene que tocar la notificación.
 
-### 3. `npx cap sync android` es obligatorio tras instalar un plugin
+### `npx cap sync android` es obligatorio tras instalar un plugin
 
 Sin ese paso el plugin no existe en runtime y los errores son confusos —del tipo
 *"plugin not implemented"*— que parecen problemas de código. El script ya lo hace;
@@ -373,15 +388,16 @@ teléfono — dos minutos contra horas de adivinar.
 
 Android **no instala encima** una app firmada con otra clave: falla con
 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Al pasar de un APK debug a uno release —o al revés— hay que
-desinstalar el anterior primero, y se pierden los datos locales (sesión guardada, preferencias).
+desinstalar el anterior primero, y se pierden los datos locales (preferencias, contraseña
+recordada).
 
 ## Relación con la app Expo de `mobile/`
 
 Este APK y la app Expo son **dos implementaciones distintas** del mismo producto. Hoy el APK que
 se genera es este, el de la web. Lo que eso implica:
 
-- **A favor:** trae el módulo de evaluaciones completo. La app Expo solo tiene login, inicio y
-  cuenta.
+- **A favor:** trae todos los módulos, porque es el sitio. La app Expo solo tiene login, inicio
+  y cuenta.
 - **En contra:** no tiene biometría. `mobile/` sí (`expo-local-authentication`), pero es la app
   que ya no se compila. En el APK de Capacitor se probó y se quitó — ver *No hay acceso
   biométrico* más arriba.
@@ -391,9 +407,9 @@ pero ya no es lo que responde a "generá el apk".
 
 ## Notas
 
-- `appId` = `com.editorialethos.app`, `appName` = "Editorial Ethos".
+- `appId` = `com.editorialethos.app`, `appName` = "Juventud con Valores".
 - La carpeta `android/` se commitea; sus artefactos de build los ignora `android/.gitignore`,
   igual que `local.properties` y los `*.apk`.
-- El backend ([`backend/ethos_auth.sql`](backend/ethos_auth.sql)) tiene que estar corrido o el
-  login no entra, igual que en la web.
+- El backend ([`backend/auth.sql`](backend/auth.sql)) tiene que estar corrido o el login no
+  entra, igual que en la web.
 - El token de ORDS dura 6 h y no se renueva: a las 6 h, de vuelta al login.

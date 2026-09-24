@@ -1,8 +1,12 @@
 # Editorial Ethos — App Android (Expo / React Native)
 
+> **Esta app ya no se compila.** El APK que se reparte es el de Capacitor, una cáscara que abre
+> el sitio web: ver [`../APK.md`](../APK.md). Esto queda como referencia; solo tiene login,
+> inicio y cuenta.
+
 App nativa que se compila a APK. Login real contra Oracle APEX/ORDS.
 
-Es uno de los dos frontends del repo; el otro es el sitio web en la raíz
+Era uno de los dos frontends del repo; el otro es el sitio web en la raíz
 ([`../README.md`](../README.md)). **No comparten código.**
 
 ## Configurar la API

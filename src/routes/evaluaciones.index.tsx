@@ -160,8 +160,12 @@ function EvaluacionesPage() {
         </div>
       </div>
 
-      {/* Resultados */}
-      <div className="mt-5 space-y-3 px-5">
+      {/*
+        Resultados. Una grilla y no una pila: sin tope de ancho (ver AppShell),
+        una sola columna de tarjetas quedaba del ancho del monitor. Lo que no es
+        una tarjeta —avisos, vacío, "Cargar más"— ocupa la fila entera.
+      */}
+      <div className="mt-5 grid gap-3 px-5 md:grid-cols-2 2xl:grid-cols-3">
         {/*
           El filtro por área recorta FILAS, y la calificación se calcula sobre las
           filas que llegaron. Con un área filtrada el conteo es parcial y el tramo
@@ -169,7 +173,7 @@ function EvaluacionesPage() {
           "Deficiente" en una evaluación que en realidad es "Bueno".
         */}
         {avanzados.id_area !== null && !isLoading && !isError && grupos.length > 0 ? (
-          <p className="rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+          <p className="col-span-full rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
             Filtrado por área: la calificación de cada tarjeta cuenta solo los ítems de esa área, no
             la evaluación completa.
           </p>
@@ -182,11 +186,11 @@ function EvaluacionesPage() {
             ))}
           </>
         ) : isError ? (
-          <div className="rounded-2xl bg-destructive/10 p-4 text-sm text-destructive">
+          <div className="col-span-full rounded-2xl bg-destructive/10 p-4 text-sm text-destructive">
             {error instanceof Error ? error.message : "No se pudieron cargar las evaluaciones"}
           </div>
         ) : grupos.length === 0 ? (
-          <div className="py-14 text-center">
+          <div className="col-span-full py-14 text-center">
             <p className="font-display text-xl font-bold">
               {activos > 0 ? "Sin resultados" : "Todavía no hay evaluaciones"}
             </p>
@@ -220,7 +224,7 @@ function EvaluacionesPage() {
                 type="button"
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
-                className="tap flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-border/60 bg-card text-sm font-semibold disabled:opacity-60"
+                className="tap col-span-full flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-border/60 bg-card text-sm font-semibold disabled:opacity-60"
               >
                 {isFetchingNextPage ? <Loader2 className="size-4 animate-spin" /> : null}
                 {isFetchingNextPage
@@ -228,7 +232,7 @@ function EvaluacionesPage() {
                   : `Cargar más (${filas.length} de ${totalFilas} ítems)`}
               </button>
             ) : (
-              <p className="py-2 text-center text-xs text-muted-foreground">
+              <p className="col-span-full py-2 text-center text-xs text-muted-foreground">
                 {grupos.length} evaluaciones · {totalFilas} ítems
               </p>
             )}

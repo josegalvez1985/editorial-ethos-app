@@ -10,7 +10,7 @@
  * | --- | --- | --- |
  * | De dónde salen las filas | `listas/:nombre` del backend | del front, cableadas |
  * | La clave | `number` (`ID_FACILITADOR`…) | `string` (`"2026"`, `"SI"`, `""`) |
- * | Buscador | sí, contra el servidor + memoria | no: son pocas y se ven todas |
+ * | Buscador | sí, contra el servidor + memoria | opcional (`buscador`), en memoria |
  *
  * Los valores que maneja este —un mes, un año, "¿desarrolló?", el nombre de un
  * manual— **no tienen id numérico**: son el valor mismo. Meterlos en `Opcion`
@@ -21,6 +21,14 @@
  * `DialogContent` redondeado, mismas filas de 48px con su `Check`. Para quien
  * usa la app son el mismo control; la diferencia es de dónde sale el dato.
  *
+ * ## EL BUSCADOR SE PIDE, NO SE DEDUCE
+ *
+ * `buscador` agrega un campo arriba de la lista que la filtra mientras se
+ * escribe. Es opt-in, y no "a partir de N opciones" como en `PickerModal`: con
+ * ese criterio lo recibirían también los selectores de mes (trece filas que se
+ * leen de un vistazo), donde es un campo de más. Va donde la lista no entra en
+ * la pantalla, como las tablas de Auditoría.
+ *
  * ## POR QUÉ UN MODAL Y NO UN `<select>`
  *
  * El `<select>` nativo abre la rueda del sistema operativo, que en Android es
@@ -30,7 +38,7 @@
  * desarrollaron el índice" ya no entra.
  */
 
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Search, X } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -65,7 +73,21 @@ type Props = {
   /** Clases extra para el botón: lo usan las filas de filtros para el ancho. */
   className?: string;
   requerido?: boolean;
+  /** Campo para filtrar las opciones mientras se escribe. Ver el encabezado. */
+  buscador?: boolean;
 };
+
+/**
+ * Texto comparable: sin mayúsculas, sin tildes y con `_` como espacio, así
+ * "evaluaciones facilitadores" encuentra `EVALUACIONES_FACILITADORES`.
+ */
+function normalizar(s: string) {
+  return s
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/_/g, " ");
+}
 
 export function SelectorModal({
   label,
@@ -77,14 +99,29 @@ export function SelectorModal({
   descripcion = "Elegí una opción",
   className = "",
   requerido = false,
+  buscador = false,
 }: Props) {
   const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState("");
 
   const elegida = opciones.find((o) => o.valor === value);
 
+  const q = normalizar(texto.trim());
+  const visibles =
+    buscador && q
+      ? opciones.filter((o) => normalizar(`${o.texto} ${o.extra ?? ""}`).includes(q))
+      : opciones;
+
+  // La búsqueda se borra al cerrar, se haya elegido o no: al volver a abrir,
+  // una búsqueda vieja escondería opciones sin que se note por qué.
+  const abrirOCerrar = (abrir: boolean) => {
+    setAbierto(abrir);
+    if (!abrir) setTexto("");
+  };
+
   const elegir = (valor: string) => {
     onChange(valor);
-    setAbierto(false);
+    abrirOCerrar(false);
   };
 
   return (
@@ -106,7 +143,7 @@ export function SelectorModal({
         </label>
       ) : null}
 
-      <Dialog open={abierto} onOpenChange={setAbierto}>
+      <Dialog open={abierto} onOpenChange={abrirOCerrar}>
         <DialogTrigger asChild>
           <button
             type="button"
@@ -126,20 +163,53 @@ export function SelectorModal({
         </DialogTrigger>
 
         {/* Mismas medidas que `PickerModal`: los dos controles se abren igual. */}
-        <DialogContent className="grid max-h-[85vh] w-[calc(100vw-2rem)] max-w-md grid-rows-[auto_1fr] gap-0 overflow-hidden rounded-2xl p-0">
+        <DialogContent
+          className={`grid max-h-[85vh] w-[calc(100vw-2rem)] max-w-md gap-0 overflow-hidden rounded-2xl p-0 ${
+            // Una fila por hijo: con buscador son tres, no dos.
+            buscador ? "grid-rows-[auto_auto_1fr]" : "grid-rows-[auto_1fr]"
+          }`}
+        >
           <DialogHeader className="px-5 pt-5 pb-3 text-left">
             <DialogTitle className="font-display text-xl">{label}</DialogTitle>
             <DialogDescription className="text-xs">{descripcion}</DialogDescription>
           </DialogHeader>
 
+          {/* El mismo campo que el de `PickerModal`. */}
+          {buscador ? (
+            <div className="relative px-5 pb-3">
+              <Search className="pointer-events-none absolute top-1/2 left-8 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                autoFocus
+                value={texto}
+                onChange={(e) => setTexto(e.target.value)}
+                placeholder="Buscar…"
+                aria-label={`Buscar en ${label}`}
+                // text-base = 16px: con menos, iOS hace zoom al enfocar.
+                className="h-11 w-full rounded-full border border-input bg-muted/60 pr-10 pl-10 text-base outline-none focus:border-primary/40 focus:bg-card"
+              />
+              {texto ? (
+                <button
+                  type="button"
+                  onClick={() => setTexto("")}
+                  aria-label="Limpiar"
+                  className="tap absolute top-1/2 right-7 grid size-8 -translate-y-1/2 place-items-center rounded-full text-muted-foreground"
+                >
+                  <X className="size-4" />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="min-h-[10rem] overflow-y-auto overscroll-contain px-3 pb-4">
-            {opciones.length === 0 ? (
+            {visibles.length === 0 ? (
               <p className="px-4 py-12 text-center text-sm text-muted-foreground">
-                No hay opciones disponibles
+                {opciones.length === 0
+                  ? "No hay opciones disponibles"
+                  : `Nada coincide con “${texto.trim()}”`}
               </p>
             ) : (
               <ul className="space-y-1.5">
-                {opciones.map((o) => {
+                {visibles.map((o) => {
                   const activo = o.valor === value;
                   return (
                     <li key={o.valor}>
