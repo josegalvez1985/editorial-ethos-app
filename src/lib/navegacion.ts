@@ -16,12 +16,17 @@
  */
 
 import {
+  ArrowLeftRight,
+  Boxes,
   CalendarClock,
   CalendarDays,
   ClipboardList,
+  FileText,
   History,
   Home,
   Settings,
+  Store,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,6 +36,14 @@ export type ItemNav = {
   icon: LucideIcon;
   /** Frase corta: la usan el drawer del celular y la cabecera de escritorio. */
   descripcion: string;
+  /**
+   * `false` = nunca va a la barra del celular, aunque esté entre los primeros.
+   *
+   * Para los catálogos del Núcleo de datos: van ANTES de Operación en el menú,
+   * y sin esto Sucursales —que se toca una vez por mes— le quitaría el lugar
+   * de la barra a Evaluaciones, que se usa todos los días. Ver `TABS`.
+   */
+  enBarra?: false;
 };
 
 export type GrupoNav = {
@@ -57,6 +70,19 @@ export const MENU: GrupoNav[] = [
     ],
   },
   {
+    // Los catálogos base que usan los módulos de Operación (25/09/2026).
+    titulo: "Núcleo de datos",
+    items: [
+      {
+        to: "/sucursales",
+        label: "Sucursales",
+        icon: Store,
+        descripcion: "Alta y modificación de sucursales",
+        enBarra: false,
+      },
+    ],
+  },
+  {
     titulo: "Operación",
     items: [
       {
@@ -71,6 +97,18 @@ export const MENU: GrupoNav[] = [
         icon: CalendarClock,
         descripcion: "Carga manual de intervenciones",
       },
+      {
+        to: "/inventario",
+        label: "Inventario de manuales",
+        icon: Boxes,
+        descripcion: "Conteo de manuales por sucursal",
+      },
+      {
+        to: "/transferencias",
+        label: "Transferencias de manuales",
+        icon: Truck,
+        descripcion: "Envío de manuales entre sucursales",
+      },
     ],
   },
   {
@@ -81,6 +119,22 @@ export const MENU: GrupoNav[] = [
         label: "Agendas",
         icon: CalendarDays,
         descripcion: "Horario semanal de los facilitadores",
+      },
+      {
+        // Ruta propia y no /inventario/consulta: `esRutaActiva` marcaría
+        // también "Inventario de manuales" como activo.
+        to: "/consulta-inventarios",
+        label: "Consulta de inventarios",
+        icon: FileText,
+        descripcion: "Conteos pendientes y cerrados, con PDF",
+      },
+      {
+        // Ruta propia por lo mismo que la de inventarios: /transferencias/...
+        // marcaría también "Transferencias de manuales" como activo.
+        to: "/consulta-transferencias",
+        label: "Consulta de transferencias",
+        icon: ArrowLeftRight,
+        descripcion: "Envíos entre sucursales por ruta y manual, con PDF",
       },
     ],
   },
@@ -136,10 +190,12 @@ const MAX_TABS = 2;
  * exactamente para lo que existe.
  *
  * El drawer sigue mostrando `MENU` entero, así que nada queda inalcanzable.
+ *
+ * Los ítems con `enBarra: false` se saltean: ver `ItemNav.enBarra`.
  */
 export const TABS: ItemNav[] = (() => {
   const cuenta = ITEMS.find((i) => i.to === "/account");
-  const resto = ITEMS.filter((i) => i.to !== "/account").slice(0, MAX_TABS);
+  const resto = ITEMS.filter((i) => i.to !== "/account" && i.enBarra !== false).slice(0, MAX_TABS);
   return cuenta ? [...resto, cuenta] : resto;
 })();
 

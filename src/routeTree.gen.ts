@@ -14,12 +14,19 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as AgendasIndexRouteImport } from './routes/agendas.index'
 import { Route as AuditoriaIndexRouteImport } from './routes/auditoria.index'
+import { Route as ConsultaInventariosIndexRouteImport } from './routes/consulta-inventarios.index'
+import { Route as ConsultaTransferenciasIndexRouteImport } from './routes/consulta-transferencias.index'
 import { Route as EvaluacionesIndexRouteImport } from './routes/evaluaciones.index'
 import { Route as EvaluacionesIdRouteImport } from './routes/evaluaciones.$id'
 import { Route as EvaluacionesNuevaRouteImport } from './routes/evaluaciones.nueva'
 import { Route as IntervencionesIndexRouteImport } from './routes/intervenciones.index'
 import { Route as IntervencionesIdRouteImport } from './routes/intervenciones.$id'
 import { Route as IntervencionesNuevaRouteImport } from './routes/intervenciones.nueva'
+import { Route as InventarioIndexRouteImport } from './routes/inventario.index'
+import { Route as SucursalesIndexRouteImport } from './routes/sucursales.index'
+import { Route as TransferenciasIndexRouteImport } from './routes/transferencias.index'
+import { Route as TransferenciasIdRouteImport } from './routes/transferencias.$id'
+import { Route as TransferenciasNuevaRouteImport } from './routes/transferencias.nueva'
 import { Route as ApiOrdsSplatRouteImport } from './routes/api/ords.$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -47,6 +54,18 @@ const AuditoriaIndexRoute = AuditoriaIndexRouteImport.update({
   path: '/auditoria/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConsultaInventariosIndexRoute =
+  ConsultaInventariosIndexRouteImport.update({
+    id: '/consulta-inventarios/',
+    path: '/consulta-inventarios/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ConsultaTransferenciasIndexRoute =
+  ConsultaTransferenciasIndexRouteImport.update({
+    id: '/consulta-transferencias/',
+    path: '/consulta-transferencias/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const EvaluacionesIndexRoute = EvaluacionesIndexRouteImport.update({
   id: '/evaluaciones/',
   path: '/evaluaciones/',
@@ -77,6 +96,31 @@ const IntervencionesNuevaRoute = IntervencionesNuevaRouteImport.update({
   path: '/intervenciones/nueva',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InventarioIndexRoute = InventarioIndexRouteImport.update({
+  id: '/inventario/',
+  path: '/inventario/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SucursalesIndexRoute = SucursalesIndexRouteImport.update({
+  id: '/sucursales/',
+  path: '/sucursales/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TransferenciasIndexRoute = TransferenciasIndexRouteImport.update({
+  id: '/transferencias/',
+  path: '/transferencias/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TransferenciasIdRoute = TransferenciasIdRouteImport.update({
+  id: '/transferencias/$id',
+  path: '/transferencias/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TransferenciasNuevaRoute = TransferenciasNuevaRouteImport.update({
+  id: '/transferencias/nueva',
+  path: '/transferencias/nueva',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiOrdsSplatRoute = ApiOrdsSplatRouteImport.update({
   id: '/api/ords/$',
   path: '/api/ords/$',
@@ -91,10 +135,17 @@ export interface FileRoutesByFullPath {
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
+  '/transferencias/$id': typeof TransferenciasIdRoute
+  '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas/': typeof AgendasIndexRoute
   '/auditoria/': typeof AuditoriaIndexRoute
+  '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
+  '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
+  '/inventario/': typeof InventarioIndexRoute
+  '/sucursales/': typeof SucursalesIndexRoute
+  '/transferencias/': typeof TransferenciasIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRoutesByTo {
@@ -105,10 +156,17 @@ export interface FileRoutesByTo {
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
+  '/transferencias/$id': typeof TransferenciasIdRoute
+  '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas': typeof AgendasIndexRoute
   '/auditoria': typeof AuditoriaIndexRoute
+  '/consulta-inventarios': typeof ConsultaInventariosIndexRoute
+  '/consulta-transferencias': typeof ConsultaTransferenciasIndexRoute
   '/evaluaciones': typeof EvaluacionesIndexRoute
   '/intervenciones': typeof IntervencionesIndexRoute
+  '/inventario': typeof InventarioIndexRoute
+  '/sucursales': typeof SucursalesIndexRoute
+  '/transferencias': typeof TransferenciasIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRoutesById {
@@ -120,10 +178,17 @@ export interface FileRoutesById {
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
+  '/transferencias/$id': typeof TransferenciasIdRoute
+  '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas/': typeof AgendasIndexRoute
   '/auditoria/': typeof AuditoriaIndexRoute
+  '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
+  '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
+  '/inventario/': typeof InventarioIndexRoute
+  '/sucursales/': typeof SucursalesIndexRoute
+  '/transferencias/': typeof TransferenciasIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRouteTypes {
@@ -136,10 +201,17 @@ export interface FileRouteTypes {
     | '/evaluaciones/nueva'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
+    | '/transferencias/$id'
+    | '/transferencias/nueva'
     | '/agendas/'
     | '/auditoria/'
+    | '/consulta-inventarios/'
+    | '/consulta-transferencias/'
     | '/evaluaciones/'
     | '/intervenciones/'
+    | '/inventario/'
+    | '/sucursales/'
+    | '/transferencias/'
     | '/api/ords/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -150,10 +222,17 @@ export interface FileRouteTypes {
     | '/evaluaciones/nueva'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
+    | '/transferencias/$id'
+    | '/transferencias/nueva'
     | '/agendas'
     | '/auditoria'
+    | '/consulta-inventarios'
+    | '/consulta-transferencias'
     | '/evaluaciones'
     | '/intervenciones'
+    | '/inventario'
+    | '/sucursales'
+    | '/transferencias'
     | '/api/ords/$'
   id:
     | '__root__'
@@ -164,10 +243,17 @@ export interface FileRouteTypes {
     | '/evaluaciones/nueva'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
+    | '/transferencias/$id'
+    | '/transferencias/nueva'
     | '/agendas/'
     | '/auditoria/'
+    | '/consulta-inventarios/'
+    | '/consulta-transferencias/'
     | '/evaluaciones/'
     | '/intervenciones/'
+    | '/inventario/'
+    | '/sucursales/'
+    | '/transferencias/'
     | '/api/ords/$'
   fileRoutesById: FileRoutesById
 }
@@ -179,10 +265,17 @@ export interface RootRouteChildren {
   EvaluacionesNuevaRoute: typeof EvaluacionesNuevaRoute
   IntervencionesIdRoute: typeof IntervencionesIdRoute
   IntervencionesNuevaRoute: typeof IntervencionesNuevaRoute
+  TransferenciasIdRoute: typeof TransferenciasIdRoute
+  TransferenciasNuevaRoute: typeof TransferenciasNuevaRoute
   AgendasIndexRoute: typeof AgendasIndexRoute
   AuditoriaIndexRoute: typeof AuditoriaIndexRoute
+  ConsultaInventariosIndexRoute: typeof ConsultaInventariosIndexRoute
+  ConsultaTransferenciasIndexRoute: typeof ConsultaTransferenciasIndexRoute
   EvaluacionesIndexRoute: typeof EvaluacionesIndexRoute
   IntervencionesIndexRoute: typeof IntervencionesIndexRoute
+  InventarioIndexRoute: typeof InventarioIndexRoute
+  SucursalesIndexRoute: typeof SucursalesIndexRoute
+  TransferenciasIndexRoute: typeof TransferenciasIndexRoute
   ApiOrdsSplatRoute: typeof ApiOrdsSplatRoute
 }
 
@@ -221,6 +314,20 @@ declare module '@tanstack/react-router' {
       path: '/auditoria'
       fullPath: '/auditoria/'
       preLoaderRoute: typeof AuditoriaIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/consulta-inventarios/': {
+      id: '/consulta-inventarios/'
+      path: '/consulta-inventarios'
+      fullPath: '/consulta-inventarios/'
+      preLoaderRoute: typeof ConsultaInventariosIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/consulta-transferencias/': {
+      id: '/consulta-transferencias/'
+      path: '/consulta-transferencias'
+      fullPath: '/consulta-transferencias/'
+      preLoaderRoute: typeof ConsultaTransferenciasIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/evaluaciones/': {
@@ -265,6 +372,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IntervencionesNuevaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/inventario/': {
+      id: '/inventario/'
+      path: '/inventario'
+      fullPath: '/inventario/'
+      preLoaderRoute: typeof InventarioIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sucursales/': {
+      id: '/sucursales/'
+      path: '/sucursales'
+      fullPath: '/sucursales/'
+      preLoaderRoute: typeof SucursalesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/transferencias/': {
+      id: '/transferencias/'
+      path: '/transferencias'
+      fullPath: '/transferencias/'
+      preLoaderRoute: typeof TransferenciasIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/transferencias/$id': {
+      id: '/transferencias/$id'
+      path: '/transferencias/$id'
+      fullPath: '/transferencias/$id'
+      preLoaderRoute: typeof TransferenciasIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/transferencias/nueva': {
+      id: '/transferencias/nueva'
+      path: '/transferencias/nueva'
+      fullPath: '/transferencias/nueva'
+      preLoaderRoute: typeof TransferenciasNuevaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ords/$': {
       id: '/api/ords/$'
       path: '/api/ords/$'
@@ -283,10 +425,17 @@ const rootRouteChildren: RootRouteChildren = {
   EvaluacionesNuevaRoute: EvaluacionesNuevaRoute,
   IntervencionesIdRoute: IntervencionesIdRoute,
   IntervencionesNuevaRoute: IntervencionesNuevaRoute,
+  TransferenciasIdRoute: TransferenciasIdRoute,
+  TransferenciasNuevaRoute: TransferenciasNuevaRoute,
   AgendasIndexRoute: AgendasIndexRoute,
   AuditoriaIndexRoute: AuditoriaIndexRoute,
+  ConsultaInventariosIndexRoute: ConsultaInventariosIndexRoute,
+  ConsultaTransferenciasIndexRoute: ConsultaTransferenciasIndexRoute,
   EvaluacionesIndexRoute: EvaluacionesIndexRoute,
   IntervencionesIndexRoute: IntervencionesIndexRoute,
+  InventarioIndexRoute: InventarioIndexRoute,
+  SucursalesIndexRoute: SucursalesIndexRoute,
+  TransferenciasIndexRoute: TransferenciasIndexRoute,
   ApiOrdsSplatRoute: ApiOrdsSplatRoute,
 }
 export const routeTree = rootRouteImport

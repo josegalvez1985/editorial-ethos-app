@@ -8,6 +8,9 @@
 | **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`) | independiente |
 | **[`intervenciones_crud.sql`](intervenciones_crud.sql)** | Carga manual de intervenciones (`PKG_INTERV_CRUD_ETHOS`) | independiente |
 | **[`agendas.sql`](agendas.sql)** | Horario semanal sobre `V_AGENDA` (`PKG_AGENDAS_ETHOS`) | independiente |
+| **[`inventarios.sql`](inventarios.sql)** | Inventario de manuales por sucursal (`PKG_INVENTARIOS_ETHOS`) + corrige `INVENTARIOS_ACTUALIZAR_EXISTENCIAS` | independiente |
+| **[`transferencias.sql`](transferencias.sql)** | Transferencias de manuales entre sucursales (`PKG_TRANSFERENCIAS_ETHOS`) | después de `inventarios.sql` |
+| **[`sucursales.sql`](sucursales.sql)** | ABM de sucursales (`PKG_SUCURSALES_ETHOS`) + corrige `SUCURSALES_JNTRG` | independiente |
 | **[`auditoria.sql`](auditoria.sql)** | Consulta de las bitácoras `_JN` (`PKG_AUDITORIA_ETHOS`) + `pr_crear_trigger_auditoria` | independiente |
 
 Todos son idempotentes. Solo `auth.sql` define el módulo y habilita el esquema; los demás
@@ -290,6 +293,89 @@ solo el nombre, no los IDs, y pueden venir vacíos si la institución no los tie
 solo las marcaciones desviadas de una vista; este escribe sobre la tabla `INTERVENCIONES` y
 devuelve todas. Las reglas de la carga —la postulación como eje, los triggers que completan o
 validan campos— están en el encabezado del script. Solo necesita `auth.sql`.
+
+## Inventario de manuales (`inventarios.sql`)
+
+| Método | Ruta | Cuerpo / respuesta |
+| --- | --- | --- |
+| GET | `inventarios/sucursales` | → `id_sucursal`, `descripcion`, `abiertos` |
+| GET | `inventarios` `?id_sucursal=` | La planilla: **todos** los manuales de `INDICES_MANUALES`, contados o no, + `resumen` de la sucursal |
+| POST | `inventarios/conteo` | `{id_sucursal, items: "Manual%201:5;Manual%202:"}` → `{guardados, borrados}` |
+| POST | `inventarios/cerrar` | `{id_sucursal}` → `{cerrados}`; **409** si hay abiertos sin cantidad física |
+| GET | `inventarios/historial` `?id_sucursal=&estado=N\|S&desde=&hasta=` | La consulta de detalle (pantalla, gráfico y PDF). Sin paginar, con tope de 5000 filas (`truncado`) |
+
+**Se cuenta por manual, no por índice** (25/09/2026): se sacaron `INVENTARIOS.ID_INDICE` y
+`EXISTENCIAS.ID_EXISTENCIA`. El catálogo de manuales es el `DISTINCT MANUAL` de
+`INDICES_MANUALES`, y el identificador de un manual es su texto.
+
+| Tabla | Qué guarda |
+| --- | --- |
+| `EXISTENCIAS` | Lo que hay **hoy**: una fila por (manual, sucursal), con UNIQUE |
+| `INVENTARIOS` | El **historial**: una fila por inventario. A lo sumo **un conteo abierto** (`IND_CERRADO = 'N'`) por (manual, sucursal), lo garantiza el índice `INVENTARIOS_UN_ABIERTO` que crea el script. Los cerrados no se tocan más |
+
+**Se carga solo la cantidad física.** La de sistema la toma el paquete de
+`EXISTENCIAS.CANTIDAD_ACTUAL` en cada guardado, y al cerrar `EXISTENCIAS` queda con la física
+(decidido el 25/09/2026).
+
+**El script reescribe el trigger `INVENTARIOS_ACTUALIZAR_EXISTENCIAS`**, que ya existía:
+
+- busca `EXISTENCIAS` por `MANUAL`: usaba `ID_INDICE`, y al sacar esa columna quedó INVALID
+  (con un trigger INVALID, **todo** `UPDATE` sobre `INVENTARIOS` falla con ORA-04098);
+- copiaba `CANTIDAD_SISTEMA` en vez de `CANTIDAD_FISICA`, así que cerrar no corregía nada;
+- actuaba en **cualquier** `UPDATE` de una fila cerrada, no solo al cerrarla: retocar una fila
+  vieja desde APEX volvía a pisar `EXISTENCIAS` con un conteo viejo. Ahora actúa solo en la
+  transición a `'S'`;
+- rechaza cerrar sin cantidad física o sin manual (`-20002`) en vez de un ORA crudo.
+
+Si `AUDITORIA_INVENTARIOS` o `AUDITORIA_EXISTENCIAS` quedaron INVALID por las columnas
+borradas, el script los regenera con `pr_crear_trigger_auditoria` (de `auditoria.sql`).
+
+`items` viaja como texto y no como array JSON porque ORDS bindea solo los campos escalares del
+body. El manual va URL-encoded porque es texto libre y podría traer los separadores `:` o `;`.
+Solo necesita `auth.sql`.
+
+**Las fechas van en hora local y al minuto** (`TRUNC(SYSDATE - 3/24, 'MI')`, pedido el
+25/09/2026): `INVENTARIOS.FECHA` y `EXISTENCIAS.FECHA_ACTUALIZACION`. El servidor está en UTC y
+`SYSDATE` pelado las dejaba 3 horas adelantadas.
+
+## Sucursales (`sucursales.sql`)
+
+| Método | Ruta | Cuerpo / respuesta |
+| --- | --- | --- |
+| GET | `sucursales` | Todas, con su uso: `manuales`, `libros`, `inventarios`, `transferencias` |
+| POST / PUT | `sucursales` / `sucursales/:id` | `{descripcion}`; **409** si el nombre ya existe (sin distinguir mayúsculas) |
+| DELETE | `sucursales/:id` | **409** si la usan inventarios, existencias o transferencias (dice cuáles) |
+
+**El script reescribe `SUCURSALES_JNTRG`**, que ya existía: en la rama `DELETING` asignaba
+`:NEW.ID_AUDITORIA` (ORA-04084, borrar una sucursal con `ID_AUDITORIA` en NULL fallaba
+siempre), y registraba el esquema en vez del usuario de la app. Son los dos arreglos que ya
+tiene `pr_crear_trigger_auditoria`.
+
+## Transferencias de manuales (`transferencias.sql`)
+
+| Método | Ruta | Cuerpo / respuesta |
+| --- | --- | --- |
+| GET | `transferencias` `?estado=N\|S&id_sucursal=&limite=&pagina=` | Pendientes primero; `id_sucursal` filtra las que salen **o** llegan |
+| GET | `transferencias/manuales` `?id_sucursal=&excluir_id=` | El catálogo con `existencia` y `comprometido` en el origen |
+| GET | `transferencias/:id` | Cabecera + `detalle`; si está recibida, `recibida_el` / `recibida_por` (salen de la bitácora) |
+| POST / PUT | `transferencias` / `transferencias/:id` | `{id_sucursal_origen, id_sucursal_destino, items: "Manual%201:5;Manual%202:3"}` |
+| POST | `transferencias/:id/recibir` | Pasa `IND_RECIBIDA` a `'S'`; **409** si ya estaba |
+| DELETE | `transferencias/:id` | Solo pendientes |
+| GET | `transferencias/historial` `?estado=&id_sucursal=&desde=&hasta=` | La consulta y el PDF: **una fila por línea de detalle** con la cabecera repetida y `recibida_el` (de la bitácora). Tope de 5000 líneas (`truncado`) |
+
+**Las existencias las mueve el trigger `TRANSFERENCIAS_ACTUALIZAR_EXISTENCIAS` al recibir**
+(resta del origen, suma al destino). El script no lo toca y el paquete nunca escribe
+`EXISTENCIAS`, salvo una cosa: antes de recibir crea en 0 las filas que le falten al
+**origen**, porque el trigger resta con `UPDATE` y sin fila no restaría nada.
+
+- **Disponible = existencia − comprometido** en otras pendientes que salen de esa sucursal:
+  mientras viaja, el origen todavía los tiene. Si se envía más, la pantalla avisa pero deja
+  guardar (decidido el 25/09/2026).
+- **Una recibida no se edita ni se borra**: no hay trigger inverso.
+- **Riesgo conocido:** si se cierra un inventario del origen mientras una transferencia viaja,
+  al recibirla se descuenta dos veces. La confirmación de recepción lo advierte.
+- El trigger del usuario pone `FECHA_ACTUALIZACION = SYSDATE` (UTC), a diferencia del de
+  inventarios (hora local al minuto). No se tocó porque es suyo.
 
 ## El filtro por año lectivo (`anios_lectivos.sql` y las listas de evaluaciones)
 

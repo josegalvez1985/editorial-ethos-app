@@ -74,9 +74,19 @@ celular y en la hoja "Menú".
 | Grupo | Módulo | Ruta | Backend |
 | --- | --- | --- | --- |
 | — | **Inicio**: gráficos de puntualidad, ubicación y actividad del mes | `/home` | `intervenciones.sql` |
+| Núcleo de datos | **Sucursales**: alta, modificación y baja (solo si nada la usa) | `/sucursales` | `sucursales.sql` |
 | Operación | **Evaluaciones** de facilitadores | `/evaluaciones` | `evaluaciones_facilitadores.sql` |
 | Operación | **Intervenciones**: carga manual de las que quedaron sin registrar | `/intervenciones` | `intervenciones_crud.sql` |
+| Operación | **Inventario de manuales**: conteo físico por manual y sucursal; al cerrar, actualiza las existencias | `/inventario` | `inventarios.sql` |
+| Operación | **Transferencias de manuales**: envío entre sucursales (cabecera y detalle); al recibir, mueve las existencias | `/transferencias` | `transferencias.sql` |
 | Reportes | **Agendas**: el horario semanal | `/agendas` | `agendas.sql` |
+| Reportes | **Consulta de inventarios**: conteos pendientes y cerrados por sucursal, gráfico comparativo entre inventarios y PDF con el logo | `/consulta-inventarios` | `inventarios.sql` |
+| Reportes | **Consulta de transferencias**: envíos entre sucursales por ruta y por manual, con el detalle de cada una y PDF | `/consulta-transferencias` | `transferencias.sql` |
+
+Los dos PDF comparten encabezado con logo, pie, tarjetas y estilo de tabla en
+[`src/lib/pdf-base.ts`](src/lib/pdf-base.ts): un reporte nuevo arma solo su cuerpo. jsPDF se
+descarga recién al tocar el botón, y el PDF se abre en una pestaña nueva (en el APK puede no
+abrirse: la WebView no abre pestañas).
 | Administrador | **Auditoría**: qué tablas tienen bitácora y quién cambió qué | `/auditoria` | `auditoria.sql` |
 | Sistema | **Mi cuenta**: tema, color y cierre de sesión | `/account` | — |
 
@@ -98,6 +108,7 @@ Sin tope, cada pantalla reparte su contenido en columnas en lugar de estirar una
 | Pantalla | Columnas |
 | --- | --- |
 | Listados de Evaluaciones e Intervenciones | 1, 2 desde `md`, 3 desde `2xl` |
+| Planilla de Inventario de manuales | 1, 2 desde `md`, 3 desde `2xl` |
 | Auditoría | hasta 4 tarjetas de tablas y los 6 filtros en una fila |
 | Formularios de evaluación e intervención | 1, 2 desde `lg` |
 
