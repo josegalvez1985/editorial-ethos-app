@@ -10,14 +10,18 @@
  *
  * Las mueve el trigger `TRANSFERENCIAS_ACTUALIZAR_EXISTENCIAS` al confirmar la
  * recepción: resta del origen y suma al destino. Hasta entonces nada se movió,
- * y de ahí salen las tres reglas de esta pantalla:
+ * y de ahí salen las reglas de esta pantalla:
  *
  * 1. **Disponible ≠ existencia.** Mientras una transferencia viaja, el origen
  *    todavía "tiene" esos manuales. Lo disponible es la existencia menos lo
  *    comprometido en otras pendientes que salen de la misma sucursal.
- * 2. **Una recibida no se toca.** Editarla o borrarla no deshace el movimiento.
+ * 2. **Una recibida no se edita.** Primero se **revierte la recepción**
+ *    (29/09/2026): el backend devuelve las existencias —suma al origen, resta
+ *    al destino— y la deja pendiente. Eliminar una recibida hace lo mismo y
+ *    después la borra.
  * 3. **Recibir antes de inventariar.** Si se cierra un inventario del origen con
- *    una transferencia en viaje, al recibirla se descuenta dos veces.
+ *    una transferencia en viaje, al recibirla se descuenta dos veces. Al revés
+ *    también: revertir una recepción después de inventariar descuadra el conteo.
  *
  * Si se envía más de lo disponible, se avisa pero se permite: las existencias
  * pueden estar desactualizadas (decidido el 25/09/2026).
@@ -199,12 +203,20 @@ export async function actualizarTransferencia(
   });
 }
 
-/** Confirma la recepción: el trigger mueve las existencias. **No se deshace.** */
+/** Confirma la recepción: el trigger mueve las existencias. Se deshace con `revertirRecepcion`. */
 export async function recibirTransferencia(id: number): Promise<void> {
   await authFetch(`transferencias/${id}/recibir`, { method: "POST" });
 }
 
-/** Baja de una pendiente. */
+/**
+ * Deshace la recepción: devuelve las existencias (suma al origen, resta al
+ * destino) y la transferencia vuelve a quedar pendiente, editable.
+ */
+export async function revertirRecepcion(id: number): Promise<void> {
+  await authFetch(`transferencias/${id}/revertir`, { method: "POST" });
+}
+
+/** Baja. Si estaba recibida, el backend antes devuelve las existencias. */
 export async function eliminarTransferencia(id: number): Promise<void> {
   await authFetch(`transferencias/${id}`, { method: "DELETE" });
 }

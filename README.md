@@ -77,8 +77,8 @@ celular y en la hoja "Menú".
 | Núcleo de datos | **Sucursales**: alta, modificación y baja (solo si nada la usa) | `/sucursales` | `sucursales.sql` |
 | Operación | **Evaluaciones** de facilitadores | `/evaluaciones` | `evaluaciones_facilitadores.sql` |
 | Operación | **Intervenciones**: carga manual de las que quedaron sin registrar | `/intervenciones` | `intervenciones_crud.sql` |
-| Operación | **Inventario de manuales**: conteo físico por manual y sucursal; al cerrar, actualiza las existencias | `/inventario` | `inventarios.sql` |
-| Operación | **Transferencias de manuales**: envío entre sucursales (cabecera y detalle); al recibir, mueve las existencias | `/transferencias` | `transferencias.sql` |
+| Operación | **Inventario de manuales**: conteo físico por manual y sucursal; al cerrar, actualiza las existencias. El conteo en curso se descarta y el último cierre se revierte | `/inventario` | `inventarios.sql` |
+| Operación | **Transferencias de manuales**: envío entre sucursales (cabecera y detalle); al recibir, mueve las existencias. Una recibida se revierte (vuelve a pendiente) o se elimina, devolviendo las existencias | `/transferencias` | `transferencias.sql` |
 | Reportes | **Agendas**: el horario semanal | `/agendas` | `agendas.sql` |
 | Reportes | **Consulta de inventarios**: conteos pendientes y cerrados por sucursal, gráfico comparativo entre inventarios y PDF con el logo | `/consulta-inventarios` | `inventarios.sql` |
 | Reportes | **Consulta de transferencias**: envíos entre sucursales por ruta y por manual, con el detalle de cada una y PDF | `/consulta-transferencias` | `transferencias.sql` |

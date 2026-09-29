@@ -12,7 +12,11 @@
 --   POST    transferencias           {id_sucursal_origen, id_sucursal_destino, items}
 --   PUT     transferencias/:id       idem (solo pendientes)
 --   POST    transferencias/:id/recibir
---   DELETE  transferencias/:id       (solo pendientes)
+--   POST    transferencias/:id/revertir
+--                                    deshace la recepcion: devuelve las existencias
+--                                    y la deja pendiente otra vez
+--   DELETE  transferencias/:id       pendiente: la borra. Recibida: primero
+--                                    revierte la recepcion y despues la borra
 --   GET     transferencias/historial ?estado=&id_sucursal=&desde=&hasta=
 --                                    la consulta y el PDF: una fila por linea
 --
@@ -29,7 +33,8 @@
 --
 -- TRANSFERENCIAS_ACTUALIZAR_EXISTENCIAS (AFTER UPDATE, ya estaba en la base y
 -- este script NO lo toca) actua al pasar IND_RECIBIDA a 'S': resta del origen y
--- suma al destino cada linea del detalle. Este paquete NUNCA escribe EXISTENCIAS.
+-- suma al destino cada linea del detalle. Este paquete no escribe EXISTENCIAS
+-- para RECIBIR; solo para REVERTIR (punto 5) y la fila en 0 del punto 3.
 --
 -- Consecuencias que el paquete y la pantalla tienen en cuenta:
 --
@@ -37,8 +42,8 @@
 --      EXISTENCIAS a secas: es EXISTENCIAS menos lo COMPROMETIDO en otras
 --      transferencias pendientes que salen de esa sucursal.
 --
---   2. UNA RECIBIDA NO SE TOCA MAS. Editarla o borrarla no deshace el movimiento
---      (no hay trigger inverso). `guardar` y `eliminar` la rechazan con 409.
+--   2. UNA RECIBIDA NO SE EDITA. `guardar` la rechaza con 409: primero hay que
+--      revertir la recepcion (punto 5).
 --
 --   3. EL ORIGEN TIENE QUE TENER FILA EN EXISTENCIAS. El trigger resta con un
 --      UPDATE: si el manual no tiene fila en el origen, no resta nada y el destino
@@ -50,6 +55,22 @@
 --      transferencia viaja, EXISTENCIAS queda con lo contado (ya sin esos
 --      manuales) y al recibir el trigger los resta OTRA VEZ. La pantalla de
 --      recepcion lo advierte; la regla es recibir antes de inventariar.
+--
+--   5. REVERTIR LA RECEPCION (agregado el 29/09/2026). No hay trigger inverso,
+--      asi que lo hace `p_deshacer_recepcion`: pasa IND_RECIBIDA a 'N' y, por
+--      cada linea, SUMA al origen y RESTA al destino. Es una cuenta relativa y
+--      no "volver al valor de antes": lo que se movio despues se conserva.
+--
+--      Si el trigger reaccionara al pasar a 'N' (hoy no: actua con 'S'), la
+--      devolucion se haria dos veces. Por eso se comparan las existencias del
+--      origen y del destino antes y despues del UPDATE y, si cambiaron, se
+--      deshace todo con un 409.
+--
+--      El mismo riesgo del punto 4, al reves: si despues de recibirla se cerro
+--      un inventario en el origen o el destino, ese conteo ya refleja lo que hay
+--      y revertir lo descuadra. La pantalla lo advierte.
+--
+--      `eliminar` de una recibida = revertir + borrar, en una transaccion.
 --
 --------------------------------------------------------------------------------
 -- EL DETALLE: UNA LINEA POR MANUAL
@@ -135,7 +156,10 @@ CREATE OR REPLACE PACKAGE PKG_TRANSFERENCIAS_ETHOS AS
   -- Confirma la recepcion: el trigger mueve las existencias.
   PROCEDURE recibir(p_token IN VARCHAR2, p_id IN NUMBER);
 
-  -- Baja de una PENDIENTE, con su detalle.
+  -- Deshace la recepcion: devuelve las existencias y la deja pendiente.
+  PROCEDURE revertir(p_token IN VARCHAR2, p_id IN NUMBER);
+
+  -- Baja, con su detalle. Si estaba recibida, antes devuelve las existencias.
   PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN NUMBER);
 
   -- La consulta y el PDF: UNA FILA POR LINEA DE DETALLE, con la cabecera
@@ -573,8 +597,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
     ELSE
       -- Bloqueada: entre la validacion y el UPDATE nadie la recibe.
       IF f_estado_bloqueado(l_id) = 'S' THEN
-        rechazar('La transferencia ya fue recibida: las existencias ya se movieron '
-                 || 'y no se puede modificar', 409);
+        rechazar('La transferencia ya fue recibida: las existencias ya se movieron. '
+                 || 'Para modificarla, primero revierti la recepcion', 409);
       END IF;
       UPDATE transferencias
          SET id_sucursal_origen  = p_id_origen,
@@ -679,20 +703,121 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
   END recibir;
 
   /* ---------------------------------------------------------------------- */
-  /* ELIMINAR                                                               */
+  /* REVERTIR LA RECEPCION                                                  */
   /* ---------------------------------------------------------------------- */
 
-  -- Solo pendientes: una recibida ya movio existencias y borrarla no las
-  -- devuelve. El detalle primero: la FK no tiene ON DELETE CASCADE.
-  PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN NUMBER) IS
+  -- Suma p_delta a la existencia de un manual en una sucursal (negativo = resta).
+  -- Sin fila la crea con p_delta, aunque quede en negativo: mismo criterio que el
+  -- punto 3 del encabezado, la diferencia queda a la vista.
+  PROCEDURE p_mover(
+      p_id_sucursal IN NUMBER,
+      p_manual      IN VARCHAR2,
+      p_delta       IN NUMBER,
+      p_ahora       IN DATE
+  ) IS
+  BEGIN
+    UPDATE existencias
+       SET cantidad_actual     = cantidad_actual + p_delta,
+           fecha_actualizacion = p_ahora
+     WHERE manual = p_manual AND id_sucursal = p_id_sucursal;
+    IF SQL%ROWCOUNT = 0 THEN
+      INSERT INTO existencias (id_sucursal, manual, cantidad_actual, fecha_actualizacion)
+      VALUES (p_id_sucursal, p_manual, p_delta, p_ahora);
+    END IF;
+  END p_mover;
+
+  -- Lo que suman en una sucursal los manuales de la transferencia. Solo sirve
+  -- para comparar antes y despues (punto 5 del encabezado).
+  FUNCTION f_suma(p_id_sucursal IN NUMBER, p_id IN NUMBER) RETURN NUMBER IS
+    l_suma NUMBER;
+  BEGIN
+    SELECT NVL(SUM(e.cantidad_actual), 0) INTO l_suma
+      FROM existencias e
+     WHERE e.id_sucursal = p_id_sucursal
+       AND e.manual IN (SELECT d.manual FROM transferencias_detalle d
+                         WHERE d.id_transferencia = p_id);
+    RETURN l_suma;
+  END f_suma;
+
+  ------------------------------------------------------------------------------
+  -- El inverso de recibir. La usan `revertir` y `eliminar`, que ya bloquearon la
+  -- transferencia y comprobaron que esta recibida. NO hace COMMIT: es parte de la
+  -- transaccion de quien la llama, y un rechazo la deshace entera.
+  ------------------------------------------------------------------------------
+  PROCEDURE p_deshacer_recepcion(p_id IN NUMBER) IS
+    l_origen   NUMBER;
+    l_destino  NUMBER;
+    l_origen0  NUMBER;
+    l_destino0 NUMBER;
+    l_ahora    DATE := f_ahora;
+  BEGIN
+    SELECT id_sucursal_origen, id_sucursal_destino INTO l_origen, l_destino
+      FROM transferencias WHERE id_transferencia = p_id;
+
+    l_origen0  := f_suma(l_origen,  p_id);
+    l_destino0 := f_suma(l_destino, p_id);
+
+    UPDATE transferencias SET ind_recibida = 'N' WHERE id_transferencia = p_id;
+
+    -- Si el trigger movio algo al pasar a 'N', devolver aca seria hacerlo dos
+    -- veces. No pasa con el trigger de hoy; esto es por si alguien lo cambia.
+    IF f_suma(l_origen, p_id) <> l_origen0 OR f_suma(l_destino, p_id) <> l_destino0 THEN
+      rechazar('Al desmarcar la recepcion, el trigger TRANSFERENCIAS_ACTUALIZAR_EXISTENCIAS '
+               || 'movio existencias por su cuenta. No se revirtio nada, para no devolverlas '
+               || 'dos veces: hay que revisar ese trigger.', 409);
+    END IF;
+
+    FOR d IN (SELECT manual, cantidad FROM transferencias_detalle
+               WHERE id_transferencia = p_id) LOOP
+      p_mover(l_origen,  d.manual,  d.cantidad, l_ahora);
+      p_mover(l_destino, d.manual, -d.cantidad, l_ahora);
+    END LOOP;
+  END p_deshacer_recepcion;
+
+  PROCEDURE revertir(p_token IN VARCHAR2, p_id IN NUMBER) IS
   BEGIN
     IF f_usuario(p_token) IS NULL THEN
       p_error(401, 'Unauthorized', 'Token invalido o expirado'); RETURN;
     END IF;
 
-    IF f_estado_bloqueado(p_id) = 'S' THEN
-      rechazar('La transferencia ya fue recibida: borrarla no devolveria las '
-               || 'existencias, asi que no se puede eliminar', 409);
+    IF f_estado_bloqueado(p_id) <> 'S' THEN
+      rechazar('La transferencia no esta recibida: no hay recepcion que revertir', 409);
+    END IF;
+
+    p_deshacer_recepcion(p_id);
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('message', 'Recepcion revertida: la transferencia volvio a quedar pendiente');
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN e_validacion THEN
+      ROLLBACK;
+      p_error_validacion;
+    WHEN OTHERS THEN
+      ROLLBACK;
+      p_error_oracle;
+  END revertir;
+
+  /* ---------------------------------------------------------------------- */
+  /* ELIMINAR                                                               */
+  /* ---------------------------------------------------------------------- */
+
+  -- Una recibida primero devuelve las existencias (29/09/2026): antes se
+  -- rechazaba, porque borrarla sola dejaba el movimiento hecho. El detalle
+  -- primero: la FK no tiene ON DELETE CASCADE.
+  PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN NUMBER) IS
+    l_recibida BOOLEAN;
+  BEGIN
+    IF f_usuario(p_token) IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado'); RETURN;
+    END IF;
+
+    l_recibida := f_estado_bloqueado(p_id) = 'S';
+    IF l_recibida THEN
+      p_deshacer_recepcion(p_id);
     END IF;
 
     DELETE FROM transferencias_detalle WHERE id_transferencia = p_id;
@@ -702,7 +827,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
-    APEX_JSON.WRITE('message', 'Transferencia eliminada');
+    APEX_JSON.WRITE('message', CASE WHEN l_recibida
+                                    THEN 'Transferencia eliminada y existencias devueltas'
+                                    ELSE 'Transferencia eliminada' END);
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION
     WHEN e_validacion THEN
@@ -881,6 +1008,7 @@ BEGIN
             UNION ALL SELECT 'transferencias/manuales' FROM dual
             UNION ALL SELECT 'transferencias/:id' FROM dual
             UNION ALL SELECT 'transferencias/:id/recibir' FROM dual
+            UNION ALL SELECT 'transferencias/:id/revertir' FROM dual
             UNION ALL SELECT 'transferencias/historial' FROM dual) LOOP
     FOR m IN (SELECT 'GET' AS v FROM dual UNION ALL SELECT 'POST' FROM dual
               UNION ALL SELECT 'PUT' FROM dual UNION ALL SELECT 'DELETE' FROM dual
@@ -898,6 +1026,7 @@ BEGIN
   plantilla('transferencias/historial',    2);
   plantilla('transferencias/:id',          1);
   plantilla('transferencias/:id/recibir',  1);
+  plantilla('transferencias/:id/revertir', 1);
 
   handler('transferencias', 'GET', '
     PKG_TRANSFERENCIAS_ETHOS.LISTAR(
@@ -937,6 +1066,9 @@ BEGIN
 
   handler('transferencias/:id/recibir', 'POST', '
     PKG_TRANSFERENCIAS_ETHOS.RECIBIR(p_token => l_token, p_id => TO_NUMBER(:id));');
+
+  handler('transferencias/:id/revertir', 'POST', '
+    PKG_TRANSFERENCIAS_ETHOS.REVERTIR(p_token => l_token, p_id => TO_NUMBER(:id));');
 
   handler('transferencias/historial', 'GET', '
     PKG_TRANSFERENCIAS_ETHOS.HISTORIAL(
@@ -982,6 +1114,7 @@ BEGIN
   preflight('transferencias/manuales');
   preflight('transferencias/:id');
   preflight('transferencias/:id/recibir');
+  preflight('transferencias/:id/revertir');
   preflight('transferencias/historial');
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado.');
@@ -1012,6 +1145,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('       POST   transferencias');
     DBMS_OUTPUT.PUT_LINE('       PUT    transferencias/:id');
     DBMS_OUTPUT.PUT_LINE('       POST   transferencias/:id/recibir');
+    DBMS_OUTPUT.PUT_LINE('       POST   transferencias/:id/revertir');
     DBMS_OUTPUT.PUT_LINE('       DELETE transferencias/:id');
     DBMS_OUTPUT.PUT_LINE('       GET    transferencias/historial ?estado=&id_sucursal=&desde=&hasta=');
   ELSE

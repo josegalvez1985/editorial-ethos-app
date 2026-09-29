@@ -302,6 +302,8 @@ validan campos— están en el encabezado del script. Solo necesita `auth.sql`.
 | GET | `inventarios` `?id_sucursal=` | La planilla: **todos** los manuales de `INDICES_MANUALES`, contados o no, + `resumen` de la sucursal |
 | POST | `inventarios/conteo` | `{id_sucursal, items: "Manual%201:5;Manual%202:"}` → `{guardados, borrados}` |
 | POST | `inventarios/cerrar` | `{id_sucursal}` → `{cerrados}`; **409** si hay abiertos sin cantidad física |
+| POST | `inventarios/descartar` | `{id_sucursal}` → `{borrados}`: borra el conteo en curso. **409** si no hay |
+| POST | `inventarios/revertir` | `{id_sucursal, eliminar: 'S'\|'N'}` → `{revertidos, existencias}`: deshace el **último** cierre. **409** si hay conteo en curso o nada cerrado |
 | GET | `inventarios/historial` `?id_sucursal=&estado=N\|S&desde=&hasta=` | La consulta de detalle (pantalla, gráfico y PDF). Sin paginar, con tope de 5000 filas (`truncado`) |
 
 **Se cuenta por manual, no por índice** (25/09/2026): se sacaron `INVENTARIOS.ID_INDICE` y
@@ -311,7 +313,7 @@ validan campos— están en el encabezado del script. Solo necesita `auth.sql`.
 | Tabla | Qué guarda |
 | --- | --- |
 | `EXISTENCIAS` | Lo que hay **hoy**: una fila por (manual, sucursal), con UNIQUE |
-| `INVENTARIOS` | El **historial**: una fila por inventario. A lo sumo **un conteo abierto** (`IND_CERRADO = 'N'`) por (manual, sucursal), lo garantiza el índice `INVENTARIOS_UN_ABIERTO` que crea el script. Los cerrados no se tocan más |
+| `INVENTARIOS` | El **historial**: una fila por inventario. A lo sumo **un conteo abierto** (`IND_CERRADO = 'N'`) por (manual, sucursal), lo garantiza el índice `INVENTARIOS_UN_ABIERTO` que crea el script. Los cerrados solo los toca `revertir` |
 
 **Se carga solo la cantidad física.** La de sistema la toma el paquete de
 `EXISTENCIAS.CANTIDAD_ACTUAL` en cada guardado, y al cerrar `EXISTENCIAS` queda con la física
@@ -336,7 +338,39 @@ Solo necesita `auth.sql`.
 
 **Las fechas van en hora local y al minuto** (`TRUNC(SYSDATE - 3/24, 'MI')`, pedido el
 25/09/2026): `INVENTARIOS.FECHA` y `EXISTENCIAS.FECHA_ACTUALIZACION`. El servidor está en UTC y
-`SYSDATE` pelado las dejaba 3 horas adelantadas.
+`SYSDATE` pelado las dejaba 3 horas adelantadas. `FECHA_CIERRE` es la excepción: lleva
+segundos porque es la clave que agrupa un cierre (ver abajo).
+
+### Descartar y revertir (29/09/2026)
+
+**Descartar** borra todos los conteos abiertos de la sucursal. No toca `EXISTENCIAS`: un
+conteo abierto nunca impactó.
+
+**Revertir** deshace el último cierre de la sucursal. El script agrega dos columnas a
+`INVENTARIOS` (y, si existe `pr_crear_trigger_auditoria`, las suma a la bitácora):
+
+| Columna | Qué guarda |
+| --- | --- |
+| `FECHA_CIERRE` | Cuándo se cerró. Todas las filas de un mismo "Cerrar inventario" llevan la misma: es lo que las agrupa, porque no hay tabla de cabecera |
+| `CANTIDAD_ANTERIOR` | `EXISTENCIAS.CANTIDAD_ACTUAL` justo antes del cierre (0 si no había fila) |
+
+A `EXISTENCIAS` se le suma `CANTIDAD_ANTERIOR − CANTIDAD_FISICA`; no se le pone de vuelta el
+valor de antes. Así lo que se movió después del cierre —una transferencia recibida— se
+conserva: antes 10, se contaron 8, llegaron 5 → 13; revertir da 13 + (10 − 8) = 15.
+
+- **Solo el último cierre**, de a uno y del más nuevo al más viejo: uno posterior ya pisó
+  `EXISTENCIAS` con otro conteo.
+- **Sin conteo en curso** en la sucursal: reabrir chocaría con `INVENTARIOS_UN_ABIERTO`, y
+  ese conteo tomó su cantidad de sistema de las existencias que se van a corregir.
+- `eliminar = 'N'` reabre los conteos (vuelven a la planilla); `'S'` los borra.
+- Reabrir (`'S'` → `'N'`) no dispara `INVENTARIOS_ACTUALIZAR_EXISTENCIAS`, que actúa solo en la
+  transición a `'S'`: la devolución la hace el paquete.
+
+**Cierres de antes del 29/09/2026.** `FECHA_CIERRE` se rellena desde `INVENTARIOS_JN` (al
+minuto, para que un cierre no quede partido en dos), y los que no tengan rastro se agrupan por
+`FECHA`. No tienen `CANTIDAD_ANTERIOR`, así que se usa `CANTIDAD_SISTEMA` —lo que decía
+`EXISTENCIAS` al **contar**, no al cerrar—: es exacto salvo que entre el conteo y el cierre
+se haya recibido una transferencia de ese manual en esa sucursal.
 
 ## Sucursales (`sucursales.sql`)
 
@@ -360,18 +394,28 @@ tiene `pr_crear_trigger_auditoria`.
 | GET | `transferencias/:id` | Cabecera + `detalle`; si está recibida, `recibida_el` / `recibida_por` (salen de la bitácora) |
 | POST / PUT | `transferencias` / `transferencias/:id` | `{id_sucursal_origen, id_sucursal_destino, items: "Manual%201:5;Manual%202:3"}` |
 | POST | `transferencias/:id/recibir` | Pasa `IND_RECIBIDA` a `'S'`; **409** si ya estaba |
-| DELETE | `transferencias/:id` | Solo pendientes |
+| POST | `transferencias/:id/revertir` | Deshace la recepción: devuelve las existencias y la deja pendiente; **409** si no estaba recibida |
+| DELETE | `transferencias/:id` | Pendiente: la borra. Recibida: revierte la recepción y la borra, en una transacción |
 | GET | `transferencias/historial` `?estado=&id_sucursal=&desde=&hasta=` | La consulta y el PDF: **una fila por línea de detalle** con la cabecera repetida y `recibida_el` (de la bitácora). Tope de 5000 líneas (`truncado`) |
 
 **Las existencias las mueve el trigger `TRANSFERENCIAS_ACTUALIZAR_EXISTENCIAS` al recibir**
-(resta del origen, suma al destino). El script no lo toca y el paquete nunca escribe
-`EXISTENCIAS`, salvo una cosa: antes de recibir crea en 0 las filas que le falten al
-**origen**, porque el trigger resta con `UPDATE` y sin fila no restaría nada.
+(resta del origen, suma al destino). El script no lo toca. El paquete escribe `EXISTENCIAS`
+en dos casos: antes de recibir crea en 0 las filas que le falten al **origen**, porque el
+trigger resta con `UPDATE` y sin fila no restaría nada; y al **revertir** (abajo).
 
 - **Disponible = existencia − comprometido** en otras pendientes que salen de esa sucursal:
   mientras viaja, el origen todavía los tiene. Si se envía más, la pantalla avisa pero deja
   guardar (decidido el 25/09/2026).
-- **Una recibida no se edita ni se borra**: no hay trigger inverso.
+- **Una recibida no se edita**: primero se revierte la recepción.
+- **Revertir la recepción** (29/09/2026): no hay trigger inverso, así que lo hace el paquete.
+  Pasa `IND_RECIBIDA` a `'N'` y por cada línea **suma** al origen y **resta** al destino: una
+  cuenta relativa, que conserva lo que se movió después. Si el trigger llegara a reaccionar al
+  pasar a `'N'` (hoy no), la devolución se haría dos veces: por eso compara las existencias
+  antes y después de ese `UPDATE` y, si cambiaron, deshace todo con un 409. **Eliminar** una
+  recibida es revertir + borrar, en la misma transacción.
+- **Revertir después de inventariar descuadra**: si después de recibirla se cerró un
+  inventario en el origen o el destino, ese conteo ya refleja lo que hay. La confirmación lo
+  advierte.
 - **Riesgo conocido:** si se cierra un inventario del origen mientras una transferencia viaja,
   al recibirla se descuenta dos veces. La confirmación de recepción lo advierte.
 - El trigger del usuario pone `FECHA_ACTUALIZACION = SYSDATE` (UTC), a diferencia del de

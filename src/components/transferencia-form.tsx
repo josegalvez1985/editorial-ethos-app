@@ -21,8 +21,10 @@
  * ============================================================================
  *
  * Guardar no mueve nada. Lo hace "Confirmar recepción", vía el trigger
- * `TRANSFERENCIAS_ACTUALIZAR_EXISTENCIAS`, y no tiene vuelta atrás: una
- * recibida queda en solo lectura. Ver `lib/transferencias.ts`.
+ * `TRANSFERENCIAS_ACTUALIZAR_EXISTENCIAS`, y una recibida queda en solo
+ * lectura. Para corregirla, **Revertir recepción** devuelve las existencias y
+ * la deja pendiente otra vez; **Eliminar** hace eso y además la borra
+ * (29/09/2026). Ver `lib/transferencias.ts`.
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -38,6 +40,7 @@ import {
   Minus,
   PackageCheck,
   Plus,
+  RotateCcw,
   Save,
   Trash2,
   Truck,
@@ -67,6 +70,7 @@ import {
   keysTransferencias,
   manualesDeOrigen,
   recibirTransferencia,
+  revertirRecepcion,
   type ManualOrigen,
   type TransferenciaDetalle,
 } from "@/lib/transferencias";
@@ -87,7 +91,7 @@ export function TransferenciaForm({ previa }: { previa?: TransferenciaDetalle })
   const [lineas, setLineas] = useState<Linea[]>(
     () => previa?.detalle.map((l) => ({ manual: l.manual, cantidad: String(l.cantidad) })) ?? [],
   );
-  const [confirmar, setConfirmar] = useState<"recibir" | "borrar" | null>(null);
+  const [confirmar, setConfirmar] = useState<"recibir" | "revertir" | "borrar" | null>(null);
 
   const sucursales = useQuery({
     queryKey: keysInventario.sucursales,
@@ -201,17 +205,32 @@ export function TransferenciaForm({ previa }: { previa?: TransferenciaDetalle })
     onError: (err) => toast.error(err instanceof Error ? err.message : "No se pudo recibir"),
   });
 
+  const revertir = useMutation({
+    mutationFn: () => revertirRecepcion(previa!.id_transferencia),
+    onSuccess: () => {
+      // La página rearma el formulario al cambiar `recibida` (ver su `key`):
+      // vuelve editable, con el botón de recibir.
+      invalidar();
+      toast.success(
+        "Recepción revertida: las existencias volvieron y la transferencia quedó pendiente.",
+      );
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "No se pudo revertir"),
+  });
+
   const borrar = useMutation({
     mutationFn: () => eliminarTransferencia(previa!.id_transferencia),
     onSuccess: () => {
       invalidar();
-      toast.success("Transferencia eliminada");
+      toast.success(
+        soloLectura ? "Transferencia eliminada y existencias devueltas" : "Transferencia eliminada",
+      );
       navigate({ to: "/transferencias" });
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "No se pudo eliminar"),
   });
 
-  const ocupado = guardar.isPending || recibir.isPending || borrar.isPending;
+  const ocupado = guardar.isPending || recibir.isPending || revertir.isPending || borrar.isPending;
 
   /*
    * Lo mismo que valida el backend, para no gastar un viaje de red en decir lo
@@ -239,16 +258,45 @@ export function TransferenciaForm({ previa }: { previa?: TransferenciaDetalle })
       {/* ── Estado: recibida / pendiente ─────────────────────────────── */}
       {previa &&
         (soloLectura ? (
-          <div className="flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/40 p-4">
-            <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" />
-            <div className="text-sm">
+          <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/40 p-4 sm:flex-row sm:items-center">
+            <CheckCircle2 className="size-5 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1 text-sm">
               <p className="font-semibold">Recibida en {previa.destino}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {previa.recibida_el && `El ${previa.recibida_el}`}
                 {previa.recibida_por && ` por ${previa.recibida_por}`}
                 {previa.recibida_el ? ". " : ""}
-                Las existencias ya se movieron, así que no se puede editar ni eliminar.
+                Las existencias ya se movieron. Para corregirla, revertí la recepción.
               </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmar("borrar")}
+                disabled={ocupado}
+                aria-label="Eliminar"
+                title="Eliminar y devolver las existencias"
+                className="grid size-11 shrink-0 place-items-center rounded-xl border border-destructive/40 text-destructive disabled:opacity-60"
+              >
+                {borrar.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmar("revertir")}
+                disabled={ocupado}
+                className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-input bg-background px-4 text-sm font-semibold hover:bg-muted disabled:opacity-60"
+              >
+                {revertir.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="size-4" />
+                )}
+                Revertir recepción
+              </button>
             </div>
           </div>
         ) : (
@@ -483,12 +531,40 @@ export function TransferenciaForm({ previa }: { previa?: TransferenciaDetalle })
                 </AlertDialogAction>
               </AlertDialogFooter>
             </>
+          ) : confirmar === "revertir" && previa ? (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Revertir la recepción?</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-2">
+                    <p>
+                      Vuelven <span className="font-semibold text-foreground">{unidades}</span>{" "}
+                      libro{unidades === 1 ? "" : "s"} a {previa.origen} y se restan de{" "}
+                      {previa.destino}. La transferencia queda pendiente otra vez: se puede editar,
+                      volver a recibir o eliminar.
+                    </p>
+                    <p className="text-xs">
+                      Si después de recibirla se cerró un inventario en {previa.origen} o en{" "}
+                      {previa.destino}, ese conteo ya refleja lo que hay: revertir lo descuadra.
+                    </p>
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => revertir.mutate()}>
+                  Revertir recepción
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
           ) : (
             <>
               <AlertDialogHeader>
                 <AlertDialogTitle>¿Eliminar esta transferencia?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  No se puede deshacer. Como todavía no se recibió, las existencias no se tocaron.
+                  {soloLectura
+                    ? `No se puede deshacer. Como ya se recibió, antes se devuelven las existencias: vuelven ${unidades} libro${unidades === 1 ? "" : "s"} a ${previa?.origen} y se restan de ${previa?.destino}.`
+                    : "No se puede deshacer. Como todavía no se recibió, las existencias no se tocaron."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

@@ -15,6 +15,12 @@
 --   GET   inventarios/historial ?id_sucursal=&estado=&desde=&hasta=
 --                                               la consulta de detalle (y el PDF):
 --                                               conteos pendientes y cerrados
+--   POST  inventarios/descartar {id_sucursal}   borra el conteo EN CURSO (nunca
+--                                               toco EXISTENCIAS)
+--   POST  inventarios/revertir  {id_sucursal, eliminar}
+--                                               deshace el ULTIMO cierre: devuelve
+--                                               EXISTENCIAS y reabre (o borra) sus
+--                                               conteos. Ver seccion "REVERTIR"
 --
 -- CORRER DESPUES de auth.sql (modulo ORDS 'ethos' y PKG_AUTH_ETHOS). No depende
 -- de ningun otro paquete.
@@ -48,9 +54,45 @@
 --   IND_CERRADO = 'N'   el conteo en curso. A LO SUMO UNO por (manual,
 --                       sucursal): lo garantiza el indice INVENTARIOS_UN_ABIERTO
 --                       que crea este script (seccion 2).
---   IND_CERRADO = 'S'   un inventario terminado. No se toca mas: es historia.
+--   IND_CERRADO = 'S'   un inventario terminado. Es historia: solo lo toca
+--                       `revertir` (ver mas abajo).
 --
 -- El inventario siguiente abre una fila nueva; no se reabre la vieja.
+--
+-- UN CIERRE = LAS FILAS QUE CERRO UN MISMO "Cerrar inventario". No hay tabla de
+-- cabecera: las agrupa FECHA_CIERRE (sucursal + mismo instante), una columna que
+-- agrega este script (seccion 2b).
+--
+--------------------------------------------------------------------------------
+-- REVERTIR UN CIERRE (agregado el 29/09/2026)
+--------------------------------------------------------------------------------
+--
+-- Al cerrar, cada fila guarda en CANTIDAD_ANTERIOR lo que decia EXISTENCIAS justo
+-- antes de pisarlo. Revertir le suma a EXISTENCIAS la diferencia
+--
+--     CANTIDAD_ANTERIOR - CANTIDAD_FISICA
+--
+-- y NO le pone de vuelta el valor anterior: si despues del cierre se recibio una
+-- transferencia, ese movimiento se conserva. (Antes 10, se contaron 8, despues
+-- llegaron 5 -> 13. Revertir: 13 + (10 - 8) = 15, que es 10 + 5.)
+--
+-- Tres reglas, las tres por lo mismo —que la cuenta de arriba sea valida—:
+--
+--   1. SOLO EL ULTIMO CIERRE DE LA SUCURSAL. Un cierre posterior ya piso
+--      EXISTENCIAS con otro conteo; revertir uno anterior por debajo no tiene
+--      sentido. Se revierten de a uno, del mas nuevo al mas viejo.
+--   2. SIN CONTEO EN CURSO EN ESA SUCURSAL. Reabrir chocaria con
+--      INVENTARIOS_UN_ABIERTO, y los conteos en curso tomaron su CANTIDAD_SISTEMA
+--      de las existencias que se estan por corregir. Primero se cierra o se
+--      descarta.
+--   3. `eliminar` = 'N' reabre los conteos (vuelven a la planilla para
+--      corregirlos y cerrar de nuevo); 'S' los borra. EXISTENCIAS vuelve igual en
+--      los dos casos.
+--
+-- Cierres de ANTES del 29/09/2026: no tienen CANTIDAD_ANTERIOR. Se usa
+-- CANTIDAD_SISTEMA (lo que decia EXISTENCIAS al CONTAR, no al cerrar): es exacto
+-- salvo que entre el conteo y el cierre se haya recibido una transferencia de
+-- ese manual en esa sucursal.
 --
 --------------------------------------------------------------------------------
 -- LAS DOS CANTIDADES (decidido el 25/09/2026)
@@ -265,6 +307,110 @@ END;
 /
 
 --------------------------------------------------------------------------------
+-- === 3c) FECHA_CIERRE Y CANTIDAD_ANTERIOR (para revertir, 29/09/2026) =======
+--
+--   FECHA_CIERRE       cuando se cerro, en hora local y CON SEGUNDOS: es la
+--                      clave que agrupa las filas de un mismo cierre (al minuto,
+--                      dos cierres seguidos de la misma sucursal se mezclarian).
+--                      La pantalla la muestra al minuto.
+--   CANTIDAD_ANTERIOR  EXISTENCIAS.CANTIDAD_ACTUAL justo antes del cierre (0 si
+--                      el manual no tenia fila). Es lo que se devuelve al
+--                      revertir. NULL = cierre viejo, ver el encabezado.
+--
+-- Va DESPUES de la seccion 3 porque el relleno de abajo hace un UPDATE sobre
+-- INVENTARIOS: con el trigger de existencias viejo (INVALID) fallaria.
+--------------------------------------------------------------------------------
+
+DECLARE
+  l_n     PLS_INTEGER;
+  l_jn    PLS_INTEGER;
+  l_proc  PLS_INTEGER;
+
+  PROCEDURE agregar(p_columna IN VARCHAR2, p_tipo IN VARCHAR2) IS
+  BEGIN
+    SELECT COUNT(*) INTO l_n FROM user_tab_columns
+     WHERE table_name = 'INVENTARIOS' AND column_name = p_columna;
+    IF l_n > 0 THEN
+      DBMS_OUTPUT.PUT_LINE('[SKIP] INVENTARIOS.' || p_columna || ' ya existe.');
+    ELSE
+      EXECUTE IMMEDIATE 'ALTER TABLE INVENTARIOS ADD (' || p_columna || ' ' || p_tipo || ')';
+      DBMS_OUTPUT.PUT_LINE('[OK]   INVENTARIOS.' || p_columna || ' agregada.');
+    END IF;
+  END agregar;
+BEGIN
+  agregar('FECHA_CIERRE',      'DATE');
+  agregar('CANTIDAD_ANTERIOR', 'NUMBER');
+
+  -- La bitacora: AUDITORIA_INVENTARIOS nombra cada columna, asi que las nuevas
+  -- no se registran hasta regenerarlo. pr_crear_trigger_auditoria las agrega a
+  -- INVENTARIOS_JN y rehace el trigger.
+  SELECT COUNT(*) INTO l_jn FROM user_tab_columns
+   WHERE table_name = 'INVENTARIOS_JN' AND column_name = 'ID_INVENTARIO';
+  SELECT COUNT(*) INTO l_proc FROM user_objects
+   WHERE object_name = 'PR_CREAR_TRIGGER_AUDITORIA' AND object_type = 'PROCEDURE';
+  SELECT COUNT(*) INTO l_n FROM user_tab_columns
+   WHERE table_name = 'INVENTARIOS_JN' AND column_name IN ('FECHA_CIERRE', 'CANTIDAD_ANTERIOR');
+
+  IF l_jn > 0 AND l_n < 2 THEN
+    IF l_proc = 0 THEN
+      DBMS_OUTPUT.PUT_LINE('[WARN] INVENTARIOS_JN no registra las columnas nuevas y no existe');
+      DBMS_OUTPUT.PUT_LINE('       pr_crear_trigger_auditoria (backend/auditoria.sql). No rompe nada.');
+    ELSE
+      BEGIN
+        EXECUTE IMMEDIATE 'BEGIN pr_crear_trigger_auditoria(''INVENTARIOS''); END;';
+        DBMS_OUTPUT.PUT_LINE('[OK]   AUDITORIA_INVENTARIOS regenerado con las columnas nuevas.');
+      EXCEPTION
+        WHEN OTHERS THEN
+          DBMS_OUTPUT.PUT_LINE('[WARN] No se pudo regenerar AUDITORIA_INVENTARIOS: ' || SQLERRM);
+      END;
+    END IF;
+  END IF;
+
+  -- Relleno de FECHA_CIERRE en los cierres viejos, desde la bitacora: la fila UPD
+  -- mas reciente con IND_CERRADO <> 'S' es el ANTES del UPDATE que la cerro (los
+  -- AUDITORIA_* guardan el valor anterior). -3h: JN_DATETIME esta en UTC. Mismo
+  -- truco que `recibida_el` en transferencias.sql.
+  --
+  -- AL MINUTO, a diferencia de los cierres nuevos: el trigger de auditoria toma
+  -- SYSDATE fila por fila, y un cierre que cruzo el cambio de segundo quedaria
+  -- partido en dos "cierres". Dos cierres viejos de la misma sucursal en el mismo
+  -- minuto se juntan, que es el mal menor.
+  --
+  -- Dinamico: sin INVENTARIOS_JN esto no compilaria. Las filas sin rastro en la
+  -- bitacora quedan en NULL y el paquete las agrupa por NVL(FECHA_CIERRE, FECHA).
+  -- El EXISTS es para no tocarlas: si no, cada corrida del script las volveria a
+  -- actualizar (a NULL) y ensuciaria la bitacora.
+  IF l_jn > 0 THEN
+    EXECUTE IMMEDIATE q'~
+      UPDATE inventarios i
+         SET fecha_cierre = (
+               SELECT TRUNC(MAX(j.jn_datetime) - 3/24, 'MI')
+                 FROM inventarios_jn j
+                WHERE j.id_inventario = i.id_inventario
+                  AND j.jn_operation  = 'UPD'
+                  AND NVL(j.ind_cerrado, 'N') <> 'S')
+       WHERE i.ind_cerrado = 'S'
+         AND i.fecha_cierre IS NULL
+         AND EXISTS (SELECT 1 FROM inventarios_jn j
+                      WHERE j.id_inventario = i.id_inventario
+                        AND j.jn_operation  = 'UPD'
+                        AND NVL(j.ind_cerrado, 'N') <> 'S')~';
+    l_n := SQL%ROWCOUNT;
+    COMMIT;
+    IF l_n > 0 THEN
+      DBMS_OUTPUT.PUT_LINE('[OK]   FECHA_CIERRE rellenada desde la bitacora en ' || l_n || ' conteo(s) viejos.');
+    END IF;
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[WARN] No hay INVENTARIOS_JN: los cierres viejos se agrupan por FECHA del conteo.');
+  END IF;
+EXCEPTION
+  WHEN OTHERS THEN
+    ROLLBACK;
+    DBMS_OUTPUT.PUT_LINE('[ERROR] Columnas para revertir: ' || SQLERRM);
+END;
+/
+
+--------------------------------------------------------------------------------
 -- === 4) PAQUETE =============================================================
 --------------------------------------------------------------------------------
 
@@ -291,6 +437,16 @@ CREATE OR REPLACE PACKAGE PKG_INVENTARIOS_ETHOS AS
 
   -- Cierra TODO lo abierto de la sucursal. El trigger actualiza EXISTENCIAS.
   PROCEDURE cerrar(p_token IN VARCHAR2, p_id_sucursal IN NUMBER);
+
+  -- Borra TODO lo abierto de la sucursal. Nunca impacto en EXISTENCIAS.
+  PROCEDURE descartar(p_token IN VARCHAR2, p_id_sucursal IN NUMBER);
+
+  -- Deshace el ULTIMO cierre de la sucursal: devuelve EXISTENCIAS y reabre sus
+  -- conteos (p_eliminar 'N') o los borra ('S'). Ver "REVERTIR" en el encabezado.
+  PROCEDURE revertir(
+      p_token       IN VARCHAR2,
+      p_id_sucursal IN NUMBER,
+      p_eliminar    IN VARCHAR2 DEFAULT 'N');
 
   -- La consulta de detalle: los conteos (pendientes y cerrados) de una sucursal
   -- o de todas, en un periodo. Es la fuente de la pantalla y del PDF.
@@ -417,6 +573,21 @@ CREATE OR REPLACE PACKAGE BODY PKG_INVENTARIOS_ETHOS AS
     RETURN TRUE;
   END f_validar;
 
+  -- La clave del ultimo cierre de la sucursal. NULL si nunca se cerro nada.
+  --
+  -- NVL con FECHA: los cierres viejos que no se pudieron rellenar desde la
+  -- bitacora (seccion 3c). Se llama FUERA de las sentencias SQL y se pasa como
+  -- variable: siendo privada del body, Oracle no deja usarla adentro (PLS-00231).
+  FUNCTION f_ultimo_cierre(p_id_sucursal IN NUMBER) RETURN DATE IS
+    l_cierre DATE;
+  BEGIN
+    SELECT MAX(NVL(fecha_cierre, fecha)) INTO l_cierre
+      FROM inventarios
+     WHERE id_sucursal = p_id_sucursal
+       AND ind_cerrado = 'S';
+    RETURN l_cierre;
+  END f_ultimo_cierre;
+
   /* ---------------------------------------------------------------------- */
   /* SUCURSALES                                                             */
   /* ---------------------------------------------------------------------- */
@@ -476,6 +647,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_INVENTARIOS_ETHOS AS
     l_desc         VARCHAR2(255);
     l_abiertos     PLS_INTEGER;
     l_sin_cantidad PLS_INTEGER;
+    l_ult_cierre   DATE;
+    l_ult_manuales PLS_INTEGER;
   BEGIN
     IF NOT f_validar(p_token, p_id_sucursal) THEN RETURN; END IF;
 
@@ -488,6 +661,15 @@ CREATE OR REPLACE PACKAGE BODY PKG_INVENTARIOS_ETHOS AS
      WHERE id_sucursal = p_id_sucursal
        AND NVL(ind_cerrado, 'N') <> 'S';
 
+    -- El cierre que `revertir` desharia. NVL con FECHA: cierres viejos sin rastro
+    -- en la bitacora (ver seccion 3c).
+    l_ult_cierre := f_ultimo_cierre(p_id_sucursal);
+    SELECT COUNT(*) INTO l_ult_manuales
+      FROM inventarios
+     WHERE id_sucursal = p_id_sucursal
+       AND ind_cerrado = 'S'
+       AND NVL(fecha_cierre, fecha) = l_ult_cierre;
+
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
@@ -499,6 +681,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_INVENTARIOS_ETHOS AS
     -- Abiertos sin fisica o sin manual. Desde la app no se pueden crear (vaciar
     -- la cantidad borra el conteo), pero si desde APEX; y bloquean el cierre.
     APEX_JSON.WRITE('sin_cantidad', l_sin_cantidad);
+    APEX_JSON.WRITE('ultimo_cierre', TO_CHAR(l_ult_cierre, 'DD/MM/YYYY HH24:MI'));
+    APEX_JSON.WRITE('ultimo_cierre_manuales', l_ult_manuales);
     APEX_JSON.CLOSE_OBJECT;
 
     APEX_JSON.OPEN_ARRAY('data');
@@ -515,9 +699,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_INVENTARIOS_ETHOS AS
              WHERE id_sucursal = p_id_sucursal
                AND NVL(ind_cerrado, 'N') <> 'S'
         ), cierre AS (
-            SELECT manual, cantidad_fisica, fecha,
+            -- La fecha del CIERRE, no la del conteo (desde el 29/09/2026).
+            SELECT manual, cantidad_fisica, NVL(fecha_cierre, fecha) AS fecha,
                    ROW_NUMBER() OVER (PARTITION BY manual
-                                      ORDER BY fecha DESC, id_inventario DESC) AS rn
+                                      ORDER BY NVL(fecha_cierre, fecha) DESC,
+                                               id_inventario DESC) AS rn
               FROM inventarios
              WHERE id_sucursal = p_id_sucursal
                AND ind_cerrado = 'S'
@@ -717,12 +903,20 @@ CREATE OR REPLACE PACKAGE BODY PKG_INVENTARIOS_ETHOS AS
   -- Es un solo UPDATE: el trigger de existencias corre por fila y, si alguna
   -- falla, Oracle deshace la sentencia entera. No puede quedar la mitad cerrada.
   --
-  -- **No tiene vuelta atras desde la app.** El valor anterior de EXISTENCIAS
-  -- queda en EXISTENCIAS_JN si hiciera falta.
+  -- El mismo UPDATE deja lo necesario para revertirlo (29/09/2026):
+  --
+  --   FECHA_CIERRE       una sola para todas las filas: es lo que las agrupa.
+  --   CANTIDAD_ANTERIOR  lo que decia EXISTENCIAS antes de este cierre. La
+  --                      subconsulta de cada fila se evalua ANTES de que el
+  --                      trigger (AFTER, por fila) pise la existencia de ESE
+  --                      manual, y cada manual esta una sola vez entre los
+  --                      abiertos de la sucursal (INVENTARIOS_UN_ABIERTO).
   ------------------------------------------------------------------------------
   PROCEDURE cerrar(p_token IN VARCHAR2, p_id_sucursal IN NUMBER) IS
     l_sin_cantidad PLS_INTEGER;
     l_n            PLS_INTEGER;
+    -- Con segundos, no f_ahora: es la clave del cierre (ver seccion 3c).
+    l_cierre       DATE := SYSDATE - 3/24;
   BEGIN
     IF NOT f_validar(p_token, p_id_sucursal) THEN RETURN; END IF;
 
@@ -740,10 +934,15 @@ CREATE OR REPLACE PACKAGE BODY PKG_INVENTARIOS_ETHOS AS
       RETURN;
     END IF;
 
-    UPDATE inventarios
-       SET ind_cerrado = 'S'
-     WHERE id_sucursal = p_id_sucursal
-       AND NVL(ind_cerrado, 'N') <> 'S';
+    UPDATE inventarios i
+       SET i.ind_cerrado       = 'S',
+           i.fecha_cierre      = l_cierre,
+           i.cantidad_anterior = NVL((SELECT e.cantidad_actual
+                                        FROM existencias e
+                                       WHERE e.manual      = i.manual
+                                         AND e.id_sucursal = i.id_sucursal), 0)
+     WHERE i.id_sucursal = p_id_sucursal
+       AND NVL(i.ind_cerrado, 'N') <> 'S';
     l_n := SQL%ROWCOUNT;
 
     IF l_n = 0 THEN
@@ -765,6 +964,169 @@ CREATE OR REPLACE PACKAGE BODY PKG_INVENTARIOS_ETHOS AS
       ROLLBACK;
       p_error_oracle;
   END cerrar;
+
+  /* ---------------------------------------------------------------------- */
+  /* DESCARTAR (el conteo en curso)                                         */
+  /* ---------------------------------------------------------------------- */
+
+  -- Borra todos los conteos ABIERTOS de la sucursal. Es lo mismo que vaciar la
+  -- cantidad de cada uno en la planilla, de una vez. No toca EXISTENCIAS: un
+  -- conteo abierto nunca impacto (el trigger actua solo al cerrar).
+  PROCEDURE descartar(p_token IN VARCHAR2, p_id_sucursal IN NUMBER) IS
+    l_n PLS_INTEGER;
+  BEGIN
+    IF NOT f_validar(p_token, p_id_sucursal) THEN RETURN; END IF;
+
+    DELETE FROM inventarios
+     WHERE id_sucursal = p_id_sucursal
+       AND NVL(ind_cerrado, 'N') <> 'S';
+    l_n := SQL%ROWCOUNT;
+
+    IF l_n = 0 THEN
+      ROLLBACK;
+      p_error(409, 'Conflict', 'No hay conteos en curso en esta sucursal');
+      RETURN;
+    END IF;
+
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success',  TRUE);
+    APEX_JSON.WRITE('borrados', l_n);
+    APEX_JSON.WRITE('message',  'Conteo descartado');
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      ROLLBACK;
+      p_error_oracle;
+  END descartar;
+
+  /* ---------------------------------------------------------------------- */
+  /* REVERTIR (el ultimo cierre)                                            */
+  /* ---------------------------------------------------------------------- */
+
+  ------------------------------------------------------------------------------
+  -- Las reglas y la cuenta estan en "REVERTIR UN CIERRE", en el encabezado.
+  --
+  -- Todo en una transaccion: si algo falla, EXISTENCIAS y los conteos quedan
+  -- como estaban. Las filas del cierre se bloquean al leerlas; si otra persona
+  -- lo revirtio mientras tanto, el cursor ya no las encuentra y se responde 409.
+  --
+  -- Reabrir (S -> N) NO dispara INVENTARIOS_ACTUALIZAR_EXISTENCIAS: actua solo en
+  -- la transicion a 'S'. Por eso la devolucion la hace este procedimiento.
+  ------------------------------------------------------------------------------
+  PROCEDURE revertir(
+      p_token       IN VARCHAR2,
+      p_id_sucursal IN NUMBER,
+      p_eliminar    IN VARCHAR2 DEFAULT 'N'
+  ) IS
+    l_eliminar BOOLEAN := NVL(UPPER(SUBSTR(TRIM(p_eliminar), 1, 1)), 'N') = 'S';
+    l_abiertos PLS_INTEGER;
+    l_cierre   DATE;
+    l_ahora    DATE;
+    l_delta    NUMBER;
+    l_n        PLS_INTEGER := 0;
+    l_movidas  PLS_INTEGER := 0;
+  BEGIN
+    IF NOT f_validar(p_token, p_id_sucursal) THEN RETURN; END IF;
+
+    -- Regla 2: sin conteo en curso.
+    SELECT COUNT(*) INTO l_abiertos
+      FROM inventarios
+     WHERE id_sucursal = p_id_sucursal
+       AND NVL(ind_cerrado, 'N') <> 'S';
+    IF l_abiertos > 0 THEN
+      p_error(409, 'Conflict',
+              'Hay ' || l_abiertos || ' manual(es) contandose en esta sucursal. '
+              || 'Cerra o descarta ese conteo antes de revertir el cierre anterior.');
+      RETURN;
+    END IF;
+
+    -- Regla 1: solo el ultimo.
+    l_cierre := f_ultimo_cierre(p_id_sucursal);
+    IF l_cierre IS NULL THEN
+      p_error(409, 'Conflict', 'No hay inventarios cerrados en esta sucursal');
+      RETURN;
+    END IF;
+
+    l_ahora := f_ahora;
+
+    FOR r IN (
+        SELECT manual, cantidad_fisica, cantidad_sistema, cantidad_anterior
+          FROM inventarios
+         WHERE id_sucursal = p_id_sucursal
+           AND ind_cerrado = 'S'
+           AND NVL(fecha_cierre, fecha) = l_cierre
+           FOR UPDATE
+    ) LOOP
+      l_n := l_n + 1;
+
+      -- Lo que el cierre le cambio a la existencia, con el signo al reves.
+      -- Cierres viejos sin CANTIDAD_ANTERIOR: la de sistema (ver el encabezado).
+      l_delta := NVL(r.cantidad_anterior, NVL(r.cantidad_sistema, 0))
+               - NVL(r.cantidad_fisica, 0);
+
+      -- Sin manual el trigger no habria dejado cerrar: solo desde APEX.
+      IF l_delta <> 0 AND r.manual IS NOT NULL THEN
+        UPDATE existencias
+           SET cantidad_actual     = cantidad_actual + l_delta,
+               fecha_actualizacion = l_ahora
+         WHERE manual      = r.manual
+           AND id_sucursal = p_id_sucursal;
+
+        -- El cierre la habia creado; si alguien la borro, se recrea con la
+        -- diferencia, aunque quede en negativo: asi queda a la vista.
+        IF SQL%ROWCOUNT = 0 THEN
+          INSERT INTO existencias (id_sucursal, manual, cantidad_actual, fecha_actualizacion)
+          VALUES (p_id_sucursal, r.manual, l_delta, l_ahora);
+        END IF;
+        l_movidas := l_movidas + 1;
+      END IF;
+    END LOOP;
+
+    IF l_n = 0 THEN
+      ROLLBACK;
+      p_error(409, 'Conflict', 'El cierre ya no esta: otra persona lo acaba de revertir. '
+                               || 'Recarga la planilla.');
+      RETURN;
+    END IF;
+
+    IF l_eliminar THEN
+      DELETE FROM inventarios
+       WHERE id_sucursal = p_id_sucursal
+         AND ind_cerrado = 'S'
+         AND NVL(fecha_cierre, fecha) = l_cierre;
+    ELSE
+      UPDATE inventarios
+         SET ind_cerrado       = 'N',
+             fecha_cierre      = NULL,
+             cantidad_anterior = NULL
+       WHERE id_sucursal = p_id_sucursal
+         AND ind_cerrado = 'S'
+         AND NVL(fecha_cierre, fecha) = l_cierre;
+    END IF;
+
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success',     TRUE);
+    APEX_JSON.WRITE('revertidos',  l_n);
+    -- Cuantas existencias cambiaron: las que el cierre no habia movido (fisica
+    -- igual a la anterior) no se tocan.
+    APEX_JSON.WRITE('existencias', l_movidas);
+    APEX_JSON.WRITE('eliminados',  l_eliminar);
+    APEX_JSON.WRITE('cierre',      TO_CHAR(l_cierre, 'DD/MM/YYYY HH24:MI'));
+    APEX_JSON.WRITE('message',     CASE WHEN l_eliminar
+                                        THEN 'Cierre revertido y conteos eliminados'
+                                        ELSE 'Cierre revertido: los conteos volvieron a la planilla' END);
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      ROLLBACK;
+      p_error_oracle;
+  END revertir;
 
   /* ---------------------------------------------------------------------- */
   /* HISTORIAL (consulta de detalle y PDF)                                  */
@@ -867,7 +1229,7 @@ END PKG_INVENTARIOS_ETHOS;
 --------------------------------------------------------------------------------
 
 DECLARE
-  -- El bloque que extrae el token del header, identico en los cuatro handlers.
+  -- El bloque que extrae el token del header, identico en todos los handlers.
   c_token CONSTANT VARCHAR2(400) := '
     l_token := :authorization;
     IF l_token IS NOT NULL THEN
@@ -909,6 +1271,8 @@ BEGIN
             UNION ALL SELECT 'inventarios/sucursales' FROM dual
             UNION ALL SELECT 'inventarios/conteo' FROM dual
             UNION ALL SELECT 'inventarios/cerrar' FROM dual
+            UNION ALL SELECT 'inventarios/descartar' FROM dual
+            UNION ALL SELECT 'inventarios/revertir' FROM dual
             UNION ALL SELECT 'inventarios/historial' FROM dual) LOOP
     FOR m IN (SELECT 'GET' AS v FROM dual UNION ALL SELECT 'POST' FROM dual
               UNION ALL SELECT 'OPTIONS' FROM dual) LOOP
@@ -922,6 +1286,8 @@ BEGIN
             UNION ALL SELECT 'inventarios/sucursales' FROM dual
             UNION ALL SELECT 'inventarios/conteo' FROM dual
             UNION ALL SELECT 'inventarios/cerrar' FROM dual
+            UNION ALL SELECT 'inventarios/descartar' FROM dual
+            UNION ALL SELECT 'inventarios/revertir' FROM dual
             UNION ALL SELECT 'inventarios/historial' FROM dual) LOOP
     ORDS.DEFINE_TEMPLATE(
         p_module_name => 'ethos',
@@ -948,6 +1314,19 @@ BEGIN
     PKG_INVENTARIOS_ETHOS.CERRAR(
         p_token       => l_token,
         p_id_sucursal => TO_NUMBER(:id_sucursal));');
+
+  handler('inventarios/descartar', 'POST', '
+    PKG_INVENTARIOS_ETHOS.DESCARTAR(
+        p_token       => l_token,
+        p_id_sucursal => TO_NUMBER(:id_sucursal));');
+
+  -- `eliminar` como texto 'S' / 'N' y no como booleano JSON, igual que los
+  -- indicadores de la base.
+  handler('inventarios/revertir', 'POST', '
+    PKG_INVENTARIOS_ETHOS.REVERTIR(
+        p_token       => l_token,
+        p_id_sucursal => TO_NUMBER(:id_sucursal),
+        p_eliminar    => :eliminar);');
 
   handler('inventarios/historial', 'GET', '
     PKG_INVENTARIOS_ETHOS.HISTORIAL(
@@ -993,6 +1372,8 @@ BEGIN
   preflight('inventarios/sucursales');
   preflight('inventarios/conteo');
   preflight('inventarios/cerrar');
+  preflight('inventarios/descartar');
+  preflight('inventarios/revertir');
   preflight('inventarios/historial');
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado.');
@@ -1021,6 +1402,8 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('       GET    inventarios ?id_sucursal=');
     DBMS_OUTPUT.PUT_LINE('       POST   inventarios/conteo');
     DBMS_OUTPUT.PUT_LINE('       POST   inventarios/cerrar');
+    DBMS_OUTPUT.PUT_LINE('       POST   inventarios/descartar');
+    DBMS_OUTPUT.PUT_LINE('       POST   inventarios/revertir');
     DBMS_OUTPUT.PUT_LINE('       GET    inventarios/historial ?id_sucursal=&estado=&desde=&hasta=');
   ELSE
     DBMS_OUTPUT.PUT_LINE('[ERROR] PKG_INVENTARIOS_ETHOS quedo INVALID.');

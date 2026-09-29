@@ -1,6 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { BookOpen, Loader2, Lock, PackageSearch, Save } from "lucide-react";
+import {
+  BookOpen,
+  History,
+  Loader2,
+  Lock,
+  PackageSearch,
+  RotateCcw,
+  Save,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
@@ -19,10 +28,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   cerrarInventario,
+  descartarConteo,
   guardarConteo,
   keysInventario,
   listarSucursales,
   obtenerPlanilla,
+  revertirCierre,
   sistemaDe,
   type FilaInventario,
 } from "@/lib/inventarios";
@@ -75,6 +86,13 @@ function valorGuardado(f: FilaInventario): string {
  * 3. Con todo contado, **Cerrar inventario** pasa las cantidades físicas a
  *    `EXISTENCIAS` y los conteos quedan como historia.
  *
+ * ## Y PARA ATRÁS (29/09/2026)
+ *
+ * - **Descartar** borra el conteo en curso entero (sin tocar existencias).
+ * - **Revertir cierre** deshace el último cierre de la sucursal: las
+ *   existencias vuelven y los conteos se reabren o se borran. Se ofrece solo sin
+ *   conteo en curso, que es lo mismo que exige el backend.
+ *
  * Se cuenta por MANUAL, no por índice (25/09/2026). Ver `lib/inventarios.ts`.
  *
  * ## LOS CAMBIOS SIN GUARDAR SE PROTEGEN
@@ -96,6 +114,7 @@ function InventarioPage() {
   /** Sucursal elegida esperando que se confirme el descarte del borrador. */
   const [pendiente, setPendiente] = useState<string | null>(null);
   const [confirmarCierre, setConfirmarCierre] = useState(false);
+  const [confirmar, setConfirmar] = useState<"descartar" | "revertir" | null>(null);
 
   const idSucursal = sucursal ? Number(sucursal) : null;
 
@@ -187,7 +206,34 @@ function InventarioPage() {
     onError: (err) => toast.error(err instanceof Error ? err.message : "No se pudo cerrar"),
   });
 
-  const ocupado = guardar.isPending || cerrar.isPending;
+  const descartar = useMutation({
+    mutationFn: () => descartarConteo(idSucursal!),
+    onSuccess: (n) => {
+      qc.invalidateQueries({ queryKey: keysInventario.todo });
+      toast.success(
+        `Conteo descartado: ${n} manual${n === 1 ? "" : "es"}. Las existencias no cambiaron.`,
+      );
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "No se pudo descartar"),
+  });
+
+  const revertir = useMutation({
+    mutationFn: (eliminar: boolean) => revertirCierre(idSucursal!, eliminar),
+    onSuccess: (r, eliminar) => {
+      qc.invalidateQueries({ queryKey: keysInventario.todo });
+      const uno = r.revertidos === 1;
+      const n = `${r.revertidos} conteo${uno ? "" : "s"}`;
+      toast.success(
+        eliminar
+          ? `Cierre revertido y ${n} eliminado${uno ? "" : "s"}. Las existencias volvieron a como estaban.`
+          : `Cierre revertido: ${n} volvi${uno ? "ó" : "eron"} a la planilla. Las existencias volvieron a como estaban.`,
+      );
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "No se pudo revertir"),
+  });
+
+  const ocupado =
+    guardar.isPending || cerrar.isPending || descartar.isPending || revertir.isPending;
 
   /* ---------------------------------------------------------------------- */
   /* Qué se muestra                                                         */
@@ -295,6 +341,39 @@ function InventarioPage() {
         </div>
 
         {/*
+          ── El último cierre, para revertirlo ────────────────────────────
+          Solo sin conteo en curso ni cambios sin guardar: el backend exige lo
+          primero, y con lo segundo el borrador quedaría mezclado con los
+          conteos reabiertos.
+        */}
+        {resumen && resumen.ultimo_cierre && resumen.abiertos === 0 && !hayCambios && (
+          <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/40 p-4 sm:flex-row sm:items-center">
+            <History className="size-5 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1 text-sm">
+              <p className="font-semibold">Último cierre: {resumen.ultimo_cierre}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {resumen.ultimo_cierre_manuales} manual
+                {resumen.ultimo_cierre_manuales === 1 ? "" : "es"}. Si se cerró por error, se puede
+                revertir y las existencias vuelven a como estaban.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setConfirmar("revertir")}
+              disabled={ocupado}
+              className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-input bg-background px-4 text-sm font-semibold hover:bg-muted disabled:opacity-60"
+            >
+              {revertir.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RotateCcw className="size-4" />
+              )}
+              Revertir cierre
+            </button>
+          </div>
+        )}
+
+        {/*
           ── Acciones, sticky bajo el header ─────────────────────────────
           Arriba y no abajo: en el celular abajo está la barra de navegación,
           y dos barras apiladas no se entienden. Sticky para que Guardar esté
@@ -336,6 +415,21 @@ function InventarioPage() {
                   <span className="font-semibold text-foreground">{resumen.abiertos}</span> manual
                   {resumen.abiertos === 1 ? "" : "es"} contándose en {resumen.descripcion}
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setConfirmar("descartar")}
+                  disabled={ocupado}
+                  aria-label="Descartar el conteo en curso"
+                  title="Descartar el conteo en curso"
+                  className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-60"
+                >
+                  {descartar.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
+                  <span className="hidden sm:inline">Descartar</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setConfirmarCierre(true)}
@@ -453,8 +547,8 @@ function InventarioPage() {
                       selección de manuales o el filtro.
                     </p>
                     <p>
-                      Las existencias de cada uno quedan con la cantidad física contada. No se puede
-                      deshacer desde la app.
+                      Las existencias de cada uno quedan con la cantidad física contada. Si hace
+                      falta, se puede revertir mientras sea el último cierre de la sucursal.
                     </p>
                   </>
                 )}
@@ -470,6 +564,79 @@ function InventarioPage() {
               Cerrar inventario
             </AlertDialogAction>
           </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Descartar el conteo en curso / revertir el último cierre ──── */}
+      <AlertDialog open={confirmar != null} onOpenChange={(o) => !o && setConfirmar(null)}>
+        <AlertDialogContent>
+          {confirmar === "descartar" ? (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Descartar el conteo en curso?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Se borran los {resumen?.abiertos} conteo{resumen?.abiertos === 1 ? "" : "s"}{" "}
+                  abierto{resumen?.abiertos === 1 ? "" : "s"} de {resumen?.descripcion}, también los
+                  que no se ven por la selección de manuales o el filtro. Las existencias no
+                  cambian: todavía no se había cerrado.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => descartar.mutate()}
+                  className="bg-destructive text-white hover:bg-destructive/90"
+                >
+                  Descartar conteo
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          ) : (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  ¿Revertir el cierre del {resumen?.ultimo_cierre}?
+                </AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-2">
+                    <p>
+                      Las existencias de los{" "}
+                      <span className="font-semibold text-foreground">
+                        {resumen?.ultimo_cierre_manuales} manual
+                        {resumen?.ultimo_cierre_manuales === 1 ? "" : "es"}
+                      </span>{" "}
+                      de ese cierre vuelven a lo que decían antes de cerrarlo. Lo que se movió
+                      después, como una transferencia recibida, se conserva.
+                    </p>
+                    <p>
+                      <span className="font-semibold text-foreground">Reabrir conteos</span>:
+                      vuelven a la planilla como conteo en curso, para corregirlos y cerrar de
+                      nuevo.
+                    </p>
+                    <p>
+                      <span className="font-semibold text-foreground">Revertir y eliminar</span>:
+                      los conteos se borran, como si ese inventario no se hubiera hecho.
+                    </p>
+                    <p className="text-xs">
+                      Se revierte de a un cierre, del más nuevo al más viejo.
+                    </p>
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => revertir.mutate(true)}
+                  className="bg-destructive text-white hover:bg-destructive/90"
+                >
+                  Revertir y eliminar
+                </AlertDialogAction>
+                <AlertDialogAction onClick={() => revertir.mutate(false)}>
+                  Reabrir conteos
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
         </AlertDialogContent>
       </AlertDialog>
     </AppShell>

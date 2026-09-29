@@ -33,6 +33,18 @@
  * Se carga solo la **física** (lo que hay en el estante). La **de sistema** la
  * toma el backend de `EXISTENCIAS` en cada guardado: es lo que el sistema creía
  * que había cuando se contó. Al cerrar, `EXISTENCIAS` queda con la física.
+ *
+ * ============================================================================
+ * DESHACER (29/09/2026)
+ * ============================================================================
+ *
+ * - **Descartar** borra el conteo en curso. No toca `EXISTENCIAS`: un conteo
+ *   abierto nunca impactó.
+ * - **Revertir** deshace el **último** cierre de la sucursal: le devuelve a
+ *   `EXISTENCIAS` lo que el cierre le cambió (con la cuenta relativa, así que
+ *   lo que se movió después, como una transferencia recibida, se conserva) y
+ *   reabre esos conteos o los borra. Solo sin conteo en curso, y de a uno: del
+ *   más nuevo al más viejo. Ver "REVERTIR UN CIERRE" en el SQL.
  */
 
 import { authFetch } from "@/lib/api";
@@ -87,6 +99,10 @@ export type ResumenSucursal = {
   abiertos: number;
   /** Abiertos sin cantidad física o sin manual (solo desde APEX). Bloquean el cierre. */
   sin_cantidad: number;
+  /** `DD/MM/YYYY HH24:MI` del último cierre: el que se puede revertir. `null` si nunca se cerró. */
+  ultimo_cierre: string | null;
+  /** Cuántos manuales cerró ese cierre. */
+  ultimo_cierre_manuales: number;
 };
 
 export type Planilla = {
@@ -131,6 +147,8 @@ export async function obtenerPlanilla(idSucursal: number): Promise<Planilla> {
       descripcion: String(s.descripcion ?? ""),
       abiertos: Number(s.abiertos ?? 0),
       sin_cantidad: Number(s.sin_cantidad ?? 0),
+      ultimo_cierre: txt(s.ultimo_cierre),
+      ultimo_cierre_manuales: Number(s.ultimo_cierre_manuales ?? 0),
     },
     data: (r.data ?? []).map((row) => ({
       manual: String(row.manual ?? ""),
@@ -176,7 +194,7 @@ export async function guardarConteo(
 
 /**
  * Cierra todos los conteos abiertos de la sucursal y un trigger pasa las
- * cantidades físicas a `EXISTENCIAS`. **Desde la app no se deshace.**
+ * cantidades físicas a `EXISTENCIAS`. Se deshace con `revertirCierre`.
  */
 export async function cerrarInventario(idSucursal: number): Promise<number> {
   const r = (await authFetch("inventarios/cerrar", {
@@ -185,6 +203,43 @@ export async function cerrarInventario(idSucursal: number): Promise<number> {
     body: JSON.stringify({ id_sucursal: idSucursal }),
   })) as { cerrados?: number };
   return Number(r.cerrados ?? 0);
+}
+
+/** Borra todos los conteos abiertos de la sucursal. Devuelve cuántos. */
+export async function descartarConteo(idSucursal: number): Promise<number> {
+  const r = (await authFetch("inventarios/descartar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id_sucursal: idSucursal }),
+  })) as { borrados?: number };
+  return Number(r.borrados ?? 0);
+}
+
+export type ResultadoReversion = {
+  /** Conteos del cierre deshecho. */
+  revertidos: number;
+  /** Existencias que cambiaron (las que el cierre no había movido, no). */
+  existencias: number;
+};
+
+/**
+ * Deshace el último cierre de la sucursal: devuelve `EXISTENCIAS` y los conteos
+ * vuelven a la planilla (`eliminar: false`) o se borran (`true`). El backend
+ * responde 409 si hay un conteo en curso o si no hay nada cerrado.
+ */
+export async function revertirCierre(
+  idSucursal: number,
+  eliminar: boolean,
+): Promise<ResultadoReversion> {
+  const r = (await authFetch("inventarios/revertir", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id_sucursal: idSucursal, eliminar: eliminar ? "S" : "N" }),
+  })) as { revertidos?: number; existencias?: number };
+  return {
+    revertidos: Number(r.revertidos ?? 0),
+    existencias: Number(r.existencias ?? 0),
+  };
 }
 
 /* -------------------------------------------------------------------------- */
