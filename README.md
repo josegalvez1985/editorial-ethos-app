@@ -116,6 +116,11 @@ Sin tope, cada pantalla reparte su contenido en columnas en lugar de estirar una
 escritorio. Una pantalla nueva sigue el mismo criterio: grillas con `md:` / `lg:grid-cols-*`,
 nunca un `max-w-*` que la encierre.
 
+**Toda grilla lleva `grid-cols-1` de base** (`grid grid-cols-1 gap-3 md:grid-cols-2`). Sin eso,
+en celular la única columna es `auto` y crece hasta el texto más largo que no corta: el
+`truncate` no actúa y la página entera se corre de costado. Pasó en las 16 grillas del cambio
+del 24/09/2026 y se arregló el 06/10/2026.
+
 En escritorio, el botón **Guardar** del formulario de evaluación es *sticky* dentro del
 contenido y no *fixed*: fixed ocupaba toda la ventana y tapaba el pie de la sidebar.
 

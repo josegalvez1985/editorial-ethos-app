@@ -20,6 +20,8 @@
 --     POST   evaluaciones-facilitadores          insertar
 --     PUT    evaluaciones-facilitadores/:id      actualizar
 --     DELETE evaluaciones-facilitadores/:id      eliminar
+--     POST   evaluaciones-facilitadores/cierre   cerrar / reabrir: {ids, ind_cerrado}
+--            SOLO toca IND_CERRADO, en todas las filas de la evaluacion a la vez
 --
 --   LISTAS DE VALORES (combos del formulario)
 --     GET    listas/facilitadores   ?buscar=&activo=&incluir_id=&limite=
@@ -343,8 +345,9 @@ BEGIN
   -- 1.6 IND_CERRADO: 'S' cerrada / 'N' abierta.
   --
   -- Una evaluacion cerrada NO se edita ni se borra: INSERTAR la deja abierta,
-  -- ACTUALIZAR y ELIMINAR responden 409 si ya lo esta. Se reabre con el mismo
-  -- PUT mandando ind_cerrado='N'.
+  -- ACTUALIZAR y ELIMINAR responden 409 si ya lo esta. Se cierra y se reabre
+  -- SOLO con CAMBIAR_CIERRE (POST evaluaciones-facilitadores/cierre), que no
+  -- toca ninguna otra columna (06/10/2026).
   --
   -- SIN DEFAULT y NULLABLE a proposito: las filas ya cargadas quedan en NULL y
   -- ponerles un DEFAULT no las tocaria igual. Todo el codigo lee
@@ -687,7 +690,7 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
       p_aspectos_positivos     IN CLOB     DEFAULT NULL,
       p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
       -- SIN p_ind_cerrado: una evaluacion nace ABIERTA y no hay forma de pedir
-      -- lo contrario. Se cierra despues, con ACTUALIZAR.
+      -- lo contrario. Se cierra despues, con CAMBIAR_CIERRE.
       p_observacion_admin      IN CLOB     DEFAULT NULL,
       -- La postulacion que se esta evaluando, elegida en el front
       -- (GET listas/postulaciones). OPCIONAL: si no viene, se resuelve sola con
@@ -712,7 +715,8 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
       p_aspectos_positivos     IN CLOB     DEFAULT NULL,
       p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
       p_observacion_admin      IN CLOB     DEFAULT NULL,
-      p_ind_cerrado            IN VARCHAR2 DEFAULT NULL,
+      -- SIN p_ind_cerrado desde el 06/10/2026: editar no cierra ni reabre. Eso
+      -- es CAMBIAR_CIERRE, y solo eso.
       -- Igual que en INSERTAR. Ver el UPDATE: al no venir se recalcula, que es
       -- lo que corresponde si cambiaron el facilitador o la institucion.
       p_id_postulacion         IN NUMBER   DEFAULT NULL,
@@ -721,6 +725,14 @@ CREATE OR REPLACE PACKAGE PKG_EVAL_FACILITADORES_ETHOS AS
   PROCEDURE eliminar(
       p_token IN VARCHAR2,
       p_id    IN NUMBER);
+
+  -- Cierra ('S') o reabre ('N') una evaluacion: SOLO actualiza IND_CERRADO.
+  -- p_ids son las filas de la evaluacion separadas por coma ('12,13,14'): no
+  -- hay tabla de cabecera, asi que la evaluacion es el conjunto de sus filas.
+  PROCEDURE cambiar_cierre(
+      p_token       IN VARCHAR2,
+      p_ids         IN VARCHAR2,
+      p_ind_cerrado IN VARCHAR2);
 
   ----------------------------------------------------------------------------
   -- LISTAS DE VALORES
@@ -1084,15 +1096,9 @@ EXCEPTION
     WHEN NO_DATA_FOUND THEN RETURN FALSE;
 END f_cerrada;
 
-------------------------------------------------------------------------------
--- Normaliza el indicador a 'S' / 'N'. Cualquier cosa que no sea 'S' es 'N':
--- el CHECK de la tabla solo acepta esos dos valores y un ORA-02290 por un
--- 'si' minuscula o un 'X' seria un error feo de diagnosticar desde el front.
-------------------------------------------------------------------------------
-FUNCTION f_sn(p_valor IN VARCHAR2) RETURN VARCHAR2 IS
-BEGIN
-    RETURN CASE WHEN UPPER(TRIM(p_valor)) = 'S' THEN 'S' ELSE 'N' END;
-END f_sn;
+-- Aca estaba f_sn(), que normalizaba el ind_cerrado del PUT a 'S'/'N'. Se fue
+-- el 06/10/2026 con ese parametro: CAMBIAR_CIERRE no normaliza, RECHAZA lo que
+-- no sea S o N, porque ahi un valor raro tomado como 'N' reabriria sin querer.
 
 ------------------------------------------------------------------------------
 -- Validaciones comunes a INSERTAR y ACTUALIZAR. Lanzan e_validacion.
@@ -1437,7 +1443,7 @@ BEGIN
         -- No hay parametro para pedir lo contrario, y es deliberado: cerrar algo
         -- que todavia no existe no significa nada, y aceptarlo dejaria una fila
         -- bloqueada de entrada que habria que reabrir para poder completar. Se
-        -- cierra despues, con un PUT.
+        -- cierra despues, con CAMBIAR_CIERRE.
         --
         -- El front tampoco ofrece el check en el alta, pero eso es la UI. El que
         -- manda es este literal: un POST a mano con "ind_cerrado":"S" en el JSON
@@ -1483,16 +1489,14 @@ PROCEDURE actualizar(
     p_aspectos_positivos     IN CLOB     DEFAULT NULL,
     p_aspectos_mejorar       IN CLOB     DEFAULT NULL,
     p_observacion_admin      IN CLOB     DEFAULT NULL,
-    p_ind_cerrado            IN VARCHAR2 DEFAULT NULL,
     p_id_postulacion         IN NUMBER   DEFAULT NULL,
     p_id_indice              IN NUMBER   DEFAULT NULL
 ) IS
     l_usuario VARCHAR2(255);
     l_desde   DATE;
     l_hasta   DATE;
-    -- Las dos se resuelven ANTES del UPDATE: una funcion privada del package
-    -- body no se puede llamar desde SQL (PLS-00231). Ver insertar().
-    l_cerrado     VARCHAR2(1);
+    -- Se resuelve ANTES del UPDATE: una funcion privada del package body no se
+    -- puede llamar desde SQL (PLS-00231). Ver insertar().
     l_postulacion NUMBER;
 BEGIN
     l_usuario := f_usuario(p_token);
@@ -1506,23 +1510,14 @@ BEGIN
         RETURN;
     END IF;
 
-    l_cerrado := f_sn(p_ind_cerrado);
-
-    -- EL CANDADO. Una evaluacion cerrada no se edita.
+    -- EL CANDADO. Una evaluacion cerrada no se edita, sin excepciones.
     --
-    -- La UNICA operacion que se le acepta es REABRIRLA (ind_cerrado='N'). Sin
-    -- esa salida, cerrar seria irreversible desde la app y habria que entrar a
-    -- APEX para corregir un clic.
-    --
-    -- OJO CON LA CONDICION: se rechaza cuando la fila esta cerrada Y el PUT la
-    -- deja cerrada. Escrita al reves —rechazar solo si viene 'S'— un PUT con
-    -- ind_cerrado='S' y los demas campos cambiados pasaria por el candado y
-    -- editaria una evaluacion cerrada, que es justo lo que hay que impedir.
-    --
-    -- Reabrir y editar en la misma llamada SI funciona (llega 'N', el candado no
-    -- salta) y esta bien: el front manda el registro completo, asi que reabrir es
-    -- un PUT con el resto de los campos como estaban.
-    IF f_cerrada(p_id) AND l_cerrado = 'S' THEN
+    -- Hasta el 06/10/2026 este PUT tambien cerraba y reabria (traia
+    -- p_ind_cerrado), y aceptaba editar una cerrada si en la misma llamada la
+    -- reabria. Eso se fue: cerrar y reabrir es CAMBIAR_CIERRE, que actualiza
+    -- SOLO IND_CERRADO. Para editar una cerrada, primero se reabre con ese
+    -- endpoint y despues se manda este PUT.
+    IF f_cerrada(p_id) THEN
         p_error(409, 'Conflict',
                 'La evaluacion esta cerrada. Reabrila para poder editarla.');
         RETURN;
@@ -1565,7 +1560,7 @@ BEGIN
            aspectos_positivos     = p_aspectos_positivos,
            aspectos_mejorar       = p_aspectos_mejorar,
            observacion_admin      = p_observacion_admin,
-           ind_cerrado            = l_cerrado,
+           -- IND_CERRADO no esta en el SET: lo maneja CAMBIAR_CIERRE.
            -- Se recalcula: si cambiaron el facilitador o la institucion, la
            -- postulacion anterior ya no corresponde. Resuelta arriba, fuera del
            -- UPDATE (PLS-00231).
@@ -1612,7 +1607,7 @@ BEGIN
 
     -- El mismo candado que en ACTUALIZAR: una evaluacion cerrada no se borra.
     -- Aca no hay excepcion posible —borrar no admite un "pero reabrila"—, asi
-    -- que hay que reabrirla con un PUT y recien despues borrarla.
+    -- que hay que reabrirla con CAMBIAR_CIERRE y recien despues borrarla.
     --
     -- OJO: el front borra una evaluacion con N llamadas, una por detalle. Si
     -- alguna fila del grupo esta cerrada, ese DELETE falla y la evaluacion queda
@@ -1642,6 +1637,106 @@ EXCEPTION
         ROLLBACK;
         p_error_oracle;
 END eliminar;
+
+------------------------------------------------------------------------------
+-- CAMBIAR_CIERRE: cierra ('S') o reabre ('N') una evaluacion (06/10/2026).
+--
+-- SOLO ACTUALIZA IND_CERRADO. Antes se cerraba con el PUT de ACTUALIZAR, que
+-- reescribe la fila entera con lo que tenga el formulario: cerrar una
+-- evaluacion de 32 items eran 32 PUT con todas las columnas, y reabrir no
+-- guardaba nada hasta tocar "Guardar". Ahora cerrar y reabrir es esto y nada
+-- mas: ni la cabecera, ni las estrellas, ni la postulacion.
+--
+-- UNA SOLA TRANSACCION para todas las filas. Con un PUT por fila, si fallaba
+-- uno la evaluacion quedaba cerrada a medias.
+--
+-- p_ids: las filas de la evaluacion, separadas por coma. No hay tabla de
+-- cabecera, asi que no hay un id de "la evaluacion": el front manda los ids del
+-- grupo que ya tiene armado. No se valida que sean del mismo grupo —el criterio
+-- de agrupacion vive en el front (claveNatural)— y no hace falta para la
+-- seguridad: cualquiera con sesion ya puede editar o borrar esas filas.
+--
+-- Toca solo las filas cuyo valor cambia. Cerrar una que ya estaba cerrada no
+-- deja un movimiento de mas en la bitacora; y en un grupo mezclado (filas
+-- agregadas abiertas a uno cerrado) se corrigen solo las que no coinciden.
+------------------------------------------------------------------------------
+PROCEDURE cambiar_cierre(
+    p_token       IN VARCHAR2,
+    p_ids         IN VARCHAR2,
+    p_ind_cerrado IN VARCHAR2
+) IS
+    l_usuario   VARCHAR2(255);
+    l_valor     VARCHAR2(1);
+    l_partes    APEX_T_VARCHAR2;
+    l_ids       APEX_T_NUMBER := APEX_T_NUMBER();
+    l_pedidas   PLS_INTEGER;
+    l_existen   PLS_INTEGER;
+    l_cambiadas PLS_INTEGER;
+BEGIN
+    l_usuario := f_usuario(p_token);
+    IF l_usuario IS NULL THEN
+        p_error(401, 'Unauthorized', 'Token invalido o expirado');
+        RETURN;
+    END IF;
+
+    -- Estricto: un valor que no sea S o N se rechaza, no se toma como 'N'. Un
+    -- cliente con un bug que mande NULL reabriria evaluaciones sin que nadie lo
+    -- pidiera.
+    l_valor := UPPER(TRIM(p_ind_cerrado));
+    exigir(l_valor IN ('S', 'N'),
+           'ind_cerrado tiene que ser S (cerrar) o N (reabrir)');
+
+    exigir(TRIM(p_ids) IS NOT NULL, 'ids es obligatorio: las filas de la evaluacion');
+    l_partes := APEX_STRING.SPLIT(TRIM(p_ids), ',');
+    FOR k IN 1 .. l_partes.COUNT LOOP
+        CONTINUE WHEN TRIM(l_partes(k)) IS NULL;  -- una ',' de mas
+        exigir(REGEXP_LIKE(TRIM(l_partes(k)), '^[0-9]{1,15}$'),
+               'id de fila invalido: "' || SUBSTR(l_partes(k), 1, 30) || '"');
+        l_ids.EXTEND;
+        l_ids(l_ids.COUNT) := TO_NUMBER(TRIM(l_partes(k)));
+    END LOOP;
+    exigir(l_ids.COUNT > 0, 'ids es obligatorio: las filas de la evaluacion');
+
+    -- Tienen que existir TODAS. Si falta alguna, el front esta desactualizado
+    -- (alguien borro parte de la evaluacion mientras estaba abierta) y cerrar
+    -- lo que queda dejaria un resultado que nadie pidio.
+    SELECT COUNT(DISTINCT column_value) INTO l_pedidas FROM TABLE(l_ids);
+    SELECT COUNT(*)
+      INTO l_existen
+      FROM evaluaciones_facilitadores
+     WHERE id_evaluacion_facilitador IN (SELECT column_value FROM TABLE(l_ids));
+    IF l_existen < l_pedidas THEN
+        p_error(404, 'Not Found',
+                'Alguna fila de la evaluacion ya no existe. Volve a abrirla.');
+        RETURN;
+    END IF;
+
+    UPDATE evaluaciones_facilitadores
+       SET ind_cerrado = l_valor
+     WHERE id_evaluacion_facilitador IN (SELECT column_value FROM TABLE(l_ids))
+       AND NVL(ind_cerrado, 'N') <> l_valor;
+    l_cambiadas := SQL%ROWCOUNT;
+
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('message', CASE l_valor
+                                 WHEN 'S' THEN 'Evaluacion cerrada'
+                                 ELSE 'Evaluacion reabierta'
+                               END);
+    -- Cuantas filas cambiaron de verdad: 0 si ya estaba como se pidio.
+    APEX_JSON.WRITE('actualizadas', l_cambiadas);
+    APEX_JSON.CLOSE_OBJECT;
+EXCEPTION
+    WHEN e_validacion THEN
+        ROLLBACK;
+        p_error(400, 'Bad Request', g_mensaje);
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_error_oracle;
+END cambiar_cierre;
 
 ------------------------------------------------------------------------------
 -- LISTAS DE VALORES
@@ -2525,6 +2620,8 @@ BEGIN
   BEGIN ORDS.DELETE_HANDLER('ethos', 'evaluaciones-facilitadores/:id', 'PUT');     EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'evaluaciones-facilitadores/:id', 'DELETE');  EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'evaluaciones-facilitadores/:id', 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'evaluaciones-facilitadores/cierre', 'POST');    EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'evaluaciones-facilitadores/cierre', 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'listas/:nombre',                 'GET');     EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'listas/:nombre',                 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
 
@@ -2710,7 +2807,8 @@ BEGIN
         p_aspectos_positivos     => :aspectos_positivos,
         p_aspectos_mejorar       => :aspectos_mejorar,
         p_observacion_admin      => :observacion_admin,
-        p_ind_cerrado            => :ind_cerrado,
+        -- Sin :ind_cerrado desde el 06/10/2026: el PUT no cierra ni reabre.
+        -- Eso es POST evaluaciones-facilitadores/cierre.
         p_id_postulacion         => TO_NUMBER(:id_postulacion),
         p_id_indice              => TO_NUMBER(:id_indice));
 END;
@@ -2753,6 +2851,62 @@ END;
       p_module_name        => 'ethos',
       p_pattern            => 'evaluaciones-facilitadores/:id',
       p_method             => 'DELETE',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  ----------------------------------------------------------------------------
+  -- evaluaciones-facilitadores/cierre  (cerrar / reabrir, 06/10/2026)
+  --
+  --   POST {"ids": "12,13,14", "ind_cerrado": "S" | "N"}
+  --   -> {success, message, actualizadas}
+  --
+  -- `ids` va como texto y no como array JSON porque ORDS bindea solo los campos
+  -- escalares del body (mismo criterio que `items` en inventarios.sql).
+  --
+  -- PRIORIDAD 1: este literal y `evaluaciones-facilitadores/:id` (prioridad 0)
+  -- tienen la misma forma, y sin prioridad ORDS podria tomar "cierre" como un
+  -- :id y responder 405, porque :id no tiene POST. Mismo criterio que en
+  -- transferencias.sql.
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'ethos',
+        p_pattern     => 'evaluaciones-facilitadores/cierre',
+        p_priority    => 1,
+        p_etag_type   => 'NONE');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'ethos',
+      p_pattern     => 'evaluaciones-facilitadores/cierre',
+      p_method      => 'POST',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token VARCHAR2(256);
+    l_pos   PLS_INTEGER;
+BEGIN
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN
+            l_token := TRIM(SUBSTR(l_token, l_pos + 7));
+        END IF;
+    END IF;
+    PKG_EVAL_FACILITADORES_ETHOS.CAMBIAR_CIERRE(
+        p_token       => l_token,
+        p_ids         => :ids,
+        p_ind_cerrado => :ind_cerrado);
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'ethos',
+      p_pattern            => 'evaluaciones-facilitadores/cierre',
+      p_method             => 'POST',
       p_name               => 'Authorization',
       p_bind_variable_name => 'authorization',
       p_source_type        => 'HEADER',
@@ -2863,6 +3017,7 @@ END;
 BEGIN
   preflight('evaluaciones-facilitadores');
   preflight('evaluaciones-facilitadores/:id');
+  preflight('evaluaciones-facilitadores/cierre');
   preflight('listas/:nombre');
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado.');
@@ -2979,7 +3134,7 @@ BEGIN
           OR t.uri_template LIKE 'listas/%'~'
     INTO l_n;
     DBMS_OUTPUT.PUT_LINE('[INFO]  Handlers publicados: ' || l_n
-                         || ' (se esperan 6 sin OPTIONS, 9 con)');
+                         || ' (se esperan 7 sin OPTIONS, 11 con)');
   EXCEPTION
     WHEN OTHERS THEN
       DBMS_OUTPUT.PUT_LINE('[SKIP]  No se pudo leer el catalogo de ORDS: ' || SQLERRM);
@@ -2993,6 +3148,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('        POST   evaluaciones-facilitadores');
     DBMS_OUTPUT.PUT_LINE('        PUT    evaluaciones-facilitadores/1');
     DBMS_OUTPUT.PUT_LINE('        DELETE evaluaciones-facilitadores/1');
+    DBMS_OUTPUT.PUT_LINE('        POST   evaluaciones-facilitadores/cierre  {ids, ind_cerrado}');
     DBMS_OUTPUT.PUT_LINE('        GET    listas/facilitadores | instituciones | areas |');
     DBMS_OUTPUT.PUT_LINE('               evaluaciones?id_area=N | ciudades?buscar=asu');
   EXCEPTION
@@ -3038,6 +3194,10 @@ END;
 --   curl -s -X PUT    "$BASE/evaluaciones-facilitadores/1" -H "$AUTH" \
 --        -H "Content-Type: application/json" -d '{...registro completo...}'
 --   curl -s -X DELETE "$BASE/evaluaciones-facilitadores/1" -H "$AUTH"
+--
+--   # cerrar (S) / reabrir (N): todas las filas de la evaluacion, solo IND_CERRADO
+--   curl -s -X POST "$BASE/evaluaciones-facilitadores/cierre" -H "$AUTH" \
+--        -H "Content-Type: application/json" -d '{"ids":"1,2,3","ind_cerrado":"S"}'
 --
 -- Si curl funciona y el front no, el problema esta en el proxy o en la URL
 -- configurada, no en la base.

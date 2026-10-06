@@ -187,7 +187,7 @@ function ConsultaTransferenciasPage() {
         </div>
 
         {/* ── Filtros ──────────────────────────────────────────────────── */}
-        <div className="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <SelectorModal
             label="Sucursal"
             descripcion="Las transferencias que salen o llegan a esta sucursal"
@@ -308,7 +308,7 @@ function ConsultaTransferenciasPage() {
             </div>
 
             {/* ── 2. Panorama ─────────────────────────────────────────── */}
-            <div className="mb-5 grid gap-3 lg:grid-cols-2">
+            <div className="mb-5 grid grid-cols-1 gap-3 lg:grid-cols-2">
               <Ranking
                 titulo="Por ruta"
                 icono={<RouteIcon className="size-4" />}
@@ -345,7 +345,7 @@ function ConsultaTransferenciasPage() {
                 vieja
               </span>
             </h2>
-            <ul className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
+            <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
               {transf.map((x) => (
                 <TarjetaTransferencia key={x.id_transferencia} x={x} />
               ))}

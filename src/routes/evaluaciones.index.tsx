@@ -164,8 +164,14 @@ function EvaluacionesPage() {
         Resultados. Una grilla y no una pila: sin tope de ancho (ver AppShell),
         una sola columna de tarjetas quedaba del ancho del monitor. Lo que no es
         una tarjeta —avisos, vacío, "Cargar más"— ocupa la fila entera.
+
+        `grid-cols-1` NO sobra: sin columnas declaradas, en celular la grilla
+        arma una columna `auto` que crece hasta el texto más largo que no corta
+        (una institución larga), el `truncate` nunca actúa y la página entera se
+        corre de costado. `grid-cols-1` es `minmax(0, 1fr)`: la columna no pasa
+        del ancho de la pantalla.
       */}
-      <div className="mt-5 grid gap-3 px-5 md:grid-cols-2 2xl:grid-cols-3">
+      <div className="mt-5 grid grid-cols-1 gap-3 px-5 md:grid-cols-2 2xl:grid-cols-3">
         {/*
           El filtro por área recorta FILAS, y la calificación se calcula sobre las
           filas que llegaron. Con un área filtrada el conteo es parcial y el tramo

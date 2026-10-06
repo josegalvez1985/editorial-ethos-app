@@ -92,8 +92,9 @@ están en la sección de cada uno, más abajo.
 | GET | `evaluaciones-facilitadores` | Bearer | filtros en query → `{success, total, pagina, limite, data:[...]}` |
 | GET | `evaluaciones-facilitadores/:id` | Bearer | → `{success, data:{...}}` o **404** |
 | POST | `evaluaciones-facilitadores` | Bearer | JSON plano → **201** `{success, id_evaluacion_facilitador}` |
-| PUT | `evaluaciones-facilitadores/:id` | Bearer | JSON plano (registro completo) → `{success, message}` |
-| DELETE | `evaluaciones-facilitadores/:id` | Bearer | → `{success, message}` o **409** si tiene dependencias |
+| PUT | `evaluaciones-facilitadores/:id` | Bearer | JSON plano (registro completo, **sin** `ind_cerrado`) → `{success, message}`; **409** si está cerrada |
+| DELETE | `evaluaciones-facilitadores/:id` | Bearer | → `{success, message}` o **409** si tiene dependencias o está cerrada |
+| POST | `evaluaciones-facilitadores/cierre` | Bearer | `{ids: "12,13,14", ind_cerrado: "S"\|"N"}` → `{success, actualizadas}`. Cierra o reabre: **solo** `IND_CERRADO`, todas las filas en una transacción |
 | GET | `listas/:nombre` | Bearer | combos → `{success, lista, limite, data:[...]}` |
 
 Filtros de la lista (todos opcionales): `id_facilitador`, `id_institucion`,

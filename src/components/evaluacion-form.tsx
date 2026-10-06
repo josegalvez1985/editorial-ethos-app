@@ -7,6 +7,17 @@ import { IndiceSiguienteCard } from "@/components/indice-siguiente-card";
 import { PickerModal } from "@/components/picker-modal";
 import { PostulacionPicker } from "@/components/postulacion-picker";
 import { CalificacionDisplay, StarToggle } from "@/components/star-rating";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { guardarBorrador, type ContenidoBorrador } from "@/lib/borrador";
 import {
   ESCALA_MAXIMA,
@@ -234,6 +245,8 @@ export function EvaluacionForm({
   guardando,
   onSubmit,
   textoBoton,
+  onCambiarCierre,
+  cambiandoCierre = false,
 }: {
   inicial?: EvaluacionAgrupada;
   /**
@@ -255,6 +268,15 @@ export function EvaluacionForm({
   guardando: boolean;
   onSubmit: (cab: Cabecera, detalles: Detalle[]) => void;
   textoBoton: string;
+  /**
+   * Cierra (`true`) o reabre (`false`) la evaluación YA GUARDADA, en el acto y
+   * sin pasar por "Guardar": solo cambia `IND_CERRADO` (ver `cambiarCierre`).
+   * Rechaza si el backend no acepta; el aviso lo da el padre.
+   *
+   * Solo al editar. En "Nueva" no se pasa: no hay nada guardado que cerrar.
+   */
+  onCambiarCierre?: (cerrar: boolean) => Promise<unknown>;
+  cambiandoCierre?: boolean;
 }) {
   const [cab, setCab] = useState<Cabecera>(() => restaurado?.cab ?? cabeceraInicial(inicial));
   const [areas, setAreas] = useState(() => restaurado?.areas ?? areasIniciales(inicial));
@@ -383,6 +405,20 @@ export function EvaluacionForm({
     if (!problema) onSubmit(cab, detalles);
   };
 
+  /**
+   * Reabre en el acto. El formulario se habilita recién cuando el backend
+   * aceptó: si falla, sigue cerrada y no se ofrece editar algo que el PUT va a
+   * rechazar con 409.
+   */
+  const reabrir = async () => {
+    try {
+      await onCambiarCierre?.(false);
+      set("cerrada", false);
+    } catch {
+      /* el padre ya mostró el error */
+    }
+  };
+
   return (
     // pb-32: hueco para el footer fijo del botón guardar. En escritorio el
     // footer no es fijo sino sticky (ver abajo) y ocupa su propio lugar.
@@ -405,16 +441,18 @@ export function EvaluacionForm({
             FUERA del fieldset deshabilitado, a propósito: es el único control
             que tiene que seguir andando con la evaluación cerrada.
 
-            Reabrir NO guarda solo: destilda el campo y deja el formulario
-            editable. El cambio viaja recién con "Guardar", que es un PUT con
-            ind_cerrado='N' — el único que el backend le acepta a una fila
-            cerrada.
+            Reabrir GUARDA EN EL ACTO (06/10/2026): pone IND_CERRADO en 'N' en
+            todas las filas y nada más. Antes solo destildaba el campo y el
+            cambio viajaba con "Guardar", que reescribía el registro entero; si
+            no se guardaba, la evaluación seguía cerrada.
           */}
           <button
             type="button"
-            onClick={() => set("cerrada", false)}
-            className="tap shrink-0 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+            onClick={reabrir}
+            disabled={cambiandoCierre}
+            className="tap flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
           >
+            {cambiandoCierre ? <Loader2 className="size-4 animate-spin" /> : null}
             Reabrir
           </button>
         </div>
@@ -436,7 +474,7 @@ export function EvaluacionForm({
           el mismo orden. La grilla va en un div y no en el fieldset: un
           fieldset con display grid se ignora en WebViews viejas.
         */}
-        <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
           <div className="space-y-4">
             <Seccion titulo="Quién y dónde">
               <PickerModal
@@ -748,24 +786,60 @@ export function EvaluacionForm({
           Tampoco aparece si ya está cerrada: ahí el formulario entero está
           deshabilitado y lo que se ofrece es el botón "Reabrir" de arriba.
 
-          No se guarda al tildar — viaja con el resto en el "Guardar".
+          CIERRA EN EL ACTO, no con "Guardar" (06/10/2026): pone IND_CERRADO en
+          'S' en todas las filas y nada más. Antes era un check que viajaba con
+          el guardado, que reescribía las N filas enteras.
+
+          Por eso cierra LO GUARDADO: lo que se haya cambiado en pantalla sin
+          guardar se descarta (el padre vuelve a la lista). La confirmación lo
+          dice, porque no hay forma de saber si el formulario tiene cambios.
         */}
-              {inicial && !cab.cerrada && (
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
-                  <input
-                    type="checkbox"
-                    checked={cab.cerrada}
-                    onChange={(e) => set("cerrada", e.target.checked)}
-                    className="mt-0.5 size-4 shrink-0 accent-primary"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[15px] font-semibold">Cerrar la evaluación</span>
-                    <span className="mt-0.5 block text-[13px] leading-snug text-muted-foreground">
-                      Al guardar queda bloqueada: no se podrá editar ni eliminar hasta que alguien
-                      la reabra.
-                    </span>
-                  </span>
-                </label>
+              {inicial && !cab.cerrada && onCambiarCierre && (
+                <div className="flex items-start gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
+                  <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[15px] font-semibold">Cerrar la evaluación</p>
+                    <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">
+                      Queda bloqueada: no se podrá editar ni eliminar hasta que alguien la reabra.
+                    </p>
+                  </div>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={cambiandoCierre || guardando}
+                        className="tap flex shrink-0 items-center gap-1.5 rounded-xl border border-border/60 bg-card px-4 py-2 text-sm font-semibold disabled:opacity-60"
+                      >
+                        {cambiandoCierre ? <Loader2 className="size-4 animate-spin" /> : null}
+                        Cerrar
+                      </button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent className="max-w-[calc(100vw-2.5rem)] rounded-2xl sm:max-w-sm">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle className="font-display">
+                          ¿Cerrar la evaluación?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Se cierra lo que ya está guardado. Si cambiaste algo en esta pantalla,
+                          guardalo antes: al cerrar, esos cambios se descartan.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter className="gap-2">
+                        <AlertDialogCancel className="h-11 rounded-xl">Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => {
+                            onCambiarCierre(true).catch(() => {
+                              /* el padre ya mostró el error */
+                            });
+                          }}
+                          className="h-11 rounded-xl"
+                        >
+                          Cerrar evaluación
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               )}
             </Seccion>
           </div>
@@ -798,7 +872,7 @@ export function EvaluacionForm({
           */}
           <button
             type="submit"
-            disabled={guardando || cab.cerrada}
+            disabled={guardando || cab.cerrada || cambiandoCierre}
             className="tap flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-base font-semibold text-primary-foreground disabled:opacity-60"
           >
             {cab.cerrada ? (

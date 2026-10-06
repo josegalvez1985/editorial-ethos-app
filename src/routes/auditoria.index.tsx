@@ -297,7 +297,7 @@ function VistaTablas({
       {!visibles.length ? (
         <Vacio icono={Database} texto="Ninguna tabla coincide con la búsqueda." />
       ) : (
-        <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 min-[1700px]:grid-cols-4">
+        <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 min-[1700px]:grid-cols-4">
           {visibles.map((t) => (
             <TarjetaTabla key={t.tabla} t={t} onVer={() => onVer(t)} />
           ))}

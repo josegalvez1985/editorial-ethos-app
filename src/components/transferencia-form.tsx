@@ -325,7 +325,7 @@ export function TransferenciaForm({ previa }: { previa?: TransferenciaDetalle })
           </div>
         ))}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
         {/* ── La ruta ──────────────────────────────────────────────────── */}
         <section className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
           <h2 className="mb-3 text-xs font-bold tracking-wide text-muted-foreground uppercase">
@@ -438,7 +438,7 @@ export function TransferenciaForm({ previa }: { previa?: TransferenciaDetalle })
               </p>
             </div>
           ) : (
-            <ul className="grid gap-2 xl:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-2 xl:grid-cols-2">
               {lineas.map((l) => (
                 <LineaCard
                   key={l.manual}

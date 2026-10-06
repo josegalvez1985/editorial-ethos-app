@@ -17,6 +17,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  cambiarCierre,
   eliminarEvaluacionCompleta,
   guardarEvaluacion,
   keys,
@@ -71,6 +72,28 @@ function EditarPage() {
     },
     onError: (e) =>
       toast.error(e instanceof Error ? e.message : "No se pudo actualizar la evaluación"),
+  });
+
+  /**
+   * Cerrar / reabrir: solo `IND_CERRADO`, todas las filas en una llamada.
+   *
+   * Al CERRAR se vuelve a la lista, como al guardar: lo que quedara en pantalla
+   * sin guardar se descarta (la confirmación lo avisa). Al REABRIR se queda
+   * acá, porque se reabre para editar; el formulario se habilita solo.
+   */
+  const cierre = useMutation({
+    mutationFn: (cerrar: boolean) => cambiarCierre(idsOriginales, cerrar),
+    onSuccess: (_, cerrar) => {
+      invalidar();
+      if (cerrar) {
+        toast.success("Evaluación cerrada");
+        navigate({ to: "/evaluaciones", replace: true });
+      } else {
+        toast.success("Evaluación reabierta: ya se puede editar");
+      }
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : "No se pudo cambiar el estado de la evaluación"),
   });
 
   const borrar = useMutation({
@@ -169,6 +192,8 @@ function EditarPage() {
           guardando={guardar.isPending}
           onSubmit={(cab, detalles) => guardar.mutate({ cab, detalles })}
           textoBoton="Guardar cambios"
+          onCambiarCierre={(cerrar) => cierre.mutateAsync(cerrar)}
+          cambiandoCierre={cierre.isPending}
         />
       ) : null}
 

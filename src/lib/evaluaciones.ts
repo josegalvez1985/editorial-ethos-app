@@ -109,7 +109,7 @@ export type Evaluacion = {
    * nunca llega null aunque la fila sea vieja.
    *
    * Cerrada = **no se puede editar ni borrar**: el backend responde 409. Se
-   * reabre con un PUT mandando `'N'`.
+   * cierra y se reabre solo con `cambiarCierre()`.
    */
   ind_cerrado: string;
   /**
@@ -146,8 +146,11 @@ export type Cabecera = {
   observacion_admin: string;
   /**
    * `boolean` y no el `'S'/'N'` de Oracle: adentro de la app esto es un sí o un
-   * no, y la conversión vive en un solo lugar (`filaInput` al salir, `agrupar`
+   * no, y la conversión vive en dos lugares (`cambiarCierre` al salir, `agrupar`
    * al entrar). Así ningún componente tiene que acordarse de comparar con `'S'`.
+   *
+   * NO viaja con el guardado (`filaInput`): cerrar y reabrir es su propio
+   * endpoint, que toca solo `IND_CERRADO`.
    */
   cerrada: boolean;
   /**
@@ -209,8 +212,8 @@ export type EvaluacionInput = {
   aspectos_positivos: string;
   aspectos_mejorar: string;
   observacion_admin: string;
-  /** `'S'` / `'N'`. Acá sí va el formato de Oracle: es lo que viaja en el JSON. */
-  ind_cerrado: string;
+  // Sin `ind_cerrado` desde el 06/10/2026: el PUT ya no cierra ni reabre. Ver
+  // `cambiarCierre()`.
   /**
    * La postulación elegida. Opcional: si va `null`, el backend la deduce sola
    * como hacía antes de que existieran las tarjetas.
@@ -299,6 +302,28 @@ export async function actualizarEvaluacion(id: number, input: EvaluacionInput): 
 
 export async function eliminarEvaluacion(id: number): Promise<void> {
   await authFetch(`evaluaciones-facilitadores/${id}`, { method: "DELETE" });
+}
+
+/**
+ * Cierra (`true`) o reabre (`false`) una evaluación: **solo cambia
+ * `IND_CERRADO`**, en todas sus filas a la vez y en una sola transacción.
+ *
+ * Hasta el 06/10/2026 cerrar viajaba con el "Guardar" —un PUT por fila con el
+ * registro entero— y reabrir no guardaba nada hasta tocarlo. Ahora es una
+ * llamada sola que no toca ninguna otra columna.
+ *
+ * `ids` son TODAS las filas de la evaluación: no hay tabla de cabecera, así que
+ * la evaluación es el conjunto de sus filas. Van como texto separado por comas
+ * porque ORDS solo bindea los campos escalares del JSON.
+ *
+ * Devuelve cuántas filas cambiaron de verdad (0 si ya estaba así).
+ */
+export async function cambiarCierre(ids: number[], cerrar: boolean): Promise<number> {
+  const r = (await authFetch(
+    "evaluaciones-facilitadores/cierre",
+    json({ ids: ids.join(","), ind_cerrado: cerrar ? "S" : "N" }),
+  )) as { actualizadas?: number };
+  return Number(r.actualizadas ?? 0);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1026,8 +1051,7 @@ function filaInput(cab: Cabecera, d: Detalle | null): EvaluacionInput {
     aspectos_positivos: cab.aspectos_positivos,
     aspectos_mejorar: cab.aspectos_mejorar,
     observacion_admin: cab.observacion_admin,
-    // Acá se traduce el boolean de la app al 'S'/'N' que espera Oracle.
-    ind_cerrado: cab.cerrada ? "S" : "N",
+    // `cab.cerrada` NO va: guardar no cierra ni reabre. Ver `cambiarCierre()`.
     // Va en TODAS las filas del grupo, igual que el resto de la cabecera: una
     // evaluación es de una postulación, no cada detalle de la suya.
     id_postulacion: cab.id_postulacion,

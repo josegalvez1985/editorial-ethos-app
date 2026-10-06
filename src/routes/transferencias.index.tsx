@@ -141,7 +141,7 @@ function TransferenciasPage() {
               {data!.total} transferencia{data!.total === 1 ? "" : "s"}
               {filas.length < data!.total && ` · mostrando ${filas.length}`}
             </p>
-            <ul className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
+            <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
               {filas.map((t) => (
                 <Fila key={t.id_transferencia} t={t} />
               ))}

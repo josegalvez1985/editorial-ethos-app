@@ -309,7 +309,7 @@ export function IntervencionForm({ previa }: { previa?: IntervencionCrud }) {
         derecha cuándo, dónde y la observación. En el celular es una sola, en
         el mismo orden.
       */}
-      <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start">
         <div className="space-y-5">
           {/* ── Quién y dónde ────────────────────────────────────────────── */}
           <section className="space-y-3">

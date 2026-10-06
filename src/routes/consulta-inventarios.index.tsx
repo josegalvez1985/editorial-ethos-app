@@ -170,7 +170,7 @@ function ConsultaInventariosPage() {
         </div>
 
         {/* ── Filtros ──────────────────────────────────────────────────── */}
-        <div className="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <SelectorModal
             label="Sucursal"
             descripcion="Una sucursal o todas"
