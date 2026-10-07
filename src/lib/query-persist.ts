@@ -34,8 +34,13 @@ export const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
  * día que `CALIFICACION_ESTRELLAS` pasó a llamarse `ESCALA`, una caché guardada
  * antes seguía teniendo el nombre viejo y todos los detalles habrían aparecido
  * sin marcar, sin ningún error visible. El buster la descarta.
+ *
+ * Vale también para lo que ARMA el front y se cachea, no solo para lo que viene
+ * del backend: `obtenerEvaluacionAgrupada` cachea la evaluación ya agrupada, y
+ * cuando ganó `ids_cabecera` (07/10/2026) una caché vieja la restauraba sin ese
+ * campo y la pantalla de edición reventaba ("ids_cabecera is not iterable").
  */
-export const CACHE_BUSTER = "escala-v1";
+export const CACHE_BUSTER = "ids-cabecera-v1";
 
 /** En SSR no hay `localStorage`: un persister que no hace nada. */
 const enMemoria: Persister = {

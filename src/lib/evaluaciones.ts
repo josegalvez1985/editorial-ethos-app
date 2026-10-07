@@ -192,6 +192,12 @@ export type EvaluacionAgrupada = Cabecera & {
   institucion: string | null;
   ciudad: string | null;
   detalles: Detalle[];
+  /**
+   * Las filas de CABECERA SOLA (sin área): quedan cuando la evaluación se guardó
+   * sin ítems. No son ítems y no van en `detalles`, pero SON de la evaluación:
+   * cerrar, reabrir y eliminar las tienen que incluir. Ver `idsDeFilas()`.
+   */
+  ids_cabecera: number[];
   /** Cuántos detalles están marcados. Es el `ESCALA` de `ESCALAS_EVALUACIONES`. */
   marcadas: number;
   /** Derivada de `marcadas`. `null` con 0: la escala arranca en 1. */
@@ -927,6 +933,7 @@ export function agrupar(filas: Evaluacion[]): EvaluacionAgrupada[] {
             ? `${f.nro_indice}. ${f.indice_titulo}`
             : f.indice_titulo,
         detalles: [],
+        ids_cabecera: [],
         marcadas: 0,
         calificacion: null,
       };
@@ -955,12 +962,16 @@ export function agrupar(filas: Evaluacion[]): EvaluacionAgrupada[] {
 
     // Fila de CABECERA SOLA: `id_area`/`id_evaluacion` en null significa que la
     // evaluación se guardó sin ítems todavía. No es un detalle y no entra a la
-    // lista — si entrara, contaría como un ítem vacío en la calificación y en
-    // el "(N ítems)" del botón.
+    // lista — si entrara, contaría como un ítem vacío en la calificación.
     //
-    // Su id igual quedó registrado arriba (`g.id`), que es lo que permite
-    // reusar la fila al agregarle áreas después en vez de crear una nueva.
-    if (f.id_area === null || f.id_evaluacion === null) continue;
+    // Va a `ids_cabecera`: `guardarEvaluacion` la reusa como primer ítem cuando
+    // se agregan áreas, y cerrar o eliminar la incluyen. Antes solo quedaba en
+    // `g.id`, y eliminar dejaba esta fila viva: la evaluación reaparecía en la
+    // lista como "sin áreas".
+    if (f.id_area === null || f.id_evaluacion === null) {
+      g.ids_cabecera.push(f.id_evaluacion_facilitador);
+      continue;
+    }
 
     g.detalles.push({
       id: f.id_evaluacion_facilitador,
@@ -978,6 +989,20 @@ export function agrupar(filas: Evaluacion[]): EvaluacionAgrupada[] {
   }
 
   return [...grupos.values()];
+}
+
+/**
+ * TODAS las filas de una evaluación: sus ítems y sus filas de cabecera sola.
+ *
+ * Es lo que hay que mandar para cerrarla, reabrirla o eliminarla. Con solo los
+ * ítems, una evaluación sin áreas no se podía cerrar (lista vacía, 400) y
+ * eliminar dejaba viva la fila de cabecera.
+ */
+export function idsDeFilas(g: EvaluacionAgrupada): number[] {
+  return [
+    ...g.detalles.map((d) => d.id).filter((id): id is number => id !== null),
+    ...g.ids_cabecera,
+  ];
 }
 
 /** Tope del backend por request. Se pide alto para no partir un grupo. */
@@ -1062,16 +1087,48 @@ function filaInput(cab: Cabecera, d: Detalle | null): EvaluacionInput {
 }
 
 export type ResultadoGuardado = {
+  /** Ítems nuevos, ítems cuya estrella o cabecera cambió, e ítems quitados. */
   creados: number;
   actualizados: number;
   borrados: number;
+  /**
+   * Cuántas llamadas se hicieron en total. `0` = no había nada que guardar.
+   * No es la suma de arriba: también cuenta las filas de cabecera sola, que no
+   * son ítems.
+   */
+  operaciones: number;
 };
 
 /**
- * Guarda una evaluación completa: una llamada por detalle.
+ * Si la parte que se repite en todas las filas quedó igual.
  *
- * Los detalles con `id` se actualizan (PUT), los que no lo tienen se crean
- * (POST), y los `idsOriginales` que ya no están en `detalles` se borran (DELETE).
+ * `evaluado_por` se compara TAL CUAL y no formateado: `filaInput` lo pasa por
+ * `formatearNombre`, y comparando eso, corregir a mano un "JOSE GALVEZ" viejo a
+ * "Jose Galvez" daría "sin cambios" y la corrección no se guardaría nunca.
+ */
+function mismaCabecera(a: Cabecera, b: Cabecera) {
+  const clave = (c: Cabecera) =>
+    JSON.stringify({ ...filaInput(c, null), evaluado_por: c.evaluado_por.trim() });
+  return clave(a) === clave(b);
+}
+
+/**
+ * Guarda una evaluación: **solo lo que cambió** respecto de `original`.
+ *
+ * Hasta el 07/10/2026 reescribía TODAS las filas en cada guardado: tocar una
+ * estrella de una evaluación de 32 ítems eran 32 PUT, 32 movimientos en la
+ * bitácora, y el botón decía "Guardar cambios (32 ítems)" — que se leía como 32
+ * cambios. Ahora:
+ *
+ * | Caso | Llamada |
+ * | --- | --- |
+ * | Ítem nuevo | POST, o PUT sobre una fila de cabecera sola que se reusa |
+ * | Ítem con la estrella cambiada | PUT de esa fila |
+ * | Cambió la cabecera (fechas, evaluador, aspectos…) | PUT de TODAS: la cabecera se repite en cada fila |
+ * | Ítem quitado | DELETE |
+ * | Nada de lo anterior | ninguna: `operaciones` = 0 |
+ *
+ * Sin `original` (alta) todo es nuevo.
  *
  * **No hay transacción.** El backend hace COMMIT por llamada, así que si una
  * falla las demás ya quedaron aplicadas. Se lanza un error que dice cuántas
@@ -1084,41 +1141,62 @@ export type ResultadoGuardado = {
 export async function guardarEvaluacion(
   cab: Cabecera,
   detalles: Detalle[],
-  idsOriginales: number[] = [],
+  original?: EvaluacionAgrupada,
 ): Promise<ResultadoGuardado> {
+  const previos = new Map<number, Detalle>();
+  for (const d of original?.detalles ?? []) if (d.id !== null) previos.set(d.id, d);
+
   const vigentes = new Set(detalles.map((d) => d.id).filter((id): id is number => id !== null));
-  const aBorrar = idsOriginales.filter((id) => !vigentes.has(id));
+  const quitadas = [...previos.keys()].filter((id) => !vigentes.has(id));
+  // Antes de que el caso "sin detalles" reuse una: para el usuario igual se
+  // quitaron todas.
+  const itemsQuitados = quitadas.length;
+  // Filas de cabecera sola que ya existen: se reusan antes de crear filas.
+  const cabeceras = [...(original?.ids_cabecera ?? [])];
+  const cabeceraCambio = !original || !mismaCabecera(cab, original);
 
-  /*
-   * SIN DETALLES: una fila de cabecera sola.
-   *
-   * Sin esto, guardar una evaluación sin áreas no haría ninguna llamada y
-   * "Guardar" no guardaría nada, en silencio.
-   *
-   * Se REUSA la primera fila que ya existía (PUT) en vez de borrar todo y
-   * volver a insertar: así el id de la evaluación —y el link que lleva a
-   * ella— no cambia al quitarle todas las áreas. Las demás se borran.
-   */
-  const soloCabecera = detalles.length === 0;
-  const idAReusar = soloCabecera ? (idsOriginales[0] ?? null) : null;
-  const aBorrarFinal = soloCabecera ? idsOriginales.filter((id) => id !== idAReusar) : aBorrar;
+  const tareas: (() => Promise<unknown>)[] = [];
+  const crear = (d: Detalle | null) => tareas.push(() => crearEvaluacion(filaInput(cab, d)));
+  const actualizar = (id: number, d: Detalle | null) =>
+    tareas.push(() => actualizarEvaluacion(id, filaInput(cab, d)));
 
-  const tareas: Promise<unknown>[] = [
-    ...(soloCabecera
-      ? [
-          idAReusar === null
-            ? crearEvaluacion(filaInput(cab, null))
-            : actualizarEvaluacion(idAReusar, filaInput(cab, null)),
-        ]
-      : detalles.map((d) =>
-          d.id === null
-            ? crearEvaluacion(filaInput(cab, d))
-            : actualizarEvaluacion(d.id, filaInput(cab, d)),
-        )),
-    ...aBorrarFinal.map((id) => eliminarEvaluacion(id)),
-  ];
+  if (detalles.length === 0) {
+    /*
+     * SIN DETALLES: la evaluación queda como una fila de cabecera sola.
+     *
+     * Se REUSA una fila que ya existía en vez de crear otra: primero una de
+     * cabecera, si no la de un ítem que se quitó. Así el id de la evaluación
+     * —y el link que lleva a ella— no cambia al quitarle todas las áreas. Antes
+     * las de cabecera no se veían acá y cada guardado sin áreas creaba otra.
+     */
+    const cabeceraExistente = cabeceras.shift();
+    const reusada = cabeceraExistente ?? quitadas.shift();
+    if (reusada === undefined) crear(null);
+    // Una de cabecera que ya estaba solo se toca si la cabecera cambió; la de
+    // un ítem quitado sí o sí, porque hay que vaciarle el área.
+    else if (cabeceraCambio || cabeceraExistente === undefined) actualizar(reusada, null);
+  } else {
+    for (const d of detalles) {
+      if (d.id === null) {
+        // Ítem nuevo. Si hay una fila de cabecera sola, pasa a ser este ítem
+        // en vez de quedar suelta: es la evaluación que se guardó sin áreas y
+        // ahora las recibe.
+        const reusada = cabeceras.shift();
+        if (reusada === undefined) crear(d);
+        else actualizar(reusada, d);
+      } else if (cabeceraCambio || d.marcada !== previos.get(d.id)?.marcada) {
+        actualizar(d.id, d);
+      }
+    }
+  }
 
-  const r = await Promise.allSettled(tareas);
+  // Las de cabecera sola que no se reusaron siguen siendo de la evaluación: si
+  // la cabecera cambió se actualizan, o quedarían con las fechas o el evaluador
+  // viejos y la lista las mostraría como otra evaluación aparte.
+  if (cabeceraCambio) for (const id of cabeceras) actualizar(id, null);
+  for (const id of quitadas) tareas.push(() => eliminarEvaluacion(id));
+
+  const r = await Promise.allSettled(tareas.map((t) => t()));
   const fallidas = r.filter((x) => x.status === "rejected");
 
   if (fallidas.length) {
@@ -1134,20 +1212,16 @@ export async function guardarEvaluacion(
     );
   }
 
-  // Con solo cabecera hubo exactamente una operación: la que reusó la fila
-  // vieja (PUT) o la que la creó (POST). Contar `detalles` daría 0 y el toast
-  // diría que no se guardó nada.
-  return soloCabecera
-    ? {
-        creados: idAReusar === null ? 1 : 0,
-        actualizados: idAReusar === null ? 0 : 1,
-        borrados: aBorrarFinal.length,
-      }
-    : {
-        creados: detalles.filter((d) => d.id === null).length,
-        actualizados: detalles.filter((d) => d.id !== null).length,
-        borrados: aBorrarFinal.length,
-      };
+  // Conteos en ÍTEMS, que es lo que ve el usuario: una fila de cabecera
+  // reusada como ítem nuevo cuenta como creado, no como actualizado.
+  return {
+    creados: detalles.filter((d) => d.id === null).length,
+    actualizados: detalles.filter(
+      (d) => d.id !== null && (cabeceraCambio || d.marcada !== previos.get(d.id)?.marcada),
+    ).length,
+    borrados: itemsQuitados,
+    operaciones: tareas.length,
+  };
 }
 
 /** Borra una evaluación completa: una llamada por detalle. */

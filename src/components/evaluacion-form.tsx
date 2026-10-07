@@ -853,8 +853,12 @@ export function EvaluacionForm({
       ) : null}
 
       {/* Footer fijo: el botón guardar siempre a la vista, no al final de un
-          scroll largo. Dice cuántas filas va a tocar, porque son N llamadas y
-          conviene que se vea que no es una sola operación.
+          scroll largo.
+
+          SIN NÚMERO (07/10/2026). Decía "Guardar cambios (32 ítems)" —la
+          cantidad de filas, marcadas o no— y se leía como 32 cambios. Ahora
+          se guarda solo lo que cambió (ver `guardarEvaluacion`), y cuánto fue
+          lo dice el aviso al terminar.
 
           En escritorio es sticky y no fixed: fixed ocupa toda la ventana y
           tapaba el pie de la sidebar (Cerrar sesión, Colapsar). Sticky se
@@ -882,15 +886,7 @@ export function EvaluacionForm({
             ) : (
               <Plus className="size-4" />
             )}
-            {cab.cerrada
-              ? "Evaluación cerrada"
-              : guardando
-                ? "Guardando…"
-                : detalles.length
-                  ? `${textoBoton} (${detalles.length} ítems)`
-                  : // Sin áreas se guarda igual —la cabecera sola es válida— pero
-                    // el botón lo dice, para que no parezca que se perdió algo.
-                    `${textoBoton} sin áreas`}
+            {cab.cerrada ? "Evaluación cerrada" : guardando ? "Guardando…" : textoBoton}
           </button>
         </div>
       </div>

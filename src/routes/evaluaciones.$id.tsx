@@ -20,6 +20,7 @@ import {
   cambiarCierre,
   eliminarEvaluacionCompleta,
   guardarEvaluacion,
+  idsDeFilas,
   keys,
   obtenerEvaluacionAgrupada,
   type Cabecera,
@@ -52,22 +53,31 @@ function EditarPage() {
     qc.invalidateQueries({ queryKey: keys.evaluacion(idNum) });
   };
 
-  /** Los ids que tenía la evaluación al cargarla: lo que no siga, se borra. */
-  const idsOriginales = (data?.detalles ?? [])
-    .map((d) => d.id)
-    .filter((x): x is number => x !== null);
+  /**
+   * TODAS las filas de la evaluación, incluidas las de cabecera sola: es lo que
+   * se cierra, se reabre o se elimina. Ver `idsDeFilas()`.
+   */
+  const filas = data ? idsDeFilas(data) : [];
 
   const guardar = useMutation({
+    // `data` es lo que vino de Oracle: contra eso se compara para mandar solo
+    // lo que cambió. Ver `guardarEvaluacion`.
     mutationFn: ({ cab, detalles }: { cab: Cabecera; detalles: Detalle[] }) =>
-      guardarEvaluacion(cab, detalles, idsOriginales),
+      guardarEvaluacion(cab, detalles, data),
     onSuccess: (r) => {
       invalidar();
-      const partes = [
-        r.actualizados ? `${r.actualizados} actualizados` : null,
-        r.creados ? `${r.creados} nuevos` : null,
-        r.borrados ? `${r.borrados} quitados` : null,
-      ].filter(Boolean);
-      toast.success(`Evaluación guardada${partes.length ? `: ${partes.join(", ")}` : ""}`);
+      if (r.operaciones === 0) {
+        toast.success("No había cambios para guardar");
+      } else {
+        const n = (cant: number, uno: string, varios: string) =>
+          cant ? `${cant} ${cant === 1 ? uno : varios}` : null;
+        const partes = [
+          n(r.actualizados, "ítem actualizado", "ítems actualizados"),
+          n(r.creados, "ítem nuevo", "ítems nuevos"),
+          n(r.borrados, "ítem quitado", "ítems quitados"),
+        ].filter(Boolean);
+        toast.success(`Evaluación guardada${partes.length ? `: ${partes.join(", ")}` : ""}`);
+      }
       navigate({ to: "/evaluaciones", replace: true });
     },
     onError: (e) =>
@@ -82,7 +92,7 @@ function EditarPage() {
    * acá, porque se reabre para editar; el formulario se habilita solo.
    */
   const cierre = useMutation({
-    mutationFn: (cerrar: boolean) => cambiarCierre(idsOriginales, cerrar),
+    mutationFn: (cerrar: boolean) => cambiarCierre(filas, cerrar),
     onSuccess: (_, cerrar) => {
       invalidar();
       if (cerrar) {
@@ -98,7 +108,7 @@ function EditarPage() {
 
   const borrar = useMutation({
     // Borrar la evaluación es borrar todas sus filas, una por una.
-    mutationFn: () => eliminarEvaluacionCompleta(idsOriginales),
+    mutationFn: () => eliminarEvaluacionCompleta(filas),
     onSuccess: () => {
       invalidar();
       toast.success("Evaluación eliminada");
@@ -153,7 +163,7 @@ function EditarPage() {
               <AlertDialogHeader>
                 <AlertDialogTitle className="font-display">¿Eliminar evaluación?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Se borran los {idsOriginales.length} ítems de{" "}
+                  Se borran los {data.detalles.length} ítems de{" "}
                   {data.facilitador ?? "el facilitador"}. Queda copia en la bitácora de auditoría,
                   pero no se puede deshacer desde la app. Se borran de a uno: si falla en el medio,
                   la evaluación queda incompleta.

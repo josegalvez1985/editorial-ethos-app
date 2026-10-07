@@ -59,7 +59,11 @@ function NuevaPage() {
       borrarBorrador();
       // El listado y el resumen del inicio quedaron viejos.
       qc.invalidateQueries({ queryKey: ["evaluaciones"] });
-      toast.success(`Evaluación creada con ${r.creados} ítems`);
+      toast.success(
+        r.creados
+          ? `Evaluación creada con ${r.creados} ${r.creados === 1 ? "ítem" : "ítems"}`
+          : "Evaluación creada sin áreas",
+      );
       navigate({ to: "/evaluaciones", replace: true });
     },
     onError: (e) => {
