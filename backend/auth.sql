@@ -256,6 +256,28 @@ BEGIN
         p_password => p_password);
 END credenciales_validas;
 
+-- Si la cuenta esta bloqueada en el workspace (ACCOUNT_LOCKED = 'Y').
+--
+-- Hace falta porque IS_LOGIN_PASSWORD_VALID solo compara la contrasena: un
+-- usuario bloqueado desde la pantalla Usuarios (pagina 67, usuarios.sql) seguia
+-- entrando al sitio con su contrasena de siempre (08/10/2026).
+--
+-- Best-effort: si la vista no se puede leer, NO bloquea. Prefiero dejar entrar
+-- a alguien bloqueado antes que dejar a todos afuera por un privilegio.
+FUNCTION cuenta_bloqueada(p_usuario IN VARCHAR2) RETURN BOOLEAN IS
+    l_bloqueada VARCHAR2(10);
+BEGIN
+    fijar_workspace;
+    SELECT ACCOUNT_LOCKED INTO l_bloqueada
+      FROM APEX_WORKSPACE_APEX_USERS
+     WHERE UPPER(USER_NAME) = UPPER(p_usuario)
+       AND ROWNUM = 1;
+    RETURN l_bloqueada = 'Y';
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN FALSE;
+END cuenta_bloqueada;
+
 -- Nombre y correo del usuario del workspace, para poblar la pantalla de cuenta.
 -- Best-effort: si el usuario no esta en el workspace o falta el privilegio de
 -- lectura, devolvemos nulos y el front cae al usuario tipeado.
@@ -282,6 +304,7 @@ END datos_usuario;
 ------------------------------------------------------------------------------
 
 PROCEDURE login(p_usuario IN VARCHAR2, p_password IN VARCHAR2) IS
+    l_ok     BOOLEAN;
     l_token  VARCHAR2(128);
     l_exp    TIMESTAMP;
     l_nombre VARCHAR2(512);
@@ -296,7 +319,16 @@ BEGIN
         RETURN;
     END IF;
 
-    IF credenciales_validas(p_usuario, p_password) THEN
+    -- Una sola vez: cada llamada a IS_LOGIN_PASSWORD_VALID puede contar como un
+    -- intento en el workspace.
+    l_ok := credenciales_validas(p_usuario, p_password);
+
+    -- La contrasena primero: a quien no la sabe no se le dice si la cuenta
+    -- esta bloqueada.
+    IF l_ok AND cuenta_bloqueada(p_usuario) THEN
+        p_error(403, 'Forbidden',
+                'Tu usuario esta bloqueado. Pedile a quien administra los usuarios que lo active.');
+    ELSIF l_ok THEN
         l_token := generar_token;
         l_exp   := SYSTIMESTAMP + NUMTODSINTERVAL(c_horas_token * 60 * 60, 'SECOND');
 

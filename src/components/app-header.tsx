@@ -4,7 +4,7 @@ import { es } from "date-fns/locale";
 import { ArrowLeft, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { asset } from "@/lib/asset";
-import { itemActivo } from "@/lib/navegacion";
+import { itemActivo, useMenu } from "@/lib/navegacion";
 import { useSession } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 
@@ -23,7 +23,8 @@ export function AppHeader() {
   const { user, ready } = useSession();
   const router = useRouter();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const modulo = itemActivo(pathname);
+  const { items } = useMenu();
+  const modulo = itemActivo(pathname, items);
 
   /*
    * El botón de volver solo aparece DESPUÉS de montar, y eso es a propósito.

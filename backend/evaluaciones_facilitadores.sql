@@ -287,12 +287,11 @@ BEGIN
 
   -- 1.3 El CHECK del rango de ESCALA.
   --
-  -- OJO: el CHECK dice 1..5 pero ESCALAS_EVALUACIONES tiene ESCALA de 1 a 12. Con
-  -- este rango, las filas 6..12 de esa tabla son inalcanzables: solo se pueden
-  -- guardar escalas 1..5, que segun los datos cargados son 'Deficiente' (1-3) y
-  -- 'Aceptable' (4-5). 'Bueno' y 'Excelente' NO se pueden guardar.
-  -- Esta anotado en README.md; hay que decidir si se amplia el CHECK a 1..12 o si
-  -- se recargan los datos de ESCALAS_EVALUACIONES con 5 niveles.
+  -- OJO: el CHECK dice 1..5 pero ESCALAS_EVALUACIONES tiene ESCALA de 0 a 32
+  -- (desde la recarga anotada el 08/10/2026). Con este rango solo se pueden
+  -- guardar escalas 1..5, que segun los datos cargados son todas 'Deficiente'.
+  -- No molesta mientras la fila use el 1 como "marcada": la calificacion sale
+  -- del CONTEO. Esta anotado en README.md.
   SELECT COUNT(*) INTO l_c
     FROM user_constraints
    WHERE table_name = 'EVALUACIONES_FACILITADORES'
@@ -1173,7 +1172,7 @@ BEGIN
     -- de CONTAR las filas con 1 y buscar ese numero en ESCALAS_EVALUACIONES.
     -- Nada de eso lo valida la base: es convencion del cliente.
     --
-    -- El rango del CHECK (1..5) no alcanza para los 12 niveles de
+    -- El rango del CHECK (1..5) no alcanza para los 33 niveles (0..32) de
     -- ESCALAS_EVALUACIONES. Ver la nota de la seccion 1.3 y README.md.
     exigir(p_escala IS NULL
            OR (p_escala BETWEEN 1 AND 5

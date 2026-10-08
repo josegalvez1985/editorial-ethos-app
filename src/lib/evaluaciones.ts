@@ -45,16 +45,15 @@
  * marcados, buscando ese número en `ESCALAS_EVALUACIONES`. La columna
  * `CALIFICACION` de la tabla se eliminó.
  *
- * OJO CON LA FK NUEVA. `ESCALA` tiene FK a `ESCALAS_EVALUACIONES.ESCALA`, cuyos
- * valores van de 1 a 12, pero el CHECK de esta tabla corta en 5. O sea que por
- * fila solo se pueden guardar escalas 1..5, y según los datos cargados esas
- * cinco filas son 'Deficiente' (1-3) y 'Aceptable' (4-5): 'Bueno' y 'Excelente'
- * son inalcanzables como valor de fila.
+ * OJO CON LA FK. `ESCALA` tiene FK a `ESCALAS_EVALUACIONES.ESCALA`, cuyos
+ * valores van de 0 a 32, pero el CHECK de esta tabla corta en 1..5. O sea que
+ * por fila solo se pueden guardar escalas 1..5, y según los datos cargados las
+ * cinco son 'Deficiente': ningún otro tramo es alcanzable como valor de fila.
  *
  * Con el modelo actual eso no molesta —la fila solo usa el 1 como "marcada" y la
  * calificación sale del CONTEO, no de la FK—, pero si algún día la escala de la
- * fila pasa a ser la calificación de ese ítem, hay que ampliar el CHECK a 1..12
- * o recargar `ESCALAS_EVALUACIONES` con cinco niveles. Está en `backend/README.md`.
+ * fila pasa a ser la calificación de ese ítem, hay que revisar el CHECK. Está en
+ * `backend/README.md`.
  */
 
 import { authFetch } from "@/lib/api";
@@ -200,7 +199,7 @@ export type EvaluacionAgrupada = Cabecera & {
   ids_cabecera: number[];
   /** Cuántos detalles están marcados. Es el `ESCALA` de `ESCALAS_EVALUACIONES`. */
   marcadas: number;
-  /** Derivada de `marcadas`. `null` con 0: la escala arranca en 1. */
+  /** Derivada de `marcadas`. `null` sin ítems: no hay nada evaluado. */
   calificacion: Calificacion | null;
 };
 
@@ -765,33 +764,47 @@ export type Calificacion = { calificacion: string; descripcion: string };
 /**
  * `ESCALAS_EVALUACIONES`, comprimida.
  *
- * La tabla tiene 12 filas (`ESCALA` 1..12) que son **cuatro tramos de tres**
- * repitiendo el mismo texto, así que acá va un tramo por fila con su tope. Está
- * cableada a propósito: el backend no expone `listas/escalas` y agregarlo era
- * otro handler ORDS y otro script para correr en APEX.
+ * La tabla tiene 33 filas (`ESCALA` 0..32) que son **cinco tramos** repitiendo
+ * el mismo texto, así que acá va un tramo por fila con su tope. Está cableada a
+ * propósito: el backend no expone `listas/escalas` y agregarlo era otro handler
+ * ORDS y otro script para correr en APEX.
  *
- * SI SE EDITAN LOS TEXTOS EN LA BASE, HAY QUE TOCAR ESTO. No se enteran solos.
+ * SI SE EDITAN LOS TEXTOS O LOS TRAMOS EN LA BASE, HAY QUE TOCAR ESTO. No se
+ * enteran solos. Pasó el 08/10/2026: la tabla se había recargado de 12 a 32
+ * niveles (con "Muy Bueno" nuevo) y acá seguían los tramos viejos, así que una
+ * evaluación con 27 marcadas salía "Excelente" en la app y "Muy Bueno" en APEX.
+ * Copiado de los datos de ese día.
  */
 export const ESCALA = [
   {
-    hasta: 3,
+    hasta: 15,
     calificacion: "Deficiente",
-    descripcion: "Requiere una mejora significativa en varios aspectos",
+    descripcion:
+      "El desempeño presenta un bajo nivel de cumplimiento de los criterios establecidos y requiere mejoras significativas y seguimiento.",
   },
   {
-    hasta: 6,
+    hasta: 20,
     calificacion: "Aceptable",
-    descripcion: "Hay un buen esfuerzo, pero es necesario trabajar en varias áreas.",
+    descripcion:
+      "El desempeño cumple parcialmente con los criterios establecidos y requiere acompañamiento y mejoras en varias áreas.",
   },
   {
-    hasta: 9,
+    hasta: 24,
     calificacion: "Bueno",
-    descripcion: "El desempeño es adecuado, pero hay áreas con posibilidad de mejora.",
+    descripcion:
+      "El desempeño es adecuado y cumple con los aspectos fundamentales, aunque presenta algunos criterios que requieren atención y mejora.",
   },
   {
-    hasta: 12,
+    hasta: 28,
+    calificacion: "Muy Bueno",
+    descripcion:
+      "El desempeño es muy satisfactorio y cumple con la mayoría de los criterios establecidos, presentando pocas oportunidades de mejora.",
+  },
+  {
+    hasta: 32,
     calificacion: "Excelente",
-    descripcion: "El desempeño es sobresaliente en todas las áreas.",
+    descripcion:
+      "El desempeño es sobresaliente en todas las áreas y evidencia un alto nivel de compromiso, preparación y cumplimiento.",
   },
 ] as const;
 
@@ -801,15 +814,16 @@ export const ESCALA_MAXIMA = ESCALA[ESCALA.length - 1].hasta;
 /**
  * La calificación que corresponde a N detalles marcados.
  *
- * `null` con 0 marcados: `ESCALAS_EVALUACIONES` no tiene fila con `ESCALA = 0`,
- * así que "ninguna marcada" no es un nivel, es la ausencia de calificación.
+ * **0 marcados es "Deficiente"**, no "sin calificar": desde la recarga de la
+ * tabla existe la fila `ESCALA = 0`. Lo que sí queda sin calificar es una
+ * evaluación SIN ítems —no hay nada evaluado—, y eso lo decide quien muestra la
+ * calificación con el total de ítems (`CalificacionDisplay`), no esta función.
  *
  * Con más de {@link ESCALA_MAXIMA} marcados cae en el tramo más alto. Puede
- * pasar si en la base se cargan más ítems de evaluación que los 12 que la escala
+ * pasar si en la base se cargan más ítems de evaluación que los que la escala
  * contempla — el front no limita cuántos detalles se pueden marcar.
  */
-export function calificacionDeConteo(marcadas: number): Calificacion | null {
-  if (marcadas <= 0) return null;
+export function calificacionDeConteo(marcadas: number): Calificacion {
   const tramo = ESCALA.find((t) => marcadas <= t.hasta) ?? ESCALA[ESCALA.length - 1];
   return { calificacion: tramo.calificacion, descripcion: tramo.descripcion };
 }
@@ -985,7 +999,7 @@ export function agrupar(filas: Evaluacion[]): EvaluacionAgrupada[] {
 
   for (const g of grupos.values()) {
     g.marcadas = g.detalles.filter((d) => d.marcada).length;
-    g.calificacion = calificacionDeConteo(g.marcadas);
+    g.calificacion = g.detalles.length > 0 ? calificacionDeConteo(g.marcadas) : null;
   }
 
   return [...grupos.values()];

@@ -150,7 +150,7 @@ function AccountPage() {
             <div
               role="radiogroup"
               aria-label="Tema"
-              className="mt-3 flex gap-1 rounded-full bg-muted p-1"
+              className="mt-3 flex gap-1 rounded-xl bg-muted p-1"
             >
               {themeOptions.map((opt) => {
                 const active = theme === opt.value;
@@ -162,7 +162,7 @@ function AccountPage() {
                     role="radio"
                     aria-checked={active}
                     onClick={() => setTheme(opt.value)}
-                    className={`flex h-10 flex-1 items-center justify-center gap-2 rounded-full text-sm font-semibold transition-all duration-200 ease-out ${
+                    className={`flex h-10 flex-1 items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-all duration-200 ease-out ${
                       active
                         ? "bg-card text-foreground shadow-soft"
                         : "text-muted-foreground hover:text-foreground"

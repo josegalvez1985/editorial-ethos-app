@@ -138,7 +138,7 @@ function EvaluacionesPage() {
               onChange={(e) => setTexto(e.target.value)}
               placeholder="Facilitador, institución, evaluador…"
               aria-label="Buscar evaluaciones"
-              className="h-12 w-full rounded-full border border-border/60 bg-muted/60 pr-10 pl-11 text-base outline-none placeholder:text-muted-foreground focus:border-primary/40 focus:bg-card"
+              className="h-12 w-full rounded-xl border border-border/60 bg-muted/60 pr-10 pl-11 text-base outline-none placeholder:text-muted-foreground focus:border-primary/40 focus:bg-card"
             />
             {texto ? (
               <button
@@ -170,8 +170,15 @@ function EvaluacionesPage() {
         (una institución larga), el `truncate` nunca actúa y la página entera se
         corre de costado. `grid-cols-1` es `minmax(0, 1fr)`: la columna no pasa
         del ancho de la pantalla.
+
+        `pb-16 lg:pb-32` es el hueco del botón flotante "Nueva" (08/10/2026). El
+        botón tapa los últimos 9.5rem de la ventana (`bottom-24` + `h-14`) y el
+        `pb-` de AppShell solo deja 7rem en celular y 2.5rem en escritorio: al
+        llegar al final, "Cargar más" quedaba debajo del botón. Con esto el
+        último elemento termina 1.5rem (celular) / 1rem (escritorio) por encima.
+        Si se mueve o se agranda el botón, revisar estos dos números.
       */}
-      <div className="mt-5 grid grid-cols-1 gap-3 px-5 md:grid-cols-2 2xl:grid-cols-3">
+      <div className="mt-5 grid grid-cols-1 gap-3 px-5 pb-16 md:grid-cols-2 lg:pb-32 2xl:grid-cols-3">
         {/*
           El filtro por área recorta FILAS, y la calificación se calcula sobre las
           filas que llegaron. Con un área filtrada el conteo es parcial y el tramo
@@ -212,7 +219,7 @@ function EvaluacionesPage() {
                   setTexto("");
                   setAvanzados(VACIOS);
                 }}
-                className="tap mt-4 inline-flex h-11 items-center gap-2 rounded-full bg-muted px-5 text-sm font-semibold"
+                className="tap mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-muted px-5 text-sm font-semibold"
               >
                 <RotateCcw className="size-4" />
                 Limpiar filtros
@@ -250,7 +257,7 @@ function EvaluacionesPage() {
       <Link
         to="/evaluaciones/nueva"
         aria-label="Nueva evaluación"
-        className="tap fixed bottom-24 left-1/2 z-30 flex h-14 -translate-x-1/2 items-center gap-2 rounded-full bg-primary px-6 font-semibold text-primary-foreground shadow-elegant"
+        className="tap fixed bottom-24 left-1/2 z-30 flex h-14 -translate-x-1/2 items-center gap-2 rounded-2xl bg-primary px-6 font-semibold text-primary-foreground shadow-elegant"
       >
         <Plus className="size-5" />
         Nueva
@@ -381,7 +388,7 @@ function FiltrosModal({
         type="button"
         onClick={() => setAbierto(true)}
         aria-label="Filtros"
-        className="tap relative grid size-12 shrink-0 place-items-center rounded-full border border-border/60 bg-card"
+        className="tap relative grid size-12 shrink-0 place-items-center rounded-xl border border-border/60 bg-card"
       >
         <SlidersHorizontal className="size-5" />
         {activos > 0 ? (

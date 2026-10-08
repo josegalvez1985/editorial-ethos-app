@@ -211,7 +211,7 @@ export function PickerModal({
                 onChange={(e) => setTexto(e.target.value)}
                 placeholder="Buscar…"
                 // text-base = 16px: con menos, iOS hace zoom al enfocar.
-                className="h-11 w-full rounded-full border border-input bg-muted/60 pr-10 pl-10 text-base outline-none focus:border-primary/40 focus:bg-card"
+                className="h-11 w-full rounded-xl border border-input bg-muted/60 pr-10 pl-10 text-base outline-none focus:border-primary/40 focus:bg-card"
               />
               {texto ? (
                 <button

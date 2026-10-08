@@ -7,7 +7,7 @@ import { calificacionDeConteo } from "@/lib/evaluaciones";
  *
  * No es una escala de 1 a 5: cada detalle de la evaluación vale una estrella y la
  * calificación del conjunto sale de contar cuántas están marcadas. En la base eso
- * es `ESCALA = 1` o `NULL` (nunca 0, lo rechaza el CHECK).
+ * es `ESCALA = 1` o `NULL` (nunca 0 por fila, lo rechaza el CHECK).
  *
  * El botón mide 44px aunque el icono sea de 28: es el mínimo para tocar con el
  * dedo sin errarle.
@@ -46,6 +46,9 @@ export function StarToggle({
  * Muestra una estrella sola y el conteo, no cinco estrellas: el total de ítems
  * varía según las áreas evaluadas, así que "7 de 12" dice más que un dibujo de
  * estrellas que habría que inventar sobre una escala fija.
+ *
+ * "Sin calificar" es solo para una evaluación SIN ítems (`total` 0). Con ítems y
+ * ninguno marcado sale "Deficiente": la escala tiene fila 0 (ver `ESCALA`).
  */
 export function CalificacionDisplay({
   marcadas,
@@ -59,7 +62,7 @@ export function CalificacionDisplay({
 }) {
   const c = calificacionDeConteo(marcadas);
 
-  if (!c) {
+  if (total === 0) {
     return (
       <span className={`text-xs text-muted-foreground ${className ?? ""}`}>Sin calificar</span>
     );

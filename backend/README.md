@@ -12,6 +12,15 @@
 | **[`transferencias.sql`](transferencias.sql)** | Transferencias de manuales entre sucursales (`PKG_TRANSFERENCIAS_ETHOS`) | después de `inventarios.sql` |
 | **[`sucursales.sql`](sucursales.sql)** | ABM de sucursales (`PKG_SUCURSALES_ETHOS`) + corrige `SUCURSALES_JNTRG` | independiente |
 | **[`auditoria.sql`](auditoria.sql)** | Consulta de las bitácoras `_JN` (`PKG_AUDITORIA_ETHOS`) + `pr_crear_trigger_auditoria` | independiente |
+| **[`menu_paginas.sql`](menu_paginas.sql)** | Tabla `MENU_PAGINAS`: el menú del sitio, con las páginas del menú de APEX (mismo número, ruta del sitio) y las pantallas nuevas | independiente |
+| **[`roles_paginas.sql`](roles_paginas.sql)** | Menú del usuario, ABM de páginas y de permisos sobre `ROLES_PAGINAS` (`PKG_ROLES_PAGINAS_ETHOS`) | después de `menu_paginas.sql` |
+| **[`usuarios.sql`](usuarios.sql)** | Usuarios del workspace: listado y activar / bloquear (`PKG_USUARIOS_ETHOS`, usa `PRC_TOGGLE_USUARIO`) | después de `roles_paginas.sql` |
+| **[`paises.sql`](paises.sql)** | ABM de países (`PKG_PAISES_ETHOS`) | después de `roles_paginas.sql` |
+| **[`nacionalidades.sql`](nacionalidades.sql)** | ABM de nacionalidades (`PKG_NACIONALIDADES_ETHOS`) | después de `roles_paginas.sql` |
+| **[`facilitadores.sql`](facilitadores.sql)** | Facilitadores con su ficha completa y sus 4 listas (`PKG_FACILITADORES_ETHOS`) | después de `nacionalidades.sql`, `ciudades.sql` y `barrios.sql` |
+| **[`departamentos.sql`](departamentos.sql)** | ABM de departamentos, cada uno de un país (`PKG_DEPARTAMENTOS_ETHOS`) | después de `paises.sql` |
+| **[`ciudades.sql`](ciudades.sql)** | ABM de ciudades, cada una de un departamento; el país sale del departamento (`PKG_CIUDADES_ETHOS`) | después de `departamentos.sql` |
+| **[`barrios.sql`](barrios.sql)** | ABM de barrios, cada uno de una ciudad; departamento y país salen de la ciudad (`PKG_BARRIOS_ETHOS`) | después de `ciudades.sql` |
 
 Todos son idempotentes. Solo `auth.sql` define el módulo y habilita el esquema; los demás
 agregan handlers al módulo `ethos` que creó él. Los "independiente" solo necesitan `auth.sql`.
@@ -174,6 +183,307 @@ Dos cosas que conviene saber antes de tocarla:
 
 El teléfono sale de `INSTITUCIONES_DIRECTORES.NRO_TELEFONO` —el de esa persona en
 esa institución— y cae al de `DIRECTORES` cuando no está cargado.
+
+## Menú y permisos (`menu_paginas.sql` + `roles_paginas.sql`)
+
+Decidido el 08/10/2026. El menú del sitio sale de la base, salvo tres partes fijas.
+
+| Parte del menú | De dónde sale | Quién la ve |
+| --- | --- | --- |
+| Inicio, Mi cuenta | fijas, en el código del sitio | cualquiera con sesión |
+| **Roles de páginas**, dentro de Administrador | ítem en el código; permiso en `ROLES_PAGINAS` (página 2) | quien tenga la 2 con `PUEDE_CONSULTAR = 'S'` |
+| **Crear páginas**, dentro de Administrador | fija: código del sitio + función `administra` del paquete | **solo JOSEG** |
+| El resto | tabla `MENU_PAGINAS` | quien tenga `PUEDE_CONSULTAR = 'S'` en `ROLES_PAGINAS` |
+
+### Las dos tablas
+
+| Tabla | Qué tiene |
+| --- | --- |
+| `ROLES_PAGINAS` | Los permisos. **La misma tabla que usa APEX**, con `APP_ID` siempre `40587`. No se toca su estructura ni su trigger |
+| `MENU_PAGINAS` | El menú del sitio: `APP_PAGE_ID` (PK), `MENU_PRINCIPAL`, `NOMBRE_PAGINA`, `RUTA` (única). Sin `ID_AUDITORIA` ni bitácora, a pedido. Comentada en la base, tabla y columnas |
+
+- **Una pantalla del sitio es una página como las de APEX:** el mismo `APP_PAGE_ID` en las dos
+  tablas.
+- **El número de una página nueva es el último `APP_PAGE_ID` de `MENU_PAGINAS` más 1** y **no
+  cambia nunca**. Lo calcula el alta (`POST menu-paginas`, función `siguiente_pagina`), nadie
+  lo escribe a mano. Hasta el 08/10/2026 era el mayor entre `ROLES_PAGINAS`, `MENU_PAGINAS` y
+  las páginas de APEX; se pasó a mirar solo el menú.
+- **Única excepción:** si ese número ya tiene filas en `ROLES_PAGINAS` —una página de APEX que
+  no está en el menú, por ejemplo una que se agregue después en el builder—, se saltea al
+  siguiente libre. Si no, la página nueva nacería con los permisos de otra pantalla.
+- **El orden del menú es el de los números:** los menús principales en el orden de su primera
+  página y, dentro de cada uno, por número. No hay columna de orden ni de ícono: el ícono y la
+  descripción de cada pantalla están en el código (`PANTALLAS`, en `src/lib/navegacion.ts`).
+- **`RUTA` es la pantalla del sitio** (`/evaluaciones`) y tiene que existir en `src/routes/`.
+  Una ruta que el sitio no tiene se deja guardar, pero el menú lleva a "no encontrado".
+- **El alta guarda la página SOLO en `MENU_PAGINAS`: no crea permisos**, ni para quien la da
+  de alta. Los da después el administrador en Roles de páginas; hasta entonces la página no
+  le aparece a nadie en el menú (08/10/2026; antes el alta le daba todo en `'S'` a quien
+  la creaba). El sitio, al crearla, ofrece un botón **Dar permisos** que lleva a esa pantalla.
+- **Una página con permisos cargados no se puede borrar** (409): primero se le quitan.
+
+`menu_paginas.sql` crea la tabla y carga **las páginas del menú de APEX con su mismo
+número**: 44, todas menos la 1 (Inicio, fija en el sitio). Cada una lleva ya **la ruta que va
+a tener en el sitio** (`/paises`, `/consulta-postulaciones`…: minúsculas, sin acentos, con
+guiones, y `consulta-` cuando el mismo nombre está en dos menús). Así los permisos que ya
+tienen en `ROLES_PAGINAS` valen apenas se programa la pantalla.
+
+**Los 18 modales de APEX no van** (3, 5, 7, 9, 11, 13, 15, 18, 19, 21, 22, 27, 29, 32, 33, 35,
+37, 42): en el sitio son parte de la pantalla de su listado y usan los permisos de esa. Sus
+filas de `ROLES_PAGINAS` quedan, porque APEX las usa. Por eso `ROLES_PAGINAS` tiene 61
+páginas distintas y `MENU_PAGINAS` menos.
+
+Las pantallas que el sitio ya tenía y que reemplazan una de APEX **usan el número de APEX**:
+Sucursales 72, Agendas 30, Inventario 74, Consulta de inventarios 76. Las que no existían en
+APEX (Evaluaciones, Intervenciones, Transferencias, Consulta de transferencias, Auditoría)
+llevan el último número más 1, y el script se las da con todo en `'S'` a JOSEG, EDGARO y
+VALENTINAS (08/10/2026). A los demás, desde Roles de páginas.
+
+Mientras una pantalla no esté programada, su ruta lleva a "no encontrado" (en Crear páginas
+sale como "ruta desconocida"). Antes de esta tabla
+se usaron por unas horas números "virtuales" 1000–1009; se borraron de `ROLES_PAGINAS` el
+08/10/2026, y el script, si encuentra alguno, lo pasa al número definitivo.
+
+### Las dos pantallas de administración
+
+| Pantalla | Ruta | Qué administra | Endpoints | Quién | En `MENU_PAGINAS` |
+| --- | --- | --- | --- | --- | --- |
+| Roles de páginas | `/permisos` | los permisos de cada usuario (`ROLES_PAGINAS`) | `roles-paginas/*` | quien tenga la página 2 en `ROLES_PAGINAS` | sí, como la página 2 de APEX (Roles de Usuarios) |
+| Crear páginas | `/paginas` | las páginas del menú (`MENU_PAGINAS`) | `menu-paginas/*` | solo JOSEG, fijo (`administra`) | no (no existe en APEX) |
+
+- **Roles de páginas sale de `ROLES_PAGINAS`, como en APEX** (desde el 08/10/2026; antes era
+  fija para JOSEG y EDGARO). Cada endpoint pide su acción sobre la página de `/permisos`:
+  consultar para leer, insertar para agregar y copiar, actualizar para modificar, borrar para
+  quitar (`exigir` → `puede_permisos`). Sus modales de APEX, 3 y 19, usan esos mismos permisos.
+- **Si nadie tiene la 2 habilitada, nadie puede dar permisos desde el sitio.** El script lista
+  al final quién la tiene y avisa con `[WARN]` si no hay nadie: se arregla en APEX, página 2.
+- **Crear páginas sigue fija**: está escrita en `PKG_ROLES_PAGINAS_ETHOS.administra`. Cambiar
+  quién la usa es cambiar esa función y volver a correr el script.
+- `GET menu` devuelve `admin_permisos` (por `ROLES_PAGINAS`) y `admin_paginas` (por
+  `administra`). El sitio arma las dos al principio del menú principal **Administrador** (hasta
+  el 08/10/2026 iban en un grupo propio, "Administración"). La página 2 no se repite en el menú
+  con el nombre de APEX.
+- Sin permiso, los endpoints responden **403**, y las pantallas, "Sin acceso".
+- **Las filas de `ROLES_PAGINAS` de la página 2 no se borran**: son las mismas que usa APEX.
+  Una versión anterior de `roles_paginas.sql` (del mismo 08/10/2026) las borraba: se sacó antes
+  de usarse con la página 2 cargada.
+
+### Endpoints (`roles_paginas.sql`)
+
+| Método | Ruta | Exige | Qué hace |
+| --- | --- | --- | --- |
+| GET | `menu` | sesión | Todas las páginas de `MENU_PAGINAS` con los permisos del usuario, más `admin_permisos` y `admin_paginas`. Todas, para que el sitio sepa qué rutas cerrar |
+| GET | `menu-paginas` | Crear páginas | Las páginas, con cuántos permisos tiene cada una |
+| POST | `menu-paginas` | Crear páginas | `{menu_principal, nombre_pagina, ruta}` → `{pagina}`. El número lo pone el backend: el último del menú más 1. **No crea permisos** |
+| PUT | `menu-paginas/:id` | Crear páginas | Las mismas tres. El número no cambia |
+| DELETE | `menu-paginas/:id` | Crear páginas | **409** si la página tiene permisos cargados |
+| GET | `roles-paginas?usuario=X` | Roles de páginas | Todas las filas de la app 40587, o las de un usuario |
+| GET | `roles-paginas/usuarios` | Roles de páginas | Usuarios del workspace + los que tienen filas, con cuántas páginas. Sin la cuenta dueña (`FUNDACIONCARACTER2024@GMAIL.COM`), como en APEX, salvo que tenga filas |
+| GET | `roles-paginas/paginas` | Roles de páginas | Nombre de cada página: las de `MENU_PAGINAS` (`origen: app`) y las de APEX (`apex`). De APEX, sin la 0, la 1 ni la 9999 en adelante, como el LOV de la página 3 |
+| POST | `roles-paginas` | Roles de páginas | `{usuario, pagina, insertar, actualizar, borrar, consultar, ver_campos}`; **409** si ya existe |
+| PUT | `roles-paginas/:usuario/:pagina` | Roles de páginas | Las cinco banderas; `ESTADISTICA_USER` no se toca |
+| DELETE | `roles-paginas/:usuario/:pagina` | Roles de páginas | Quita la fila |
+| POST | `roles-paginas/copiar` | Roles de páginas | `{desde, hacia}` → `{copiadas}`. Le da a `hacia` las páginas de `desde` que todavía no tiene, con las mismas banderas; las que ya tiene no se tocan. Todo o nada |
+
+Las banderas van y vuelven como `'S'`/`'N'`. Sin fila no hay acceso, y `'N'` o `NULL` es "no".
+
+**Las páginas 3 (Crear Rol) y 19 (Copiar Roles) de APEX no son páginas en el sitio.** Allá son
+modales de la 2; acá son diálogos de Roles de páginas (`/permisos`) y los usa quien puede usar
+esa pantalla. No tienen ruta, ni fila en `MENU_PAGINAS`, ni se controlan aparte. Sus filas de
+`ROLES_PAGINAS` quedan porque APEX las sigue usando.
+
+### El menú no es la seguridad
+
+Ocultar un módulo del menú no impide llamar a su endpoint con el token. **Hoy solo los
+endpoints de este script, los de `usuarios.sql` y los de escritura de `paises.sql`, `nacionalidades.sql`, `facilitadores.sql`, `departamentos.sql`, `ciudades.sql` y `barrios.sql` controlan
+permisos; los de los demás módulos solo piden sesión.** Para cerrar un módulo de verdad, su paquete tiene que preguntar antes de
+hacer nada (ver *Agregar un endpoint de negocio*; `usuarios.sql` es el ejemplo: busca su
+página con `pagina_de_ruta('/usuarios')` y pregunta `puede(...)`).
+
+## Países (`paises.sql`)
+
+Reemplaza a la página 4 de APEX (Países, un IG sobre `PAISES`) y a su modal 5 (Crear País), que
+en el sitio es el diálogo de `/paises`, con los permisos de la 4. Paquete `PKG_PAISES_ETHOS`.
+
+**Un script por tabla** (decidido el 08/10/2026): se probó un paquete genérico para todos los
+catálogos de un nombre y se descartó porque confundía. Lo que sí se comparte es la PANTALLA:
+`<CatalogoNombre>` (`src/components/catalogo-nombre.tsx`) sirve para cualquier tabla (ID,
+NOMBRE), y cada una le pasa sus funciones desde su `lib/` (`lib/paises.ts`).
+
+| Método | Ruta | Exige | Qué hace |
+| --- | --- | --- | --- |
+| GET | `paises` | sesión | Todos por nombre, cada uno con `usos` (tabla y cantidad), más `tablas` y `largo` (200) |
+| POST | `paises` | insertar en la página de `/paises` | `{nombre}` → `{id_pais}` |
+| PUT | `paises/:id` | actualizar | `{nombre}` |
+| DELETE | `paises/:id` | borrar | **409** si algo lo usa |
+
+- **El GET pide solo sesión** a propósito: los combos de otras pantallas (el país de un
+  departamento, por ejemplo) necesitan la lista aunque el usuario no administre países.
+- **"En uso" lo dice la base**: el listado busca en `USER_CONSTRAINTS` las FK de una columna que
+  apuntan a `PAISES` (salvo las `_JN`) y cuenta cuántas filas usan cada país. Es el único SQL
+  dinámico del paquete, con los nombres del diccionario entre comillas. Una tabla que guarde
+  `ID_PAIS` **sin FK** no se detecta.
+- **Repetidos**: se rechaza un nombre igual sin distinguir mayúsculas (409). La pantalla avisa
+  antes, y además sin distinguir tildes.
+- **El id nuevo** lo pone la tabla (identity o trigger), como en APEX. Si no lo pone
+  (ORA-01400 en `ID_PAIS`), cae al mayor más 1 con la tabla bloqueada.
+- La verificación previa lista los triggers de `PAISES`: uno de bitácora escrito a mano puede
+  tener el `ORA-04084` en DELETE que tenía `SUCURSALES_JNTRG`. Si pasa, el error lo dice.
+
+## Nacionalidades (`nacionalidades.sql`)
+
+Reemplaza a la página 12 de APEX (Nacionalidades, IG sobre `NACIONALIDADES`) y a su modal 13
+(Crear Nacionalidad), que en el sitio es el diálogo de `/nacionalidades`, con los permisos de
+la 12. Paquete `PKG_NACIONALIDADES_ETHOS`. La tabla, según APEX: `ID_NACIONALIDAD` (PK) y
+`DESCRIPCION` (obligatoria, 200).
+
+| Método | Ruta | Exige | Qué hace |
+| --- | --- | --- | --- |
+| GET | `nacionalidades` | sesión | Todas por descripción, con `usos`, `tablas` y `largo` |
+| POST | `nacionalidades` | insertar en la página de `/nacionalidades` | `{descripcion}` → `{id_nacionalidad}` |
+| PUT | `nacionalidades/:id` | actualizar | `{descripcion}` |
+| DELETE | `nacionalidades/:id` | borrar | **409** si algo la usa |
+
+Todo lo demás, igual que `paises.sql`. La pantalla es `<CatalogoNombre>` sin padre, como
+Países.
+
+## Facilitadores (`facilitadores.sql`)
+
+Reemplaza a la página 14 de APEX (el listado), a su modal 15 (la ficha) y a los modales 63 a 66
+(Nominado por, Referencias personales, Niveles académicos, Situación laboral). En el sitio: el
+listado es `/facilitadores`, la ficha es la pantalla `/facilitadores/$id` (`nuevo` para el
+alta) y **las cuatro listas son secciones de la ficha**, que se guardan con ella en una sola
+transacción. Todo con los permisos de la 14. Paquete `PKG_FACILITADORES_ETHOS`.
+
+| Método | Ruta | Exige | Qué hace |
+| --- | --- | --- | --- |
+| GET | `facilitadores` | sesión | El listado: nombre, CI, teléfono, usuario, `es_activo`, ciudad, barrio, nacionalidad, `usos` |
+| GET | `facilitadores/opciones` | sesión | Los valores de las listas de APEX: `si_no`, `estado_civil`, `con_quien_vive`, `nivel_academico`, `tipo_factura` |
+| GET | `facilitadores/:id` | sesión | La ficha completa, con `nominados`, `referencias`, `estudios`, `laborales` y `usos` |
+| POST | `facilitadores` | insertar en la página de `/facilitadores` | `{datos}` → `{id_facilitador}` |
+| PUT | `facilitadores/:id` | actualizar | `{datos}` |
+| DELETE | `facilitadores/:id` | borrar | **409** si algo lo usa; sus cuatro listas se borran con él |
+
+- **La ficha viaja entera en un solo campo, `datos`, con el JSON como texto**: son ~45 campos y
+  4 listas, y ORDS bindea solo campos escalares. El paquete lo lee con `APEX_JSON`.
+- **Las listas**: las filas con id se actualizan, las sin id se insertan y las que ya no vienen se
+  borran. En APEX eran modales que solo andaban con el facilitador ya guardado.
+- **Ubicación**: se elige la ciudad y, si se quiere, un barrio de esa ciudad; departamento y
+  país salen de la ciudad, como en `ciudades.sql` y `barrios.sql`.
+- **Las listas de valores salen de APEX** (`APEX_APPLICATION_LOV_ENTRIES`); si una es dinámica,
+  caen a los valores ya cargados en la tabla. "Activo" en el listado: `ACTIVO` empieza con S.
+- **La columna `DENOMINACIÓN` tiene tilde**: se busca en `USER_TAB_COLUMNS` y se lee y escribe
+  con SQL dinámico, porque un identificador con tilde en el archivo puede romperse al subirlo.
+- **CI repetida**: se rechaza en un alta o al cambiarle la CI a uno.
+- **`UNISTR` devuelve NVARCHAR2**: unirlo con un texto común en un `UNION` da ORA-12704; va con
+  `TO_CHAR` (pasó con "Físico" en `tipo_factura`, 08/10/2026).
+
+## Departamentos (`departamentos.sql`)
+
+Reemplaza a la página 6 de APEX (Departamentos, IG sobre `DEPARTAMENTOS`) y a su modal 7 (Crear
+Departamento), que en el sitio es el diálogo de `/departamentos`, con los permisos de la 6.
+Paquete `PKG_DEPARTAMENTOS_ETHOS`. La tabla, según APEX: `ID_DEPARTAMENTO` (PK), `ID_PAIS`
+(obligatorio) y `NOMBRE` (obligatorio, 200).
+
+| Método | Ruta | Exige | Qué hace |
+| --- | --- | --- | --- |
+| GET | `departamentos` | sesión | Todos por país y nombre, con `id_pais`, `pais`, `usos`, `tablas` y `largo` |
+| POST | `departamentos` | insertar en la página de `/departamentos` | `{id_pais, nombre}` → `{id_departamento}` |
+| PUT | `departamentos/:id` | actualizar | `{id_pais, nombre}` |
+| DELETE | `departamentos/:id` | borrar | **409** si algo lo usa |
+
+Todo lo demás, como `paises.sql`: "en uso" por las FK, el id nuevo por identity o trigger con
+la caída al mayor más 1, y la lista de triggers en la verificación. Dos diferencias:
+
+- **El repetido se mide dentro del mismo país**: dos países pueden tener un departamento con el
+  mismo nombre.
+- **El país se valida antes de guardar** (400 si no existe). El listado hace LEFT JOIN con
+  `PAISES`: un departamento con un `ID_PAIS` que ya no existe sale como "Sin país" en vez de
+  perderse.
+
+La pantalla es `<CatalogoNombre>` con el país como `padre`: filtro por país en pastillas, la
+lista agrupada por país y el país elegido en el diálogo (arranca en el del filtro o en el que
+más departamentos tiene). El selector lee `GET paises`, por eso conviene correr `paises.sql`
+antes.
+
+## Ciudades (`ciudades.sql`)
+
+Reemplaza a la página 8 de APEX (Ciudades, IG sobre `CIUDADES`) y a su modal 9 (Crear Ciudad),
+que en el sitio es el diálogo de `/ciudades`, con los permisos de la 8. Paquete
+`PKG_CIUDADES_ETHOS`. La tabla, según APEX: `ID_CIUDAD` (PK), `ID_PAIS` y `ID_DEPARTAMENTO`
+(obligatorios) y `NOMBRE` (obligatorio, 200).
+
+| Método | Ruta | Exige | Qué hace |
+| --- | --- | --- | --- |
+| GET | `ciudades` | sesión | Todas por departamento y nombre, con `id_departamento`, `departamento`, `id_pais`, `pais`, `usos`, `tablas` y `largo` |
+| POST | `ciudades` | insertar en la página de `/ciudades` | `{id_departamento, nombre}` → `{id_ciudad}` |
+| PUT | `ciudades/:id` | actualizar | `{id_departamento, nombre}` |
+| DELETE | `ciudades/:id` | borrar | **409** si algo la usa |
+
+- **El país sale del departamento** (distinto de APEX). En APEX se elegían país y departamento
+  por separado, sin cascada, y se podía guardar una ciudad de un país en un departamento de
+  otro. Acá se elige solo el departamento y `ID_PAIS` se copia de él al guardar: la columna
+  sigue llena para quien la lea, pero ya no puede contradecir al departamento. El listado
+  devuelve el país **del departamento**.
+- **La verificación previa cuenta las ciudades que hoy tienen otro país** que su departamento,
+  y si hay, imprime el `UPDATE` que las alinea. No lo corre sola.
+- **El repetido se mide dentro del mismo departamento**: hay ciudades homónimas en
+  departamentos distintos.
+- Lo demás, como `departamentos.sql`: "en uso" por las FK, id nuevo por identity o trigger.
+
+La pantalla es `<CatalogoNombre>` con el departamento como `padre`. En el selector de
+departamento, debajo de cada uno va su país, pero solo si hay más de un país cargado.
+
+## Barrios (`barrios.sql`)
+
+Reemplaza a la página 10 de APEX (Barrios, IG sobre `BARRIOS`) y a su modal 11 (Crear Barrio),
+que en el sitio es el diálogo de `/barrios`, con los permisos de la 10. Paquete
+`PKG_BARRIOS_ETHOS`. La tabla, según APEX: `ID_BARRIO` (PK), `ID_PAIS`, `ID_DEPARTAMENTO` e
+`ID_CIUDAD` (obligatorios) y `NOMBRE` (obligatorio, 200).
+
+| Método | Ruta | Exige | Qué hace |
+| --- | --- | --- | --- |
+| GET | `barrios` | sesión | Todos por ciudad y nombre, con ciudad, departamento y país (los de la ciudad), `usos`, `tablas` y `largo` |
+| POST | `barrios` | insertar en la página de `/barrios` | `{id_ciudad, nombre}` → `{id_barrio}` |
+| PUT | `barrios/:id` | actualizar | `{id_ciudad, nombre}` |
+| DELETE | `barrios/:id` | borrar | **409** si algo lo usa |
+
+- **Departamento y país salen de la ciudad** (distinto de APEX, igual que en Ciudades). Se
+  elige solo la ciudad; al guardar, `ID_DEPARTAMENTO` es el de la ciudad e `ID_PAIS` el **de
+  ese departamento** (no `CIUDADES.ID_PAIS`, que en datos viejos puede no coincidir).
+- **La verificación previa cuenta los barrios desalineados** con su ciudad e imprime el
+  `UPDATE` que los corrige. No lo corre sola.
+- **El repetido se mide dentro de la misma ciudad.**
+- Lo demás, como `ciudades.sql`.
+
+La pantalla es `<CatalogoNombre>` con la ciudad como `padre`. En el selector de ciudad,
+debajo de cada una va su departamento (hay más de uno), lo que separa las ciudades homónimas.
+
+## Usuarios (`usuarios.sql`)
+
+Reemplaza a la página 67 de APEX (Usuarios) y a su modal 68 (Activar / Inactivar Usuarios). La
+68 **no es una página en el sitio**: es el diálogo de cada usuario en `/usuarios`, con los
+permisos de la 67. Los usuarios son los del workspace (`APEX_WORKSPACE_APEX_USERS`): acá no se
+crean ni se borran, igual que en APEX.
+
+| Método | Ruta | Exige | Qué hace |
+| --- | --- | --- | --- |
+| GET | `usuarios` | consultar en la página de `/usuarios` | Usuario, nombre, apellido, correo, `bloqueado`, cuántas páginas tiene en `ROLES_PAGINAS`, y `es_yo` / `es_duena` |
+| PUT | `usuarios/:usuario/estado` | actualizar en la misma | `{bloqueado: 'S'\|'N'}` → `{bloqueado, sesiones_cerradas}` |
+
+- **Se pide el estado que se quiere, no "invertir".** APEX llamaba a `PRC_TOGGLE_USUARIO`, que
+  invierte. El paquete lo sigue usando, pero solo si el estado actual no es el pedido: con
+  una lista vieja, "Bloquear" nunca termina activando a nadie.
+- **Después relee el estado.** Si `PRC_TOGGLE_USUARIO` no lo cambió —por ejemplo porque
+  desde ORDS no hay sesión APEX—, responde un error que lo dice en vez de un "listo" falso.
+- **Bloquear cierra sus sesiones del sitio** (`ETHOS_TOKENS`): si no, seguiría adentro hasta
+  6 horas.
+- **El login del sitio rechaza una cuenta bloqueada** (`cuenta_bloqueada` en `auth.sql`,
+  08/10/2026). Antes no: `IS_LOGIN_PASSWORD_VALID` solo compara la contraseña, y un usuario
+  bloqueado en APEX seguía entrando al sitio y al APK. Para que valga hay que volver a correr
+  `auth.sql`.
+- **No se puede bloquear la cuenta propia ni la dueña del workspace**
+  (`FUNDACIONCARACTER2024@GMAIL.COM`).
 
 ## Auditoría (`auditoria.sql`)
 
@@ -515,43 +825,53 @@ columna `UNIQUE`, no a la PK `ID_ESCALA`.
   validación del paquete se dejaron en 1..5, así que el API todavía acepta 2..5 aunque el
   front nunca los mande.
 
-### El CHECK de 1..5 no alcanza para los 12 niveles
+### El CHECK de 1..5 no alcanza para los 32 niveles
 
-`ESCALAS_EVALUACIONES.ESCALA` va de **1 a 12**, pero el CHECK de
-`EVALUACIONES_FACILITADORES.ESCALA` corta en **5**. Con los datos cargados hoy, eso
-significa que como valor de fila solo son alcanzables:
-
-| `ESCALA` guardable | `CALIFICACION` que da la FK |
-| --- | --- |
-| 1, 2, 3 | Deficiente |
-| 4, 5 | Aceptable |
-| 6 … 12 | **imposible de guardar** (lo bloquea el CHECK) |
-
-O sea que **"Bueno" y "Excelente" no se pueden poner en una fila.** Con el modelo actual
-no rompe nada, porque la fila usa el 1 solo como "marcada" y la calificación sale del
-**conteo** de filas marcadas, no de la FK. Pero si la escala de la fila pasa a ser la
-calificación de ese ítem, hay que elegir una de dos:
-
-- ampliar el CHECK a `BETWEEN 1 AND 12`, o
-- recargar `ESCALAS_EVALUACIONES` con cinco niveles (1..5) en vez de doce.
-
+`ESCALAS_EVALUACIONES.ESCALA` va de **0 a 32**, pero el CHECK de
+`EVALUACIONES_FACILITADORES.ESCALA` corta en **1..5**. Con los datos cargados hoy, las
+cinco escalas guardables por fila son **'Deficiente'**: ningún otro tramo se puede poner
+en una fila. Con el modelo actual no rompe nada, porque la fila usa el 1 solo como
+"marcada" y la calificación sale del **conteo** de filas marcadas, no de la FK. Si la
+escala de la fila pasa a ser la calificación de ese ítem, hay que revisar el CHECK.
 **Sin resolver.**
+
 - **La calificación no se guarda: se deriva** de cuántos detalles están marcados. Ese
-  número es el `ESCALA` de `ESCALAS_EVALUACIONES`, que tiene 12 filas en cuatro tramos:
+  número es el `ESCALA` de `ESCALAS_EVALUACIONES`, que tiene 33 filas en cinco tramos
+  (recargada para evaluaciones de hasta 32 ítems; antes eran 12 en cuatro tramos):
 
   | `ESCALA` | `CALIFICACION` |
   | --- | --- |
-  | 1–3 | Deficiente |
-  | 4–6 | Aceptable |
-  | 7–9 | Bueno |
-  | 10–12 | Excelente |
+  | 0–15 | Deficiente |
+  | 16–20 | Aceptable |
+  | 21–24 | Bueno |
+  | 25–28 | Muy Bueno |
+  | 29–32 | Excelente |
 
-  No hay fila con `ESCALA = 0`: cero marcadas es "sin calificar", no un nivel.
+  **Hay fila con `ESCALA = 0`**: una evaluación con ítems y ninguno marcado es
+  "Deficiente". Solo una evaluación **sin** ítems queda "sin calificar". Más marcadas que
+  el tope cae en el tramo más alto.
 
-**`ESCALAS_EVALUACIONES` no tiene endpoint.** Los cuatro tramos están cableados en
-`src/lib/evaluaciones.ts` (`ESCALA`). Si se editan los textos o las descripciones en la
-base, **hay que tocar ese archivo**: el front no se entera solo. Si eso molesta, el
-patrón a copiar para agregar `GET listas/escalas` es cualquiera de las cinco listas.
+En SQL, la calificación de cada evaluación (agrupada con la misma clave que el front):
+
+```sql
+select e.*, es.calificacion
+from (select a.id_facilitador, a.id_institucion, a.fecha_desde, a.fecha_hasta,
+             lower(trim(a.evaluado_por)) as evaluado_por,
+             count(case when a.id_area is not null and a.id_evaluacion is not null
+                         and a.escala = 1 then 1 end) as marcadas
+        from evaluaciones_facilitadores a
+       group by a.id_facilitador, a.id_institucion, a.fecha_desde, a.fecha_hasta,
+                lower(trim(a.evaluado_por))) e
+left join escalas_evaluaciones es
+       on es.escala = least(e.marcadas, (select max(escala) from escalas_evaluaciones))
+```
+
+**`ESCALAS_EVALUACIONES` no tiene endpoint.** Los cinco tramos están cableados en
+`src/lib/evaluaciones.ts` (`ESCALA`). Si se editan los textos o los tramos en la base,
+**hay que tocar ese archivo**: el front no se entera solo. Pasó el 08/10/2026 —la tabla
+pasó de 12 a 32 niveles y la app siguió con los viejos: 27 marcadas salía "Excelente" en
+la app y "Muy Bueno" en APEX—. Si vuelve a pasar, la salida de fondo es agregar
+`GET listas/escalas` copiando cualquiera de las otras listas.
 
 La sección 1 del `.sql` **no recrea nada**: verifica que estén la PK, las 5 FKs, el
 CHECK de estrellas y la columna de la PK en la tabla `_JN`, y agrega solo lo que falte.
@@ -612,6 +932,35 @@ Si `curl` funciona pero el front no, el problema está en el CORS (producción),
   porque las llamadas llevan `Authorization`.
 - **`UPPER()` en usuario y token** en todos lados. No cambies el criterio a medias.
 
+## Pasar una página de APEX: el backend
+
+Las reglas generales están en el [`README`](../README.md) → *Pasar una página de APEX al
+sitio*. Del lado de Oracle, lo que ya se aprendió:
+
+- **Permisos:** `GET` pide solo sesión (otros combos usan la lista); `POST`/`PUT`/`DELETE`
+  piden insertar/actualizar/borrar en la página de su ruta, con
+  `PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta` y `puede`. Nunca un número de página fijo.
+- **"En uso" lo dice la base:** las FK de una columna que apuntan a la tabla (salvo las `_JN`),
+  contadas por id. La pantalla no ofrece borrar lo que está en uso.
+- **El id lo pone la tabla** (identity o trigger), como en APEX. Si da ORA-01400 en la PK, el
+  mayor más 1 con la tabla bloqueada.
+- **Las listas de valores no se adivinan:** se leen de `APEX_APPLICATION_LOV_ENTRIES` (ver
+  `facilitadores/opciones`); si la lista es dinámica, cae a los valores ya cargados.
+- **ORDS bindea solo campos escalares del body.** Una ficha grande o con listas viaja como un
+  solo campo de texto con el JSON (`datos` en `facilitadores.sql`) y se lee con `APEX_JSON`.
+- **`UNISTR` devuelve NVARCHAR2:** en un `UNION` con un texto común da ORA-12704. Va con
+  `TO_CHAR(UNISTR(...))`.
+- **Tildes:** en datos, `UNISTR` (el upload de SQL Scripts puede no respetar la codificación).
+  Una **columna** con tilde (`DENOMINACIÓN`) se busca en `USER_TAB_COLUMNS` y se usa con SQL
+  dinámico.
+- **Triggers de bitácora a mano:** la verificación previa los lista; uno que asigna `:NEW` en un
+  DELETE da ORA-04084 (como `SUCURSALES_JNTRG`).
+- **Datos viejos desalineados** (una ciudad con otro país que su departamento): la verificación
+  los cuenta e imprime el `UPDATE` que los alinea, sin correrlo sola.
+- **Fin de línea de las guías:** `README.md` y `backend/README.md` son LF; `src/routes/README.md`
+  es CRLF. Un script que las edite tiene que respetar el de cada una: si separa por el que no es,
+  no encuentra las líneas y pega el texto al final del archivo (pasó el 08/10/2026).
+
 ## Agregar un endpoint de negocio
 
 El patrón a copiar es `auth/me`. En cada handler protegido:
@@ -631,6 +980,21 @@ IF l_usuario IS NULL THEN
 END IF;
 ```
 
+Si el módulo está en el menú, después del token va el permiso de la página (08/10/2026). La
+página se busca por su ruta, no por un número escrito en el código:
+
+```sql
+IF PKG_ROLES_PAGINAS_ETHOS.puede(
+     l_usuario,
+     PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta('/evaluaciones'),
+     'I') = 'N' THEN  -- C consultar, I insertar, U actualizar, D borrar
+  p_error(403, 'Forbidden', 'No tenes permiso para cargar evaluaciones');
+  RETURN;
+END IF;
+```
+
+Hoy ningún módulo lo hace todavía: ver *Menú y permisos*.
+
 En `p_error`, `OWA_UTIL.STATUS_LINE` va **antes** de `MIME_HEADER`. Al revés la respuesta ya
 está abierta y el status se pierde (queda 200 con `success:false`). El frontend detecta la
 expiración por status **y** por mensaje; no quites esa red de seguridad.
@@ -641,3 +1005,9 @@ expiración por status **y** por mensaje; no quites esa red de seguridad.
   contar intentos fallidos por usuario/IP en una tabla y bloquear temporalmente.
 - **Token de 6 h fijas**, sin renovación deslizante. Al expirar, el usuario vuelve al login.
 - El script `.sql` **no se aplica solo**: si lo editas, hay que volver a correrlo a mano.
+- **Los módulos no controlan permisos en el backend.** El menú y las pantallas respetan
+  `ROLES_PAGINAS`, pero los endpoints de cada módulo solo piden sesión. Falta sumar
+  `PKG_ROLES_PAGINAS_ETHOS.puede` en cada paquete (ver *Agregar un endpoint de negocio*).
+- **Los tramos de la calificación están copiados en el sitio** (`ESCALA` en
+  `src/lib/evaluaciones.ts`). Si cambia `ESCALAS_EVALUACIONES`, hay que tocar ese archivo; la
+  salida de fondo es un `GET listas/escalas`.

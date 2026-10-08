@@ -14,19 +14,29 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as AgendasIndexRouteImport } from './routes/agendas.index'
 import { Route as AuditoriaIndexRouteImport } from './routes/auditoria.index'
+import { Route as BarriosIndexRouteImport } from './routes/barrios.index'
+import { Route as CiudadesIndexRouteImport } from './routes/ciudades.index'
 import { Route as ConsultaInventariosIndexRouteImport } from './routes/consulta-inventarios.index'
 import { Route as ConsultaTransferenciasIndexRouteImport } from './routes/consulta-transferencias.index'
+import { Route as DepartamentosIndexRouteImport } from './routes/departamentos.index'
 import { Route as EvaluacionesIndexRouteImport } from './routes/evaluaciones.index'
 import { Route as EvaluacionesIdRouteImport } from './routes/evaluaciones.$id'
 import { Route as EvaluacionesNuevaRouteImport } from './routes/evaluaciones.nueva'
+import { Route as FacilitadoresIndexRouteImport } from './routes/facilitadores.index'
+import { Route as FacilitadoresIdRouteImport } from './routes/facilitadores.$id'
 import { Route as IntervencionesIndexRouteImport } from './routes/intervenciones.index'
 import { Route as IntervencionesIdRouteImport } from './routes/intervenciones.$id'
 import { Route as IntervencionesNuevaRouteImport } from './routes/intervenciones.nueva'
 import { Route as InventarioIndexRouteImport } from './routes/inventario.index'
+import { Route as NacionalidadesIndexRouteImport } from './routes/nacionalidades.index'
+import { Route as PaginasIndexRouteImport } from './routes/paginas.index'
+import { Route as PaisesIndexRouteImport } from './routes/paises.index'
+import { Route as PermisosIndexRouteImport } from './routes/permisos.index'
 import { Route as SucursalesIndexRouteImport } from './routes/sucursales.index'
 import { Route as TransferenciasIndexRouteImport } from './routes/transferencias.index'
 import { Route as TransferenciasIdRouteImport } from './routes/transferencias.$id'
 import { Route as TransferenciasNuevaRouteImport } from './routes/transferencias.nueva'
+import { Route as UsuariosIndexRouteImport } from './routes/usuarios.index'
 import { Route as ApiOrdsSplatRouteImport } from './routes/api/ords.$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -54,6 +64,16 @@ const AuditoriaIndexRoute = AuditoriaIndexRouteImport.update({
   path: '/auditoria/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BarriosIndexRoute = BarriosIndexRouteImport.update({
+  id: '/barrios/',
+  path: '/barrios/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CiudadesIndexRoute = CiudadesIndexRouteImport.update({
+  id: '/ciudades/',
+  path: '/ciudades/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConsultaInventariosIndexRoute =
   ConsultaInventariosIndexRouteImport.update({
     id: '/consulta-inventarios/',
@@ -66,6 +86,11 @@ const ConsultaTransferenciasIndexRoute =
     path: '/consulta-transferencias/',
     getParentRoute: () => rootRouteImport,
   } as any)
+const DepartamentosIndexRoute = DepartamentosIndexRouteImport.update({
+  id: '/departamentos/',
+  path: '/departamentos/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EvaluacionesIndexRoute = EvaluacionesIndexRouteImport.update({
   id: '/evaluaciones/',
   path: '/evaluaciones/',
@@ -79,6 +104,16 @@ const EvaluacionesIdRoute = EvaluacionesIdRouteImport.update({
 const EvaluacionesNuevaRoute = EvaluacionesNuevaRouteImport.update({
   id: '/evaluaciones/nueva',
   path: '/evaluaciones/nueva',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FacilitadoresIndexRoute = FacilitadoresIndexRouteImport.update({
+  id: '/facilitadores/',
+  path: '/facilitadores/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FacilitadoresIdRoute = FacilitadoresIdRouteImport.update({
+  id: '/facilitadores/$id',
+  path: '/facilitadores/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IntervencionesIndexRoute = IntervencionesIndexRouteImport.update({
@@ -101,6 +136,26 @@ const InventarioIndexRoute = InventarioIndexRouteImport.update({
   path: '/inventario/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NacionalidadesIndexRoute = NacionalidadesIndexRouteImport.update({
+  id: '/nacionalidades/',
+  path: '/nacionalidades/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaginasIndexRoute = PaginasIndexRouteImport.update({
+  id: '/paginas/',
+  path: '/paginas/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaisesIndexRoute = PaisesIndexRouteImport.update({
+  id: '/paises/',
+  path: '/paises/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PermisosIndexRoute = PermisosIndexRouteImport.update({
+  id: '/permisos/',
+  path: '/permisos/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SucursalesIndexRoute = SucursalesIndexRouteImport.update({
   id: '/sucursales/',
   path: '/sucursales/',
@@ -121,6 +176,11 @@ const TransferenciasNuevaRoute = TransferenciasNuevaRouteImport.update({
   path: '/transferencias/nueva',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UsuariosIndexRoute = UsuariosIndexRouteImport.update({
+  id: '/usuarios/',
+  path: '/usuarios/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiOrdsSplatRoute = ApiOrdsSplatRouteImport.update({
   id: '/api/ords/$',
   path: '/api/ords/$',
@@ -133,19 +193,29 @@ export interface FileRoutesByFullPath {
   '/home': typeof HomeRoute
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
+  '/facilitadores/$id': typeof FacilitadoresIdRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas/': typeof AgendasIndexRoute
   '/auditoria/': typeof AuditoriaIndexRoute
+  '/barrios/': typeof BarriosIndexRoute
+  '/ciudades/': typeof CiudadesIndexRoute
   '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
+  '/departamentos/': typeof DepartamentosIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
+  '/facilitadores/': typeof FacilitadoresIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
+  '/nacionalidades/': typeof NacionalidadesIndexRoute
+  '/paginas/': typeof PaginasIndexRoute
+  '/paises/': typeof PaisesIndexRoute
+  '/permisos/': typeof PermisosIndexRoute
   '/sucursales/': typeof SucursalesIndexRoute
   '/transferencias/': typeof TransferenciasIndexRoute
+  '/usuarios/': typeof UsuariosIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRoutesByTo {
@@ -154,19 +224,29 @@ export interface FileRoutesByTo {
   '/home': typeof HomeRoute
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
+  '/facilitadores/$id': typeof FacilitadoresIdRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas': typeof AgendasIndexRoute
   '/auditoria': typeof AuditoriaIndexRoute
+  '/barrios': typeof BarriosIndexRoute
+  '/ciudades': typeof CiudadesIndexRoute
   '/consulta-inventarios': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias': typeof ConsultaTransferenciasIndexRoute
+  '/departamentos': typeof DepartamentosIndexRoute
   '/evaluaciones': typeof EvaluacionesIndexRoute
+  '/facilitadores': typeof FacilitadoresIndexRoute
   '/intervenciones': typeof IntervencionesIndexRoute
   '/inventario': typeof InventarioIndexRoute
+  '/nacionalidades': typeof NacionalidadesIndexRoute
+  '/paginas': typeof PaginasIndexRoute
+  '/paises': typeof PaisesIndexRoute
+  '/permisos': typeof PermisosIndexRoute
   '/sucursales': typeof SucursalesIndexRoute
   '/transferencias': typeof TransferenciasIndexRoute
+  '/usuarios': typeof UsuariosIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRoutesById {
@@ -176,19 +256,29 @@ export interface FileRoutesById {
   '/home': typeof HomeRoute
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
+  '/facilitadores/$id': typeof FacilitadoresIdRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas/': typeof AgendasIndexRoute
   '/auditoria/': typeof AuditoriaIndexRoute
+  '/barrios/': typeof BarriosIndexRoute
+  '/ciudades/': typeof CiudadesIndexRoute
   '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
+  '/departamentos/': typeof DepartamentosIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
+  '/facilitadores/': typeof FacilitadoresIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
+  '/nacionalidades/': typeof NacionalidadesIndexRoute
+  '/paginas/': typeof PaginasIndexRoute
+  '/paises/': typeof PaisesIndexRoute
+  '/permisos/': typeof PermisosIndexRoute
   '/sucursales/': typeof SucursalesIndexRoute
   '/transferencias/': typeof TransferenciasIndexRoute
+  '/usuarios/': typeof UsuariosIndexRoute
   '/api/ords/$': typeof ApiOrdsSplatRoute
 }
 export interface FileRouteTypes {
@@ -199,19 +289,29 @@ export interface FileRouteTypes {
     | '/home'
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
+    | '/facilitadores/$id'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
     | '/transferencias/$id'
     | '/transferencias/nueva'
     | '/agendas/'
     | '/auditoria/'
+    | '/barrios/'
+    | '/ciudades/'
     | '/consulta-inventarios/'
     | '/consulta-transferencias/'
+    | '/departamentos/'
     | '/evaluaciones/'
+    | '/facilitadores/'
     | '/intervenciones/'
     | '/inventario/'
+    | '/nacionalidades/'
+    | '/paginas/'
+    | '/paises/'
+    | '/permisos/'
     | '/sucursales/'
     | '/transferencias/'
+    | '/usuarios/'
     | '/api/ords/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -220,19 +320,29 @@ export interface FileRouteTypes {
     | '/home'
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
+    | '/facilitadores/$id'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
     | '/transferencias/$id'
     | '/transferencias/nueva'
     | '/agendas'
     | '/auditoria'
+    | '/barrios'
+    | '/ciudades'
     | '/consulta-inventarios'
     | '/consulta-transferencias'
+    | '/departamentos'
     | '/evaluaciones'
+    | '/facilitadores'
     | '/intervenciones'
     | '/inventario'
+    | '/nacionalidades'
+    | '/paginas'
+    | '/paises'
+    | '/permisos'
     | '/sucursales'
     | '/transferencias'
+    | '/usuarios'
     | '/api/ords/$'
   id:
     | '__root__'
@@ -241,19 +351,29 @@ export interface FileRouteTypes {
     | '/home'
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
+    | '/facilitadores/$id'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
     | '/transferencias/$id'
     | '/transferencias/nueva'
     | '/agendas/'
     | '/auditoria/'
+    | '/barrios/'
+    | '/ciudades/'
     | '/consulta-inventarios/'
     | '/consulta-transferencias/'
+    | '/departamentos/'
     | '/evaluaciones/'
+    | '/facilitadores/'
     | '/intervenciones/'
     | '/inventario/'
+    | '/nacionalidades/'
+    | '/paginas/'
+    | '/paises/'
+    | '/permisos/'
     | '/sucursales/'
     | '/transferencias/'
+    | '/usuarios/'
     | '/api/ords/$'
   fileRoutesById: FileRoutesById
 }
@@ -263,19 +383,29 @@ export interface RootRouteChildren {
   HomeRoute: typeof HomeRoute
   EvaluacionesIdRoute: typeof EvaluacionesIdRoute
   EvaluacionesNuevaRoute: typeof EvaluacionesNuevaRoute
+  FacilitadoresIdRoute: typeof FacilitadoresIdRoute
   IntervencionesIdRoute: typeof IntervencionesIdRoute
   IntervencionesNuevaRoute: typeof IntervencionesNuevaRoute
   TransferenciasIdRoute: typeof TransferenciasIdRoute
   TransferenciasNuevaRoute: typeof TransferenciasNuevaRoute
   AgendasIndexRoute: typeof AgendasIndexRoute
   AuditoriaIndexRoute: typeof AuditoriaIndexRoute
+  BarriosIndexRoute: typeof BarriosIndexRoute
+  CiudadesIndexRoute: typeof CiudadesIndexRoute
   ConsultaInventariosIndexRoute: typeof ConsultaInventariosIndexRoute
   ConsultaTransferenciasIndexRoute: typeof ConsultaTransferenciasIndexRoute
+  DepartamentosIndexRoute: typeof DepartamentosIndexRoute
   EvaluacionesIndexRoute: typeof EvaluacionesIndexRoute
+  FacilitadoresIndexRoute: typeof FacilitadoresIndexRoute
   IntervencionesIndexRoute: typeof IntervencionesIndexRoute
   InventarioIndexRoute: typeof InventarioIndexRoute
+  NacionalidadesIndexRoute: typeof NacionalidadesIndexRoute
+  PaginasIndexRoute: typeof PaginasIndexRoute
+  PaisesIndexRoute: typeof PaisesIndexRoute
+  PermisosIndexRoute: typeof PermisosIndexRoute
   SucursalesIndexRoute: typeof SucursalesIndexRoute
   TransferenciasIndexRoute: typeof TransferenciasIndexRoute
+  UsuariosIndexRoute: typeof UsuariosIndexRoute
   ApiOrdsSplatRoute: typeof ApiOrdsSplatRoute
 }
 
@@ -316,6 +446,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuditoriaIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/barrios/': {
+      id: '/barrios/'
+      path: '/barrios'
+      fullPath: '/barrios/'
+      preLoaderRoute: typeof BarriosIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ciudades/': {
+      id: '/ciudades/'
+      path: '/ciudades'
+      fullPath: '/ciudades/'
+      preLoaderRoute: typeof CiudadesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/consulta-inventarios/': {
       id: '/consulta-inventarios/'
       path: '/consulta-inventarios'
@@ -328,6 +472,13 @@ declare module '@tanstack/react-router' {
       path: '/consulta-transferencias'
       fullPath: '/consulta-transferencias/'
       preLoaderRoute: typeof ConsultaTransferenciasIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/departamentos/': {
+      id: '/departamentos/'
+      path: '/departamentos'
+      fullPath: '/departamentos/'
+      preLoaderRoute: typeof DepartamentosIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/evaluaciones/': {
@@ -349,6 +500,20 @@ declare module '@tanstack/react-router' {
       path: '/evaluaciones/nueva'
       fullPath: '/evaluaciones/nueva'
       preLoaderRoute: typeof EvaluacionesNuevaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/facilitadores/': {
+      id: '/facilitadores/'
+      path: '/facilitadores'
+      fullPath: '/facilitadores/'
+      preLoaderRoute: typeof FacilitadoresIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/facilitadores/$id': {
+      id: '/facilitadores/$id'
+      path: '/facilitadores/$id'
+      fullPath: '/facilitadores/$id'
+      preLoaderRoute: typeof FacilitadoresIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/intervenciones/': {
@@ -379,6 +544,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InventarioIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/nacionalidades/': {
+      id: '/nacionalidades/'
+      path: '/nacionalidades'
+      fullPath: '/nacionalidades/'
+      preLoaderRoute: typeof NacionalidadesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/paginas/': {
+      id: '/paginas/'
+      path: '/paginas'
+      fullPath: '/paginas/'
+      preLoaderRoute: typeof PaginasIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/paises/': {
+      id: '/paises/'
+      path: '/paises'
+      fullPath: '/paises/'
+      preLoaderRoute: typeof PaisesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/permisos/': {
+      id: '/permisos/'
+      path: '/permisos'
+      fullPath: '/permisos/'
+      preLoaderRoute: typeof PermisosIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sucursales/': {
       id: '/sucursales/'
       path: '/sucursales'
@@ -407,6 +600,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TransferenciasNuevaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/usuarios/': {
+      id: '/usuarios/'
+      path: '/usuarios'
+      fullPath: '/usuarios/'
+      preLoaderRoute: typeof UsuariosIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ords/$': {
       id: '/api/ords/$'
       path: '/api/ords/$'
@@ -423,19 +623,29 @@ const rootRouteChildren: RootRouteChildren = {
   HomeRoute: HomeRoute,
   EvaluacionesIdRoute: EvaluacionesIdRoute,
   EvaluacionesNuevaRoute: EvaluacionesNuevaRoute,
+  FacilitadoresIdRoute: FacilitadoresIdRoute,
   IntervencionesIdRoute: IntervencionesIdRoute,
   IntervencionesNuevaRoute: IntervencionesNuevaRoute,
   TransferenciasIdRoute: TransferenciasIdRoute,
   TransferenciasNuevaRoute: TransferenciasNuevaRoute,
   AgendasIndexRoute: AgendasIndexRoute,
   AuditoriaIndexRoute: AuditoriaIndexRoute,
+  BarriosIndexRoute: BarriosIndexRoute,
+  CiudadesIndexRoute: CiudadesIndexRoute,
   ConsultaInventariosIndexRoute: ConsultaInventariosIndexRoute,
   ConsultaTransferenciasIndexRoute: ConsultaTransferenciasIndexRoute,
+  DepartamentosIndexRoute: DepartamentosIndexRoute,
   EvaluacionesIndexRoute: EvaluacionesIndexRoute,
+  FacilitadoresIndexRoute: FacilitadoresIndexRoute,
   IntervencionesIndexRoute: IntervencionesIndexRoute,
   InventarioIndexRoute: InventarioIndexRoute,
+  NacionalidadesIndexRoute: NacionalidadesIndexRoute,
+  PaginasIndexRoute: PaginasIndexRoute,
+  PaisesIndexRoute: PaisesIndexRoute,
+  PermisosIndexRoute: PermisosIndexRoute,
   SucursalesIndexRoute: SucursalesIndexRoute,
   TransferenciasIndexRoute: TransferenciasIndexRoute,
+  UsuariosIndexRoute: UsuariosIndexRoute,
   ApiOrdsSplatRoute: ApiOrdsSplatRoute,
 }
 export const routeTree = rootRouteImport

@@ -1,10 +1,16 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { ChevronLeft, LogOut } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronDown, ChevronLeft, LogOut, type LucideIcon } from "lucide-react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { asset } from "@/lib/asset";
-import { esRutaActiva, iniciales, MENU, type ItemNav } from "@/lib/navegacion";
+import {
+  esRutaActiva,
+  iniciales,
+  useGruposAbiertos,
+  useMenu,
+  type ItemNav,
+} from "@/lib/navegacion";
 import { useSession } from "@/lib/session";
 
 /**
@@ -26,6 +32,8 @@ export function SidebarNav() {
   const { user, logout } = useSession();
   const navigate = useNavigate();
   const [colapsada, setColapsada] = useState(false);
+  const { menu } = useMenu();
+  const grupos = useGruposAbiertos(menu, pathname);
 
   /*
    * La preferencia se lee en un efecto y no en el estado inicial, por lo mismo
@@ -93,18 +101,8 @@ export function SidebarNav() {
 
       {/* Módulos */}
       <nav className="no-scrollbar flex-1 overflow-y-auto px-3 py-2">
-        {MENU.map((grupo, i) => (
-          <div key={grupo.titulo ?? `g${i}`} className={i === 0 ? "" : "mt-5"}>
-            {grupo.titulo &&
-              (colapsada ? (
-                // Colapsada no hay lugar para el texto, pero el grupo se sigue
-                // leyendo: una línea corta hace de separador.
-                <div className="mx-auto mb-2 h-px w-6 bg-white/15" />
-              ) : (
-                <p className="mb-1.5 px-3 text-[10.5px] font-semibold tracking-[0.14em] text-white/55 uppercase">
-                  {grupo.titulo}
-                </p>
-              ))}
+        {menu.map((grupo, i) => {
+          const lista = (
             <ul className="space-y-0.5">
               {grupo.items.map((item) => (
                 <li key={item.to}>
@@ -116,8 +114,33 @@ export function SidebarNav() {
                 </li>
               ))}
             </ul>
-          </div>
-        ))}
+          );
+          // Inicio no tiene encabezado: va siempre a la vista.
+          if (!grupo.titulo || !grupo.icon) {
+            return (
+              <div key={`g${i}`} className="mb-2">
+                {lista}
+              </div>
+            );
+          }
+          const titulo = grupo.titulo;
+          const abierto = grupos.abierto(titulo);
+          return (
+            <GrupoSidebar
+              key={titulo}
+              titulo={titulo}
+              icon={grupo.icon}
+              abierto={abierto}
+              // Cerrado con la pantalla actual adentro: el encabezado se
+              // resalta, para que se vea de dónde salió.
+              contieneActivo={grupo.items.some((it) => esRutaActiva(pathname, it.to))}
+              colapsada={colapsada}
+              onAlternar={() => grupos.alternar(titulo)}
+            >
+              {lista}
+            </GrupoSidebar>
+          );
+        })}
       </nav>
 
       {/* Usuario + salir */}
@@ -174,6 +197,77 @@ export function SidebarNav() {
         </button>
       </div>
     </aside>
+  );
+}
+
+/**
+ * Un menú principal plegable (08/10/2026).
+ *
+ * Expandida: ícono + título + chevron. Colapsada (76px) no hay lugar para el
+ * título, así que queda el ícono del grupo en un recuadro tenue —para que no se
+ * confunda con un módulo— y el título va en el `title`.
+ *
+ * El despliegue anima la altura con `grid-template-rows` 0fr → 1fr, que no
+ * necesita medir el contenido. Cerrado lleva `inert`: los links escondidos no
+ * reciben foco con Tab ni los anuncia el lector de pantalla.
+ */
+function GrupoSidebar({
+  titulo,
+  icon: Icon,
+  abierto,
+  contieneActivo,
+  colapsada,
+  onAlternar,
+  children,
+}: {
+  titulo: string;
+  icon: LucideIcon;
+  abierto: boolean;
+  contieneActivo: boolean;
+  colapsada: boolean;
+  onAlternar: () => void;
+  children: ReactNode;
+}) {
+  const id = useId();
+  const resaltado = contieneActivo && !abierto;
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={onAlternar}
+        aria-expanded={abierto}
+        aria-controls={id}
+        title={colapsada ? titulo : undefined}
+        className={
+          colapsada
+            ? `tap mx-auto flex h-9 w-12 items-center justify-center gap-0.5 rounded-xl bg-white/[0.06] hover:bg-white/12 ${
+                resaltado ? "text-white" : "text-white/55 hover:text-white/90"
+              }`
+            : `tap flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[11px] font-semibold tracking-[0.12em] uppercase hover:bg-white/8 ${
+                resaltado ? "text-white" : "text-white/55 hover:text-white/90"
+              }`
+        }
+      >
+        <Icon className={colapsada ? "size-4 shrink-0" : "size-4 shrink-0 text-white/70"} />
+        {!colapsada && <span className="min-w-0 flex-1 truncate text-left">{titulo}</span>}
+        <ChevronDown
+          className={`shrink-0 transition-transform duration-200 ${
+            colapsada ? "size-3" : "size-4"
+          } ${abierto ? "" : "-rotate-90"}`}
+        />
+      </button>
+      <div
+        id={id}
+        inert={!abierto}
+        className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+          abierto ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        }`}
+      >
+        <div className={`min-h-0 overflow-hidden ${colapsada ? "" : "pl-2"}`}>
+          <div className="pt-0.5 pb-2">{children}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 

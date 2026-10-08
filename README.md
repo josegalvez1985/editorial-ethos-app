@@ -65,30 +65,156 @@ Cómo llega el navegador a Oracle depende de dónde corre el sitio:
 | `npm run dev` (y el build SSR) | Por el proxy [`src/routes/api/ords.$.ts`](src/routes/api/ords.$.ts): el navegador va a `/api/ords/...`, mismo origen, sin CORS |
 | Producción (Pages) y el APK | **Directo a ORDS.** Pages es estático y el proxy no corre, así que depende del CORS abierto de ORDS |
 
-## Módulos
+## Módulos y menú
 
-El menú sale de `MENU`, en [`src/lib/navegacion.ts`](src/lib/navegacion.ts). Sumar un módulo es
-una entrada ahí y su archivo en `src/routes/`, y aparece solo en la sidebar, en la barra del
-celular y en la hoja "Menú".
+**El menú sale de la base** desde el 08/10/2026, salvo tres partes fijas que van en el código.
+Así queda, de arriba abajo:
 
-| Grupo | Módulo | Ruta | Backend |
+| Parte | Quién la ve | De dónde sale |
+| --- | --- | --- |
+| **Inicio** | cualquiera con sesión | fijo, en el código |
+| Núcleo de Datos, Operaciones, Reportes y Consultas, Administrador | quien tenga `PUEDE_CONSULTAR = 'S'` en `ROLES_PAGINAS` | la tabla `MENU_PAGINAS` |
+| **Roles de páginas**, al principio de **Administrador** | quien tenga su página (la 2) con `PUEDE_CONSULTAR = 'S'` en `ROLES_PAGINAS` | el ítem, en el código; el permiso, de la base |
+| **Crear páginas**, después de Roles de páginas | **solo JOSEG** | fija, en el código y en el paquete (`administra`) |
+| **Mi cuenta** | cualquiera con sesión | fijo, en el código |
+
+Hasta el 08/10/2026 las dos de administración tenían su propio grupo, **Administración**, justo
+después de Inicio. Se juntaron con **Administrador**, el de la base: eran dos menús con casi el
+mismo nombre y para lo mismo. El grupo se encuentra por nombre (sin importar tildes ni
+mayúsculas); si algún día la base no tiene ningún menú Administrador, el sitio lo crea igual para
+las dos fijas.
+
+- **`MENU_PAGINAS`** dice qué pantallas hay, en qué menú principal van y con qué nombre.
+- **`ROLES_PAGINAS`**, la misma tabla de permisos de APEX (`APP_ID` 40587), dice quién ve
+  cada una.
+- **Cada pantalla es una página** con su número, el mismo en las dos tablas. Una página nueva
+  toma **el último número de `MENU_PAGINAS` más 1**, lo pone el sistema y no cambia nunca.
+- **Crear una página no da permisos**, ni a quien la crea: se guarda solo en el menú y no le
+  aparece a nadie hasta que el administrador se los da en **Roles de páginas** (desde el
+  08/10/2026; antes quien la creaba quedaba con todos).
+- **Roles de páginas se controla como en APEX** (desde el 08/10/2026; antes era fija para JOSEG y
+  EDGARO): es la página 2 y la ve quien la tiene habilitada en `ROLES_PAGINAS`. Cada botón
+  sigue su bandera —insertar, actualizar, borrar—, y el backend lo controla igual. El menú no
+  la repite con el nombre de APEX (Roles de Usuarios): la muestra como Roles de páginas.
+- **Crear páginas no depende de ningún rol**: quién la ve está en el paquete.
+
+| Pantalla | Ruta | Quién | Para qué |
+| --- | --- | --- | --- |
+| **Roles de páginas** | `/permisos` | quien tenga la página 2 en `ROLES_PAGINAS` | Dar y quitar permisos a cada usuario (`ROLES_PAGINAS`), y copiarle los de otro. Es la página 2 de APEX; sus modales 3 (Crear Rol) y 19 (Copiar Roles) son diálogos de esta misma pantalla, con los permisos de la 2 |
+| **Crear páginas** | `/paginas` | solo JOSEG | Alta, modificación y baja de las páginas del menú (`MENU_PAGINAS`) |
+
+**Si nadie tiene la página 2 habilitada, nadie puede dar permisos desde el sitio**: hay que
+cargarlo en APEX. `roles_paginas.sql` lista al final quién la tiene y avisa si no hay nadie.
+Cambiar quién usa Crear páginas es cambiar la función `administra` en
+[`backend/roles_paginas.sql`](backend/roles_paginas.sql) y volver a correr el script.
+
+### Sumar un módulo
+
+1. Su pantalla en `src/routes/`.
+2. Su descripción en `PANTALLAS`, en [`src/lib/navegacion.ts`](src/lib/navegacion.ts). **El
+   ícono no se toca**: ya está en `ICONOS_MENU` y la pantalla usa ese mismo (ver *Cómo se ve el
+   menú*).
+3. Su fila en **Administrador → Crear páginas**: menú principal, nombre y ruta. El número lo
+   pone el sistema (el último del menú más 1) y la página queda **sin permisos**.
+4. Los permisos en **Administrador → Roles de páginas**, también los de quien la creó. Al
+   crearla, el aviso trae un botón **Dar permisos** que lleva ahí.
+
+### Pasar una página de APEX al sitio
+
+Las reglas acordadas desde el 08/10/2026. Valen para cada página que se recrea:
+
+1. **Un script y un paquete por tabla** (`backend/<tabla>.sql`, `PKG_<TABLA>_ETHOS`), con su
+   `src/lib/<tabla>.ts`. Nada de backends genéricos para varias tablas.
+2. **Los modales de APEX no son páginas ni entradas del menú.** Son diálogos o secciones de la
+   pantalla principal y usan los permisos de esa página. Ejemplos: Roles de páginas (2, 3 y
+   19), Usuarios (67 y 68), Facilitadores (14, 15 y 63 a 66).
+3. **La página ya existe en `MENU_PAGINAS`** con su número de APEX y su ruta (ver
+   [`backend/menu_paginas.sql`](backend/menu_paginas.sql)). No se crea otra: la pantalla usa esa
+   ruta, y los permisos que ya tenía en `ROLES_PAGINAS` valen al publicarla.
+4. **El ícono no se toca.** Ya está en `ICONOS_MENU`; la pantalla usa ese mismo. Solo se agrega
+   la descripción en `PANTALLAS` (ver *Cómo se ve el menú*).
+5. **Diseño moderno, no copia de APEX:**
+   - listados en tarjetas, con buscador sin tildes ni mayúsculas;
+   - filtros en pastillas que **bajan de línea** (`flex-wrap`), nunca una fila con scroll
+     horizontal;
+   - tablas de un nombre (Países, Nacionalidades) o con un "padre" (Departamentos, Ciudades,
+     Barrios): `<CatalogoNombre>`, alta y edición en un diálogo;
+   - fichas grandes (Facilitadores): una pantalla con secciones, las listas hijas adentro y un
+     solo **Guardar** fijo al pie;
+   - las listas de valores cortas como pastillas de un toque; campos y botones `rounded-xl`;
+   - botones según los permisos de la página: sin insertar no hay "Nuevo", y así.
+6. **Ubicación en cascada:** se elige el nivel más bajo (ciudad, barrio) y el resto se deriva en
+   el backend, para que país, departamento y ciudad no se contradigan.
+7. **Documentar al terminar:** una fila en *Los módulos de hoy*, una en la tabla de scripts de
+   [`backend/README.md`](backend/README.md) y una sección ahí con sus endpoints y decisiones.
+   Las trampas de Oracle y ORDS que ya aparecieron están en
+   [`backend/README.md`](backend/README.md) → *Pasar una página de APEX: el backend*.
+
+### Cómo se ve el menú
+
+Desde el 08/10/2026, en la sidebar de escritorio y en la hoja **Menú** del celular:
+
+- **Cada página y cada menú principal tiene un ícono distinto.** Los de las páginas, las del sitio
+  y las de APEX que todavía no tiene, están en una sola lista, `ICONOS_MENU`; los de los menús
+  principales, en `ICONOS_GRUPO` (todo en
+  [`src/lib/navegacion.ts`](src/lib/navegacion.ts)). Una página o un menú nuevos, sin ícono
+  asignado, reciben uno por palabra clave del nombre o uno libre de reserva: nunca el de otra.
+- **Los menús principales se pliegan.** Arrancan cerrados, salvo el de la pantalla actual, que
+  se abre solo al navegar. Lo abierto se recuerda en `localStorage` (`ethos-menu-abiertos`) y
+  es lo mismo en la sidebar y en el celular. Inicio va siempre a la vista.
+- Con la sidebar angosta (76px) cada menú principal se ve como su ícono sobre un recuadro
+  tenue, y se despliega igual.
+- Cuando una página de APEX se programa en el sitio, solo se suma su descripción en
+  `PANTALLAS`, que es también la lista de rutas que existen: Crear páginas avisa con ella si
+  una ruta no la tiene el sitio.
+
+> **Los íconos del menú NO se cambian** (pedido el 08/10/2026). `ICONOS_MENU` **no se edita al
+> programar una pantalla**: la pantalla usa el ícono que ya tiene ahí (por ejemplo, el `icon` de `<CatalogoNombre>`). No se "mejora" ni se reemplaza por otro
+> que parezca más acorde: los usuarios reconocen cada página por su ícono. Cambiar uno es
+> solo a pedido explícito.
+
+**El menú no es la seguridad.** Ocultar un módulo no impide llamar a su endpoint con el token.
+Hoy solo los endpoints de menú, permisos y Usuarios controlan `ROLES_PAGINAS`; los demás piden solo
+sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
+
+### Los módulos de hoy
+
+| Menú principal | Módulo | Ruta | Backend |
 | --- | --- | --- | --- |
 | — | **Inicio**: gráficos de puntualidad, ubicación y actividad del mes | `/home` | `intervenciones.sql` |
-| Núcleo de datos | **Sucursales**: alta, modificación y baja (solo si nada la usa) | `/sucursales` | `sucursales.sql` |
-| Operación | **Evaluaciones** de facilitadores | `/evaluaciones` | `evaluaciones_facilitadores.sql` |
-| Operación | **Intervenciones**: carga manual de las que quedaron sin registrar | `/intervenciones` | `intervenciones_crud.sql` |
-| Operación | **Inventario de manuales**: conteo físico por manual y sucursal; al cerrar, actualiza las existencias. El conteo en curso se descarta y el último cierre se revierte | `/inventario` | `inventarios.sql` |
-| Operación | **Transferencias de manuales**: envío entre sucursales (cabecera y detalle); al recibir, mueve las existencias. Una recibida se revierte (vuelve a pendiente) o se elimina, devolviendo las existencias | `/transferencias` | `transferencias.sql` |
-| Reportes | **Agendas**: el horario semanal | `/agendas` | `agendas.sql` |
-| Reportes | **Consulta de inventarios**: conteos pendientes y cerrados por sucursal, gráfico comparativo entre inventarios y PDF con el logo | `/consulta-inventarios` | `inventarios.sql` |
-| Reportes | **Consulta de transferencias**: envíos entre sucursales por ruta y por manual, con el detalle de cada una y PDF | `/consulta-transferencias` | `transferencias.sql` |
+| Administrador | **Roles de páginas** (página 2 + modales 3 y 19) | `/permisos` | `roles_paginas.sql` |
+| Administrador (fija) | **Crear páginas** | `/paginas` | `menu_paginas.sql`, `roles_paginas.sql` |
+| Núcleo de Datos | **Países**: alta, modificación y baja (solo si nada lo usa). Páginas 4 y 5 (modal) de APEX | `/paises` | `paises.sql` |
+| Núcleo de Datos | **Nacionalidades**: alta, modificación y baja (solo si nada la usa). Páginas 12 y 13 (modal) de APEX | `/nacionalidades` | `nacionalidades.sql` |
+| Núcleo de Datos | **Facilitadores**: listado con filtro activos/inactivos y la ficha completa (personales, ubicación, iglesia, herramientas, banco, nominado por, referencias, estudios y situación laboral) en una pantalla con un solo Guardar. Páginas 14, 15 y 63 a 66 (modales) de APEX | `/facilitadores` | `facilitadores.sql` |
+| Núcleo de Datos | **Departamentos**: los de cada país, filtrados y agrupados por país; alta, modificación y baja (solo si nada lo usa). Páginas 6 y 7 (modal) de APEX | `/departamentos` | `departamentos.sql` |
+| Núcleo de Datos | **Ciudades**: las de cada departamento, filtradas y agrupadas por departamento; el país sale del departamento. Alta, modificación y baja (solo si nada la usa). Páginas 8 y 9 (modal) de APEX | `/ciudades` | `ciudades.sql` |
+| Núcleo de Datos | **Barrios**: los de cada ciudad, filtrados y agrupados por ciudad; departamento y país salen de la ciudad. Alta, modificación y baja (solo si nada lo usa). Páginas 10 y 11 (modal) de APEX | `/barrios` | `barrios.sql` |
+| Núcleo de Datos | **Sucursales**: alta, modificación y baja (solo si nada la usa) | `/sucursales` | `sucursales.sql` |
+| Operaciones | **Evaluaciones** de facilitadores, con su calificación y su cierre | `/evaluaciones` | `evaluaciones_facilitadores.sql` |
+| Operaciones | **Intervenciones**: carga manual de las que quedaron sin registrar | `/intervenciones` | `intervenciones_crud.sql` |
+| Operaciones | **Inventario de manuales**: conteo físico por manual y sucursal; al cerrar, actualiza las existencias. El conteo en curso se descarta y el último cierre se revierte | `/inventario` | `inventarios.sql` |
+| Operaciones | **Transferencias de manuales**: envío entre sucursales (cabecera y detalle); al recibir, mueve las existencias. Una recibida se revierte (vuelve a pendiente) o se elimina, devolviendo las existencias | `/transferencias` | `transferencias.sql` |
+| Reportes y Consultas | **Agendas**: el horario semanal | `/agendas` | `agendas.sql` |
+| Reportes y Consultas | **Consulta de inventarios**: conteos pendientes y cerrados por sucursal, gráfico comparativo entre inventarios y PDF con el logo | `/consulta-inventarios` | `inventarios.sql` |
+| Reportes y Consultas | **Consulta de transferencias**: envíos entre sucursales por ruta y por manual, con el detalle de cada una y PDF | `/consulta-transferencias` | `transferencias.sql` |
+| Administrador | **Usuarios**: las cuentas del workspace, con su estado y cuántas páginas tienen; activar y bloquear. Páginas 67 y 68 (modal) de APEX | `/usuarios` | `usuarios.sql`, `auth.sql` |
+| Administrador | **Auditoría**: qué tablas tienen bitácora y quién cambió qué | `/auditoria` | `auditoria.sql` |
+| Sistema | **Mi cuenta**: tema, color y cierre de sesión | `/account` | — |
+
+Los menús principales y los nombres de esta tabla son los que cargó `menu_paginas.sql`. Si se
+cambian desde **Crear páginas**, manda la base.
+
+**Calificación de una evaluación:** no se guarda. Sale de contar los ítems marcados y buscar
+ese número en `ESCALAS_EVALUACIONES` (0–15 Deficiente, 16–20 Aceptable, 21–24 Bueno, 25–28 Muy
+Bueno, 29–32 Excelente). Los tramos están copiados en `src/lib/evaluaciones.ts` (`ESCALA`): **si
+se cambia la tabla, hay que tocar ese archivo**. Ver [`backend/README.md`](backend/README.md) →
+*`ESCALA` y la calificación*.
 
 Los dos PDF comparten encabezado con logo, pie, tarjetas y estilo de tabla en
 [`src/lib/pdf-base.ts`](src/lib/pdf-base.ts): un reporte nuevo arma solo su cuerpo. jsPDF se
 descarga recién al tocar el botón, y el PDF se abre en una pestaña nueva (en el APK puede no
 abrirse: la WebView no abre pestañas).
-| Administrador | **Auditoría**: qué tablas tienen bitácora y quién cambió qué | `/auditoria` | `auditoria.sql` |
-| Sistema | **Mi cuenta**: tema, color y cierre de sesión | `/account` | — |
 
 En **Auditoría**, la vista *Movimientos* tiene un buscador que mira en todos los campos de
 cada tabla, y tocar un movimiento abre la historia del registro con **todos sus campos** y los
@@ -124,6 +250,11 @@ del 24/09/2026 y se arregló el 06/10/2026.
 En escritorio, el botón **Guardar** del formulario de evaluación es *sticky* dentro del
 contenido y no *fixed*: fixed ocupaba toda la ventana y tapaba el pie de la sidebar.
 
+**Un botón flotante (`fixed`) tapa el final de la lista** si la lista no le deja lugar. El de
+**Nueva** en Evaluaciones tapaba "Cargar más" hasta el 08/10/2026: la lista ahora lleva
+`pb-16 lg:pb-32`, la altura que ocupa el botón. Si se mueve o se agranda, hay que revisar esos
+números ([`evaluaciones.index.tsx`](src/routes/evaluaciones.index.tsx)).
+
 ## Marca y temas
 
 Los colores salen del logo (`public/logo.png`), **muestreados del PNG**, no estimados:
@@ -154,6 +285,22 @@ son preferencias de interfaz, no datos de sesión.
 
 **Una paleta solo cambia COLOR.** Ninguna toca `--font-*` ni `--radius`: la tipografía es
 la misma en las once.
+
+### Redondeo
+
+Desde el 08/10/2026 `--radius` es **10px** (era 16px) y la escala sale de ahí, en
+[`src/styles.css`](src/styles.css):
+
+| Clase | Radio | Dónde |
+| --- | --- | --- |
+| `rounded-xl` | 12px | campos, selectores, buscadores y botones |
+| `rounded-2xl` | 16px | tarjetas, diálogos y el botón flotante |
+| `rounded-3xl` | 24px | la hoja inferior del celular |
+| `rounded-lg` / `md` / `sm` | 10 / 8 / 6px | detalles chicos |
+| `rounded-full` | redondo | **solo** pastillas de filtro, insignias, avatares y botones de ícono |
+
+Con 16px, un campo de 48px de alto quedaba casi como una píldora (20px de radio). Un campo o un
+botón nuevo va con `rounded-xl`, **nunca `rounded-full`**: eso es para pastillas y círculos.
 
 ### Dos trampas al tocar los colores
 
@@ -192,7 +339,8 @@ Vale igual en la web y en el APK, que es el mismo sitio:
 - **La caché de consultas se guarda** en `localStorage` (`ethos-query-cache`, ver
   [`src/lib/query-persist.ts`](src/lib/query-persist.ts)) y se borra al cerrar sesión. **Las de
   Auditoría no**: llevan `meta: { persistir: false }`, porque la bitácora trae datos de todas
-  las tablas.
+  las tablas. **Tampoco el menú ni los permisos** (`META_PERMISOS`): un permiso quitado tiene
+  que dejar de verse en el próximo arranque, no cuando venza la caché.
 - **No hay biometría.** Se implementó en el APK y se quitó el 31/07/2026; ver
   [`APK.md`](APK.md) → *No hay acceso biométrico*. La app Expo de `mobile/` la tenía, pero ya
   no se compila.

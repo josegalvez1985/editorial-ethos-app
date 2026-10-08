@@ -1,10 +1,12 @@
-import { useNavigate } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Loader2, RotateCcw, ShieldOff } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 
 import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
 import { SidebarNav } from "@/components/sidebar-nav";
+import { RUTAS_LIBRES } from "@/lib/navegacion";
+import { esRutaActiva, usePermisos } from "@/lib/permisos";
 import { useSession } from "@/lib/session";
 
 /**
@@ -27,6 +29,22 @@ import { useSession } from "@/lib/session";
  * También hace de **guarda de sesión** para todo lo que envuelve: sin sesión, al
  * login. Es el único lugar por donde pasan las pantallas protegidas, así que la
  * guarda vive acá y no repetida en cada ruta.
+ *
+ * Y, por lo mismo, de **guarda de permisos** (08/10/2026): si la ruta es de una
+ * página de `MENU_PAGINAS` y el usuario no la puede consultar en
+ * `ROLES_PAGINAS`, en lugar del contenido sale "Sin acceso". El menú ya no la
+ * ofrece, pero se llega igual escribiendo la URL o desde un favorito.
+ *
+ * | Ruta | Mientras carga el menú | Si el menú falla | Cargado |
+ * | --- | --- | --- | --- |
+ * | Inicio, Mi cuenta | se ve | se ve | se ve |
+ * | De una página | espera | error + reintentar | según `PUEDE_CONSULTAR` |
+ * | Roles de páginas | espera | error + reintentar | según su fila en `ROLES_PAGINAS`, como las demás |
+ * | Crear páginas | espera | error + reintentar | solo su administrador fijo (`administra`) |
+ * | Ninguna página la controla | espera | error + reintentar | se ve |
+ *
+ * Mientras carga se espera en todas menos las libres porque todavía no se sabe
+ * cuáles están controladas.
  */
 export function AppShell({
   children,
@@ -44,6 +62,19 @@ export function AppShell({
 }) {
   const { sesion, ready } = useSession();
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { paginaDeRuta, puedeRuta, cargando, error, reintentar } = usePermisos();
+  const libre = RUTAS_LIBRES.some((r) => esRutaActiva(pathname, r));
+  const pagina = paginaDeRuta(pathname);
+  const estado: "ok" | "cargando" | "error" | "sin-acceso" = libre
+    ? "ok"
+    : cargando
+      ? "cargando"
+      : error
+        ? "error"
+        : puedeRuta(pathname)
+          ? "ok"
+          : "sin-acceso";
 
   // `ready` y no solo `sesion`: al abrir la app el provider todavía está
   // revalidando el token guardado contra el backend, y disparar acá mandaría al
@@ -87,7 +118,46 @@ export function AppShell({
             ya trae es el único responsable del margen, así no se duplica el aire
             a los costados.
           */}
-          <div className="lg:pt-2">{children}</div>
+          <div className="lg:pt-2">
+            {estado === "ok" ? (
+              children
+            ) : estado === "cargando" ? (
+              <div className="grid place-items-center py-20">
+                <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                <span className="sr-only">Verificando permisos…</span>
+              </div>
+            ) : estado === "error" ? (
+              <div className="px-5 py-20 text-center">
+                <p className="font-display text-xl font-bold">No se pudo cargar el menú</p>
+                <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+                  {error instanceof Error ? error.message : "Sin él no se sabe qué podés ver."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => reintentar()}
+                  className="tap mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-muted px-5 text-sm font-semibold"
+                >
+                  <RotateCcw className="size-4" />
+                  Reintentar
+                </button>
+              </div>
+            ) : (
+              <div className="px-5 py-20 text-center">
+                <ShieldOff className="mx-auto size-10 text-muted-foreground/40" />
+                <p className="font-display mt-3 text-xl font-bold">Sin acceso</p>
+                <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
+                  Tu usuario no tiene permiso para {pagina?.nombre ?? "esta pantalla"}. Pedíselo a
+                  quien administra los permisos.
+                </p>
+                <Link
+                  to="/home"
+                  className="tap mt-4 inline-flex h-11 items-center rounded-xl bg-muted px-5 text-sm font-semibold"
+                >
+                  Ir al inicio
+                </Link>
+              </div>
+            )}
+          </div>
         </main>
 
         {nav ? <BottomNav /> : null}
