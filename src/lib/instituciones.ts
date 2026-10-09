@@ -32,6 +32,8 @@ export type InstitucionFila = {
   departamento: string;
   idCiudad: number | null;
   ciudad: string;
+  /** Para filtrar por barrio (Postulaciones, página 20). */
+  idBarrio: number | null;
   barrio: string;
   zona: string;
   direccion: string;
@@ -115,6 +117,7 @@ export async function listarInstituciones(): Promise<ListaInstituciones> {
       idDepartamento: n(x.id_departamento),
       departamento: s(x.departamento),
       idCiudad: n(x.id_ciudad),
+      idBarrio: n(x.id_barrio),
       ciudad: s(x.ciudad),
       barrio: s(x.barrio),
       zona: s(x.zona),

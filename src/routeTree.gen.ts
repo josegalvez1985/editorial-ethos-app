@@ -44,11 +44,13 @@ import { Route as IntervencionesIdRouteImport } from './routes/intervenciones.$i
 import { Route as IntervencionesNuevaRouteImport } from './routes/intervenciones.nueva'
 import { Route as InventarioIndexRouteImport } from './routes/inventario.index'
 import { Route as ItemsEvaluacionIndexRouteImport } from './routes/items-evaluacion.index'
+import { Route as MapaIntervencionesIndexRouteImport } from './routes/mapa-intervenciones.index'
 import { Route as MateriasIndexRouteImport } from './routes/materias.index'
 import { Route as NacionalidadesIndexRouteImport } from './routes/nacionalidades.index'
 import { Route as PaginasIndexRouteImport } from './routes/paginas.index'
 import { Route as PaisesIndexRouteImport } from './routes/paises.index'
 import { Route as PermisosIndexRouteImport } from './routes/permisos.index'
+import { Route as PostulacionesIndexRouteImport } from './routes/postulaciones.index'
 import { Route as SucursalesIndexRouteImport } from './routes/sucursales.index'
 import { Route as TransferenciasIndexRouteImport } from './routes/transferencias.index'
 import { Route as TransferenciasIdRouteImport } from './routes/transferencias.$id'
@@ -236,6 +238,11 @@ const ItemsEvaluacionIndexRoute = ItemsEvaluacionIndexRouteImport.update({
   path: '/items-evaluacion/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MapaIntervencionesIndexRoute = MapaIntervencionesIndexRouteImport.update({
+  id: '/mapa-intervenciones/',
+  path: '/mapa-intervenciones/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MateriasIndexRoute = MateriasIndexRouteImport.update({
   id: '/materias/',
   path: '/materias/',
@@ -259,6 +266,11 @@ const PaisesIndexRoute = PaisesIndexRouteImport.update({
 const PermisosIndexRoute = PermisosIndexRouteImport.update({
   id: '/permisos/',
   path: '/permisos/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PostulacionesIndexRoute = PostulacionesIndexRouteImport.update({
+  id: '/postulaciones/',
+  path: '/postulaciones/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SucursalesIndexRoute = SucursalesIndexRouteImport.update({
@@ -330,11 +342,13 @@ export interface FileRoutesByFullPath {
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
   '/items-evaluacion/': typeof ItemsEvaluacionIndexRoute
+  '/mapa-intervenciones/': typeof MapaIntervencionesIndexRoute
   '/materias/': typeof MateriasIndexRoute
   '/nacionalidades/': typeof NacionalidadesIndexRoute
   '/paginas/': typeof PaginasIndexRoute
   '/paises/': typeof PaisesIndexRoute
   '/permisos/': typeof PermisosIndexRoute
+  '/postulaciones/': typeof PostulacionesIndexRoute
   '/sucursales/': typeof SucursalesIndexRoute
   '/transferencias/': typeof TransferenciasIndexRoute
   '/usuarios/': typeof UsuariosIndexRoute
@@ -378,11 +392,13 @@ export interface FileRoutesByTo {
   '/intervenciones': typeof IntervencionesIndexRoute
   '/inventario': typeof InventarioIndexRoute
   '/items-evaluacion': typeof ItemsEvaluacionIndexRoute
+  '/mapa-intervenciones': typeof MapaIntervencionesIndexRoute
   '/materias': typeof MateriasIndexRoute
   '/nacionalidades': typeof NacionalidadesIndexRoute
   '/paginas': typeof PaginasIndexRoute
   '/paises': typeof PaisesIndexRoute
   '/permisos': typeof PermisosIndexRoute
+  '/postulaciones': typeof PostulacionesIndexRoute
   '/sucursales': typeof SucursalesIndexRoute
   '/transferencias': typeof TransferenciasIndexRoute
   '/usuarios': typeof UsuariosIndexRoute
@@ -427,11 +443,13 @@ export interface FileRoutesById {
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
   '/items-evaluacion/': typeof ItemsEvaluacionIndexRoute
+  '/mapa-intervenciones/': typeof MapaIntervencionesIndexRoute
   '/materias/': typeof MateriasIndexRoute
   '/nacionalidades/': typeof NacionalidadesIndexRoute
   '/paginas/': typeof PaginasIndexRoute
   '/paises/': typeof PaisesIndexRoute
   '/permisos/': typeof PermisosIndexRoute
+  '/postulaciones/': typeof PostulacionesIndexRoute
   '/sucursales/': typeof SucursalesIndexRoute
   '/transferencias/': typeof TransferenciasIndexRoute
   '/usuarios/': typeof UsuariosIndexRoute
@@ -477,11 +495,13 @@ export interface FileRouteTypes {
     | '/intervenciones/'
     | '/inventario/'
     | '/items-evaluacion/'
+    | '/mapa-intervenciones/'
     | '/materias/'
     | '/nacionalidades/'
     | '/paginas/'
     | '/paises/'
     | '/permisos/'
+    | '/postulaciones/'
     | '/sucursales/'
     | '/transferencias/'
     | '/usuarios/'
@@ -525,11 +545,13 @@ export interface FileRouteTypes {
     | '/intervenciones'
     | '/inventario'
     | '/items-evaluacion'
+    | '/mapa-intervenciones'
     | '/materias'
     | '/nacionalidades'
     | '/paginas'
     | '/paises'
     | '/permisos'
+    | '/postulaciones'
     | '/sucursales'
     | '/transferencias'
     | '/usuarios'
@@ -573,11 +595,13 @@ export interface FileRouteTypes {
     | '/intervenciones/'
     | '/inventario/'
     | '/items-evaluacion/'
+    | '/mapa-intervenciones/'
     | '/materias/'
     | '/nacionalidades/'
     | '/paginas/'
     | '/paises/'
     | '/permisos/'
+    | '/postulaciones/'
     | '/sucursales/'
     | '/transferencias/'
     | '/usuarios/'
@@ -622,11 +646,13 @@ export interface RootRouteChildren {
   IntervencionesIndexRoute: typeof IntervencionesIndexRoute
   InventarioIndexRoute: typeof InventarioIndexRoute
   ItemsEvaluacionIndexRoute: typeof ItemsEvaluacionIndexRoute
+  MapaIntervencionesIndexRoute: typeof MapaIntervencionesIndexRoute
   MateriasIndexRoute: typeof MateriasIndexRoute
   NacionalidadesIndexRoute: typeof NacionalidadesIndexRoute
   PaginasIndexRoute: typeof PaginasIndexRoute
   PaisesIndexRoute: typeof PaisesIndexRoute
   PermisosIndexRoute: typeof PermisosIndexRoute
+  PostulacionesIndexRoute: typeof PostulacionesIndexRoute
   SucursalesIndexRoute: typeof SucursalesIndexRoute
   TransferenciasIndexRoute: typeof TransferenciasIndexRoute
   UsuariosIndexRoute: typeof UsuariosIndexRoute
@@ -880,6 +906,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ItemsEvaluacionIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mapa-intervenciones/': {
+      id: '/mapa-intervenciones/'
+      path: '/mapa-intervenciones'
+      fullPath: '/mapa-intervenciones/'
+      preLoaderRoute: typeof MapaIntervencionesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/materias/': {
       id: '/materias/'
       path: '/materias'
@@ -913,6 +946,13 @@ declare module '@tanstack/react-router' {
       path: '/permisos'
       fullPath: '/permisos/'
       preLoaderRoute: typeof PermisosIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/postulaciones/': {
+      id: '/postulaciones/'
+      path: '/postulaciones'
+      fullPath: '/postulaciones/'
+      preLoaderRoute: typeof PostulacionesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sucursales/': {
@@ -998,11 +1038,13 @@ const rootRouteChildren: RootRouteChildren = {
   IntervencionesIndexRoute: IntervencionesIndexRoute,
   InventarioIndexRoute: InventarioIndexRoute,
   ItemsEvaluacionIndexRoute: ItemsEvaluacionIndexRoute,
+  MapaIntervencionesIndexRoute: MapaIntervencionesIndexRoute,
   MateriasIndexRoute: MateriasIndexRoute,
   NacionalidadesIndexRoute: NacionalidadesIndexRoute,
   PaginasIndexRoute: PaginasIndexRoute,
   PaisesIndexRoute: PaisesIndexRoute,
   PermisosIndexRoute: PermisosIndexRoute,
+  PostulacionesIndexRoute: PostulacionesIndexRoute,
   SucursalesIndexRoute: SucursalesIndexRoute,
   TransferenciasIndexRoute: TransferenciasIndexRoute,
   UsuariosIndexRoute: UsuariosIndexRoute,

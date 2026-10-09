@@ -262,6 +262,8 @@ export const PANTALLAS: Record<string, { descripcion: string }> = {
   "/areas-evaluacion": { descripcion: "Las áreas de la evaluación de facilitadores" },
   "/items-evaluacion": { descripcion: "Los ítems que se califican, por área" },
   "/escalas-evaluacion": { descripcion: "Qué calificación sale según los ítems marcados" },
+  "/postulaciones": { descripcion: "Las postulaciones de todas las instituciones, por año" },
+  "/mapa-intervenciones": { descripcion: "Dónde marcó cada facilitador, día por día" },
   "/coordinadores": {
     descripcion: "Los coordinadores y en qué institución coordina cada uno",
   },
@@ -490,8 +492,10 @@ const ICONOS_CONOCIDOS: ReadonlySet<LucideIcon> = new Set([
  * - **Arrancan cerrados**, salvo el de la pantalla actual, que se abre solo al
  *   navegar (si no, el ítem activo quedaría escondido). Después se puede
  *   cerrar a mano.
- * - Se guarda en `localStorage`, como el tema: es preferencia de interfaz y
- *   sobrevive al logout.
+ * - **Cada login los cierra todos** (09/10/2026, a pedido): el usuario entra
+ *   con el menú plegado y abre el que quiere. Ver {@link cerrarGruposMenu}.
+ * - Dentro de la sesión se guarda en `localStorage`: recargar la página no los
+ *   vuelve a cerrar.
  * - Es solo de la sidebar de escritorio. La hoja "Menú" del celular tiene el
  *   suyo y arranca siempre con todo plegado (09/10/2026, a pedido): ver
  *   `bottom-nav.tsx`.
@@ -526,6 +530,15 @@ function escribirAbiertos(nuevos: ReadonlySet<string>) {
     /* se pierde la preferencia, no la navegación */
   }
   oyentes.forEach((o) => o());
+}
+
+/**
+ * Cierra todos los menús principales de la sidebar. Lo llama el login
+ * (`routes/index.tsx`) y no `lib/session.tsx`, para que session no importe este
+ * archivo: navegacion → permisos → session ya va en el otro sentido.
+ */
+export function cerrarGruposMenu() {
+  escribirAbiertos(NINGUNO);
 }
 
 function suscribir(oyente: () => void) {

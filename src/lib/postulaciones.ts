@@ -223,22 +223,105 @@ export async function listarPostulaciones(
     anio: s(r.anio),
     anioActual: s(r.anio_actual),
     anios: (r.anios ?? []).map(String),
+    items: (r.data ?? []).map(aPostulacion),
+  };
+}
+
+function aPostulacion(x: Record<string, unknown>): Postulacion {
+  return {
+    ...aDetalle(x),
+    idPreHorario: n(x.id_pre_horario),
+    idMateria: n(x.id_materia),
+    idDocente: n(x.id_docente),
+    idFacilitador: n(x.id_facilitador),
+    facilitador: s(x.facilitador),
+    idEnfasis: n(x.id_enfasis),
+    observacion: s(x.observacion),
+    estado: s(x.estado),
+    obsEstado: s(x.obs_estado),
+    anio: s(x.anio),
+    usos: num(x.usos),
+    activa: s(x.estado) !== "Inactivo",
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* La página 20: todas las instituciones                                      */
+/* -------------------------------------------------------------------------- */
+
+/** Una fila de la página 20: la postulación con su institución. */
+export type PostulacionFila = Postulacion & { idInstitucion: number; institucion: string };
+
+/** Los filtros de la región "Parámetros" de la 20. `null` = todos. */
+export type FiltrosPostulaciones = {
+  anio: string;
+  idDepartamento: number | null;
+  idCiudad: number | null;
+  idBarrio: number | null;
+  idInstitucion: number | null;
+  turno: number | null;
+};
+
+/** El IG de la página 20: las de un año (vacío = el lectivo actual) con los filtros. */
+export async function listarTodasPostulaciones(f: FiltrosPostulaciones): Promise<{
+  anio: string;
+  anioActual: string;
+  anios: string[];
+  items: PostulacionFila[];
+}> {
+  const q = new URLSearchParams();
+  if (f.anio) q.set("anio", f.anio);
+  if (f.idDepartamento != null) q.set("id_departamento", String(f.idDepartamento));
+  if (f.idCiudad != null) q.set("id_ciudad", String(f.idCiudad));
+  if (f.idBarrio != null) q.set("id_barrio", String(f.idBarrio));
+  if (f.idInstitucion != null) q.set("id_institucion", String(f.idInstitucion));
+  if (f.turno != null) q.set("turno", String(f.turno));
+  const r = (await authFetch(`postulaciones/todas?${q}`)) as {
+    anio?: unknown;
+    anio_actual?: unknown;
+    anios?: unknown[];
+    data?: Record<string, unknown>[];
+  };
+  return {
+    anio: s(r.anio),
+    anioActual: s(r.anio_actual),
+    anios: (r.anios ?? []).map(String),
     items: (r.data ?? []).map((x) => ({
-      ...aDetalle(x),
-      idPreHorario: n(x.id_pre_horario),
-      idMateria: n(x.id_materia),
-      idDocente: n(x.id_docente),
-      idFacilitador: n(x.id_facilitador),
-      facilitador: s(x.facilitador),
-      idEnfasis: n(x.id_enfasis),
-      observacion: s(x.observacion),
-      estado: s(x.estado),
-      obsEstado: s(x.obs_estado),
-      anio: s(x.anio),
-      usos: num(x.usos),
-      activa: s(x.estado) !== "Inactivo",
+      ...aPostulacion(x),
+      idInstitucion: Number(x.id_institucion),
+      institucion: s(x.institucion),
     })),
   };
+}
+
+/** El botón Generar de la 20: 8 postulaciones vacías para la institución. */
+export async function generarPostulaciones(
+  idInstitucion: number,
+  turno: number | null,
+): Promise<number> {
+  const r = (await authFetch("postulaciones/generar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id_institucion: idInstitucion, turno }),
+  })) as { generadas?: number };
+  return Number(r.generadas ?? 0);
+}
+
+/**
+ * El botón Eliminar de la 20: las de la institución en ese año (y turno). Las
+ * que tienen intervenciones o evaluaciones se saltean.
+ */
+export async function eliminarPostulacionesLote(
+  idInstitucion: number,
+  turno: number | null,
+  anio: string,
+): Promise<{ eliminadas: number; salteadas: number }> {
+  const r = (await authFetch("postulaciones/eliminar-lote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id_institucion: idInstitucion, turno, anio }),
+  })) as { eliminadas?: number; salteadas?: number };
+  return { eliminadas: Number(r.eliminadas ?? 0), salteadas: Number(r.salteadas ?? 0) };
 }
 
 /** Los estados (Activo / Inactivo) de la lista de APEX. */
@@ -352,5 +435,6 @@ export function duracion(d: Pick<Detalle, "dias">): string {
 export const keysPostulaciones = {
   todo: ["postulaciones"] as const,
   institucion: (id: number, anio: string) => ["postulaciones", id, anio] as const,
+  todas: (f: FiltrosPostulaciones) => ["postulaciones", "todas", f] as const,
   opciones: ["postulaciones", "opciones"] as const,
 };

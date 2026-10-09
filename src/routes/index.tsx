@@ -22,6 +22,7 @@ import {
   setPasswordRecordada,
   setUsuarioRecordado,
 } from "@/lib/api";
+import { cerrarGruposMenu } from "@/lib/navegacion";
 import { useSession } from "@/lib/session";
 
 /**
@@ -106,6 +107,8 @@ function LoginPage() {
       // precargarse mal en cada arranque. Destildado, esto borra las dos claves.
       setUsuarioRecordado(recordar ? usuario : "");
       setPasswordRecordada(recordar ? password : "");
+      // Cada login entra con los menús de la sidebar cerrados (a pedido).
+      cerrarGruposMenu();
       toast.success("Bienvenido a Juventud con Valores");
       navigate({ to: "/home", replace: true });
     } catch (err) {

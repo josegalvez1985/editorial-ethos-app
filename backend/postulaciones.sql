@@ -5,9 +5,9 @@
 -- Reemplaza en el sitio, para UNA institucion, al modal 38 de APEX (Datos, el
 -- boton "Postulaciones" del 21) y a la pagina 60 (Consulta de Postulaciones,
 -- con su PDF y su imagen). En el sitio es la pestana Postulaciones de
--- /instituciones/:id, con los permisos de la 16. La pagina 20 (Postulaciones)
--- y la 24 (Consulta de Postulaciones) del menu son de esta misma tabla:
--- cuando se hagan, usan este backend.
+-- /instituciones/:id, con los permisos de la 16. La pagina 20 (Postulaciones,
+-- /postulaciones) usa este mismo backend desde el 09/10/2026 (listar_todas,
+-- generar, eliminar_lote); la 24 (Consulta de Postulaciones) tambien lo usara.
 --
 -- QUE PUBLICA ESTE SCRIPT
 --
@@ -24,6 +24,12 @@
 --   PUT    postulaciones/:id       {datos}
 --   DELETE postulaciones/:id       solo si no tiene intervenciones ni evaluaciones
 --   PUT    postulaciones/:id/estado  {estado, obs_estado}
+--
+--   La pagina 20 (todas las instituciones, con sus filtros y botones):
+--   GET    postulaciones/todas?anio=&id_departamento=&id_ciudad=&id_barrio=
+--                             &id_institucion=&turno=
+--   POST   postulaciones/generar        {id_institucion, turno} -> 8 filas
+--   POST   postulaciones/eliminar-lote  {id_institucion, turno, anio}
 --
 -- CORRER DESPUES de auth.sql, roles_paginas.sql y anios_lectivos.sql.
 --
@@ -143,6 +149,22 @@ CREATE OR REPLACE PACKAGE PKG_POSTULACIONES_ETHOS AS
   -- Baja. 409 si tiene intervenciones o evaluaciones.
   PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN VARCHAR2);
 
+  -- La pagina 20 (ver "LA PAGINA 20" en el cuerpo).
+  PROCEDURE listar_todas(
+    p_token           IN VARCHAR2,
+    p_anio            IN VARCHAR2,
+    p_id_departamento IN VARCHAR2,
+    p_id_ciudad       IN VARCHAR2,
+    p_id_barrio       IN VARCHAR2,
+    p_id_institucion  IN VARCHAR2,
+    p_turno           IN VARCHAR2);
+  PROCEDURE generar(p_token IN VARCHAR2, p_id_institucion IN VARCHAR2, p_turno IN VARCHAR2);
+  PROCEDURE eliminar_lote(
+    p_token          IN VARCHAR2,
+    p_id_institucion IN VARCHAR2,
+    p_turno          IN VARCHAR2,
+    p_anio           IN VARCHAR2);
+
 END PKG_POSTULACIONES_ETHOS;
 /
 
@@ -236,7 +258,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
   END exigir;
 
   -- Cuantas filas de otras tablas (intervenciones, evaluaciones) usan cada
-  -- postulacion de la institucion: las FK de una columna, salvo las _JN.
+  -- postulacion de la institucion (NULL: de todas): las FK de una columna,
+  -- salvo las _JN.
   PROCEDURE cargar_usos(p_usos OUT t_usos, p_id_institucion IN NUMBER) IS
     TYPE t_nums IS TABLE OF NUMBER;
     l_ids  t_nums;
@@ -259,7 +282,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
       EXECUTE IMMEDIATE
         'SELECT ' || l_col || ', COUNT(*) FROM ' || DBMS_ASSERT.ENQUOTE_NAME(f.table_name, FALSE)
         || ' WHERE ' || l_col || ' IN (SELECT id_postulacion FROM postulaciones'
-        || '                          WHERE id_institucion = :i)'
+        || '                          WHERE id_institucion = NVL(:i, id_institucion))'
         || ' GROUP BY ' || l_col
         BULK COLLECT INTO l_ids, l_cnts USING p_id_institucion;
       FOR j IN 1 .. l_ids.COUNT LOOP
@@ -273,33 +296,23 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
   /* LISTAR                                                                 */
   /* ---------------------------------------------------------------------- */
 
-  PROCEDURE listar(p_token IN VARCHAR2, p_id_institucion IN VARCHAR2, p_anio IN VARCHAR2) IS
-    l_inst NUMBER := f_numero(p_id_institucion);
-    l_anio VARCHAR2(16) := NVL(TRIM(p_anio), f_anio);
-    l_usos t_usos;
+  ------------------------------------------------------------------------------
+  -- El arreglo "data" de la grilla: las de una institucion (listar, la ficha)
+  -- o las de todas con los filtros de la pagina 20 (listar_todas).
+  ------------------------------------------------------------------------------
+  PROCEDURE escribir_data(
+    p_inst   IN NUMBER,
+    p_anio   IN VARCHAR2,
+    p_dep    IN NUMBER,
+    p_ciudad IN NUMBER,
+    p_barrio IN NUMBER,
+    p_turno  IN NUMBER,
+    p_usos   IN t_usos)
+  IS
   BEGIN
-    IF NOT exigir(p_token, 'C') THEN RETURN; END IF;
-    IF l_inst IS NULL THEN
-      p_error(400, 'Bad Request', 'La institucion es obligatoria'); RETURN;
-    END IF;
-    cargar_usos(l_usos, l_inst);
-
-    abrir_json;
-    APEX_JSON.OPEN_OBJECT;
-    APEX_JSON.WRITE('success', TRUE);
-    APEX_JSON.WRITE('anio', l_anio);
-    APEX_JSON.WRITE('anio_actual', f_anio);
-    -- Los anios que tiene la institucion, para elegir.
-    APEX_JSON.OPEN_ARRAY('anios');
-    FOR a IN (SELECT DISTINCT anio FROM postulaciones
-               WHERE id_institucion = l_inst AND anio IS NOT NULL ORDER BY anio DESC) LOOP
-      APEX_JSON.WRITE(a.anio);
-    END LOOP;
-    APEX_JSON.CLOSE_ARRAY;
-
     APEX_JSON.OPEN_ARRAY('data');
     FOR r IN (
-        SELECT p.id_postulacion, p.id_pre_horario, p.turno, p.seccion,
+        SELECT p.id_postulacion, p.id_pre_horario, p.id_institucion, i.nombre AS institucion, p.turno, p.seccion,
                p."2" AS g2, p."3" AS g3, p."4" AS g4, p."5" AS g5, p."6" AS g6,
                p."7" AS g7, p."8" AS g8, p."9" AS g9,
                p."1M" AS g1m, p."2M" AS g2m, p."3M" AS g3m,
@@ -321,14 +334,20 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
                p.id_enfasis, e.descripcion AS enfasis,
                p.observacion, p.estado, p.obs_estado, p.anio
           FROM postulaciones p
+          JOIN instituciones i      ON i.id_institucion = p.id_institucion
           LEFT JOIN materias m      ON m.id_materia = p.id_materia
           LEFT JOIN docentes d      ON d.id_docente = p.id_docente
           LEFT JOIN facilitadores f ON f.id_facilitador = p.id_facilitador
           LEFT JOIN enfasis e       ON e.id_enfasis = p.id_enfasis
-         WHERE p.id_institucion = l_inst
-           AND (p.anio = l_anio OR (l_anio IS NULL AND p.anio IS NULL))
-         -- El orden de DATOS: por turno y la primera hora de la semana.
-         ORDER BY p.turno,
+         WHERE (p_inst IS NULL OR p.id_institucion = p_inst)
+           AND (p.anio = p_anio OR (p_anio IS NULL AND p.anio IS NULL))
+           AND (p_dep IS NULL OR i.id_departamento = p_dep)
+           AND (p_ciudad IS NULL OR i.id_ciudad = p_ciudad)
+           AND (p_barrio IS NULL OR i.id_barrio = p_barrio)
+           AND (p_turno IS NULL OR p.turno = p_turno)
+         -- El orden de DATOS: por turno y la primera hora de la semana (con
+         -- todas las instituciones, primero por institucion).
+         ORDER BY UPPER(i.nombre), p.turno,
                   NVL(TO_CHAR(p.lunes_desde, 'HH24:MI'), '99'),
                   NVL(TO_CHAR(p.martes_desde, 'HH24:MI'), '99'),
                   NVL(TO_CHAR(p.miercoles_desde, 'HH24:MI'), '99'),
@@ -339,6 +358,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('id',              r.id_postulacion);
       APEX_JSON.WRITE('id_pre_horario',  r.id_pre_horario);
+      APEX_JSON.WRITE('id_institucion',  r.id_institucion);
+      APEX_JSON.WRITE('institucion',     r.institucion);
       APEX_JSON.WRITE('turno',           r.turno);
       APEX_JSON.WRITE('seccion',         r.seccion);
       APEX_JSON.WRITE('g2',  r.g2);  APEX_JSON.WRITE('g3',  r.g3);  APEX_JSON.WRITE('g4',  r.g4);
@@ -372,11 +393,38 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
       APEX_JSON.WRITE('estado',          r.estado);
       APEX_JSON.WRITE('obs_estado',      r.obs_estado);
       APEX_JSON.WRITE('anio',            r.anio);
-      APEX_JSON.WRITE('usos', CASE WHEN l_usos.EXISTS(r.id_postulacion)
-                                   THEN l_usos(r.id_postulacion) ELSE 0 END);
+      APEX_JSON.WRITE('usos', CASE WHEN p_usos.EXISTS(r.id_postulacion)
+                                   THEN p_usos(r.id_postulacion) ELSE 0 END);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;
+  END escribir_data;
+
+  PROCEDURE listar(p_token IN VARCHAR2, p_id_institucion IN VARCHAR2, p_anio IN VARCHAR2) IS
+    l_inst NUMBER := f_numero(p_id_institucion);
+    l_anio VARCHAR2(16) := NVL(TRIM(p_anio), f_anio);
+    l_usos t_usos;
+  BEGIN
+    IF NOT exigir(p_token, 'C') THEN RETURN; END IF;
+    IF l_inst IS NULL THEN
+      p_error(400, 'Bad Request', 'La institucion es obligatoria'); RETURN;
+    END IF;
+    cargar_usos(l_usos, l_inst);
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('anio', l_anio);
+    APEX_JSON.WRITE('anio_actual', f_anio);
+    -- Los anios que tiene la institucion, para elegir.
+    APEX_JSON.OPEN_ARRAY('anios');
+    FOR a IN (SELECT DISTINCT anio FROM postulaciones
+               WHERE id_institucion = l_inst AND anio IS NOT NULL ORDER BY anio DESC) LOOP
+      APEX_JSON.WRITE(a.anio);
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+
+    escribir_data(l_inst, l_anio, NULL, NULL, NULL, NULL, l_usos);
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION
     WHEN OTHERS THEN
@@ -668,7 +716,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
   ------------------------------------------------------------------------------
   -- Una fila de la grilla, como el IG editable de la 38: todas sus columnas
   -- visibles. Las ocultas (NOMBRE_PROFESOR, TELEFONO, ID_PRE_HORARIO, ANIO) no
-  -- se tocan en una modificacion. Ojo, como en APEX: si la fila salio de un
+  -- se tocan en una modificacion. El modal 22 de la pagina 20 si cambia la
+  -- institucion y el telefono: se tocan SOLO si vienen en los datos
+  -- ("id_institucion" en una modificacion, "telefono" siempre), asi la grilla
+  -- de la ficha sigue igual. Ojo, como en APEX: si la fila salio de un
   -- pre-horario y despues se modifica ese pre-horario, TRG_POSTULACIONES la
   -- vuelve a generar y estos cambios se pierden.
   ------------------------------------------------------------------------------
@@ -689,6 +740,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
     l_estado  VARCHAR2(32767);
     l_obs_est VARCHAR2(32767);
     l_materia NUMBER; l_docente NUMBER; l_fac NUMBER; l_enfasis NUMBER;
+    l_tel     VARCHAR2(32767);
+    -- 'S' si el telefono vino en los datos (el modal 22); la grilla no lo manda.
+    l_con_tel VARCHAR2(1) := 'N';
   BEGIN
     IF NOT exigir(p_token, CASE WHEN p_id IS NULL THEN 'I' ELSE 'U' END) THEN RETURN; END IF;
     IF p_id IS NOT NULL AND l_id IS NULL THEN
@@ -711,6 +765,13 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
     l_docente := f_numero(APEX_JSON.GET_VARCHAR2(p_path => 'id_docente', p_values => v));
     l_fac     := f_numero(APEX_JSON.GET_VARCHAR2(p_path => 'id_facilitador', p_values => v));
     l_enfasis := f_numero(APEX_JSON.GET_VARCHAR2(p_path => 'id_enfasis', p_values => v));
+    IF APEX_JSON.DOES_EXIST(p_path => 'telefono', p_values => v) THEN
+      l_con_tel := 'S';
+      l_tel     := TRIM(APEX_JSON.GET_VARCHAR2(p_path => 'telefono', p_values => v));
+      IF LENGTH(l_tel) > 500 THEN
+        p_error(400, 'Bad Request', 'El telefono no puede pasar de 500 caracteres'); RETURN;
+      END IF;
+    END IF;
 
     l_g2  := f_cantidad(v, 'g2');  l_g3  := f_cantidad(v, 'g3');  l_g4  := f_cantidad(v, 'g4');
     l_g5  := f_cantidad(v, 'g5');  l_g6  := f_cantidad(v, 'g6');  l_g7  := f_cantidad(v, 'g7');
@@ -760,13 +821,15 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
         ser, hacer, tener, caracter, vision, coraje, liderazgo,
         lunes_desde, lunes_hasta, martes_desde, martes_hasta, miercoles_desde, miercoles_hasta,
         jueves_desde, jueves_hasta, viernes_desde, viernes_hasta,
-        observacion, id_materia, id_docente, id_facilitador, id_enfasis, estado, obs_estado)
+        observacion, id_materia, id_docente, id_facilitador, id_enfasis, estado, obs_estado,
+        telefono)
       VALUES (
         l_inst, l_turno, l_seccion, l_g2, l_g3, l_g4, l_g5, l_g6, l_g7, l_g8, l_g9,
         l_g1m, l_g2m, l_g3m,
         l_ser, l_hac, l_ten, l_car, l_vis, l_cor, l_lid,
         l_lud, l_luh, l_mad, l_mah, l_mid, l_mih, l_jud, l_juh, l_vid, l_vih,
-        l_obs, l_materia, l_docente, l_fac, l_enfasis, l_estado, l_obs_est)
+        l_obs, l_materia, l_docente, l_fac, l_enfasis, l_estado, l_obs_est,
+        l_tel)
       RETURNING id_postulacion INTO l_id;
     ELSE
       UPDATE postulaciones
@@ -781,7 +844,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
              viernes_hasta = l_vih,
              observacion = l_obs, id_materia = l_materia, id_docente = l_docente,
              id_facilitador = l_fac, id_enfasis = l_enfasis, estado = l_estado,
-             obs_estado = l_obs_est
+             obs_estado = l_obs_est,
+             id_institucion = NVL(l_inst, id_institucion),
+             telefono = CASE WHEN l_con_tel = 'S' THEN l_tel ELSE telefono END
        WHERE id_postulacion = l_id;
       IF SQL%ROWCOUNT = 0 THEN
         ROLLBACK;
@@ -848,6 +913,147 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULACIONES_ETHOS AS
       END IF;
   END eliminar;
 
+  /* ---------------------------------------------------------------------- */
+  /* LA PAGINA 20: todas las instituciones, Generar y Eliminar              */
+  /* ---------------------------------------------------------------------- */
+
+  ------------------------------------------------------------------------------
+  -- El IG de la pagina 20: las de un anio (sin anio: el lectivo actual), con
+  -- los filtros de departamento, ciudad, barrio, institucion y turno.
+  ------------------------------------------------------------------------------
+  PROCEDURE listar_todas(
+    p_token           IN VARCHAR2,
+    p_anio            IN VARCHAR2,
+    p_id_departamento IN VARCHAR2,
+    p_id_ciudad       IN VARCHAR2,
+    p_id_barrio       IN VARCHAR2,
+    p_id_institucion  IN VARCHAR2,
+    p_turno           IN VARCHAR2)
+  IS
+    l_anio VARCHAR2(16) := NVL(TRIM(p_anio), f_anio);
+    l_inst NUMBER := f_numero(p_id_institucion);
+    l_usos t_usos;
+  BEGIN
+    IF NOT exigir(p_token, 'C') THEN RETURN; END IF;
+    cargar_usos(l_usos, l_inst);
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('anio', l_anio);
+    APEX_JSON.WRITE('anio_actual', f_anio);
+    APEX_JSON.OPEN_ARRAY('anios');
+    FOR a IN (SELECT DISTINCT anio FROM postulaciones WHERE anio IS NOT NULL ORDER BY anio DESC) LOOP
+      APEX_JSON.WRITE(a.anio);
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    escribir_data(l_inst, l_anio, f_numero(p_id_departamento), f_numero(p_id_ciudad),
+                  f_numero(p_id_barrio), f_numero(p_turno), l_usos);
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+  END listar_todas;
+
+  ------------------------------------------------------------------------------
+  -- El boton Generar de la 20, igual que APEX: 8 filas vacias para la
+  -- institucion (con CANTIDAD_INTERVENCION 1 a 8 si la tabla todavia la
+  -- tiene) y el turno elegido (1 si no
+  -- hay). El anio lo pone TRG_POSTULACIONES_SET_ANIO.
+  ------------------------------------------------------------------------------
+  PROCEDURE generar(p_token IN VARCHAR2, p_id_institucion IN VARCHAR2, p_turno IN VARCHAR2) IS
+    l_inst  NUMBER := f_numero(p_id_institucion);
+    l_turno NUMBER := NVL(f_numero(p_turno), 1);
+    l_n     PLS_INTEGER;
+  BEGIN
+    IF NOT exigir(p_token, 'I') THEN RETURN; END IF;
+    IF l_inst IS NULL THEN
+      p_error(400, 'Bad Request', 'Elegi la institucion para generar'); RETURN;
+    END IF;
+    SELECT COUNT(*) INTO l_n FROM instituciones WHERE id_institucion = l_inst;
+    IF l_n = 0 THEN
+      p_error(404, 'Not Found', 'La institucion no existe'); RETURN;
+    END IF;
+    -- CANTIDAD_INTERVENCION (el 1..8 de APEX) ya no existe en la tabla: el
+    -- proceso de APEX la nombraba igual. Se usa solo si esta, con SQL
+    -- dinamico, para que el paquete compile con o sin ella (09/10/2026).
+    SELECT COUNT(*) INTO l_n FROM user_tab_columns
+     WHERE table_name = 'POSTULACIONES' AND column_name = 'CANTIDAD_INTERVENCION';
+    FOR i IN 1 .. 8 LOOP
+      IF l_n > 0 THEN
+        EXECUTE IMMEDIATE
+          'INSERT INTO postulaciones (id_institucion, cantidad_intervencion, turno)'
+          || ' VALUES (:1, :2, :3)'
+          USING l_inst, i, l_turno;
+      ELSE
+        INSERT INTO postulaciones (id_institucion, turno) VALUES (l_inst, l_turno);
+      END IF;
+    END LOOP;
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('generadas', 8);
+    APEX_JSON.WRITE('message', 'Se generaron las postulaciones');
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      ROLLBACK;
+      p_error(500, 'Internal Server Error', 'Error al generar: ' || SQLERRM);
+  END generar;
+
+  ------------------------------------------------------------------------------
+  -- El boton Eliminar de la 20: las postulaciones de la institucion (y del
+  -- turno, si viene). DISTINTO DE APEX, a proposito:
+  --   - solo las del ANIO elegido: APEX borraba las de todos los anios;
+  --   - las que tienen intervenciones o evaluaciones NO se borran (en APEX la
+  --     FK hacia fallar todo el boton): se saltean y se informa cuantas.
+  ------------------------------------------------------------------------------
+  PROCEDURE eliminar_lote(
+    p_token          IN VARCHAR2,
+    p_id_institucion IN VARCHAR2,
+    p_turno          IN VARCHAR2,
+    p_anio           IN VARCHAR2)
+  IS
+    l_inst      NUMBER := f_numero(p_id_institucion);
+    l_turno     NUMBER := f_numero(p_turno);
+    l_anio      VARCHAR2(16) := NVL(TRIM(p_anio), f_anio);
+    l_usos      t_usos;
+    l_borradas  PLS_INTEGER := 0;
+    l_salteadas PLS_INTEGER := 0;
+  BEGIN
+    IF NOT exigir(p_token, 'D') THEN RETURN; END IF;
+    IF l_inst IS NULL THEN
+      p_error(400, 'Bad Request', 'Elegi la institucion para eliminar'); RETURN;
+    END IF;
+    cargar_usos(l_usos, l_inst);
+    FOR r IN (SELECT id_postulacion FROM postulaciones
+               WHERE id_institucion = l_inst
+                 AND (l_turno IS NULL OR turno = l_turno)
+                 AND (anio = l_anio OR (l_anio IS NULL AND anio IS NULL))) LOOP
+      IF l_usos.EXISTS(r.id_postulacion) THEN
+        l_salteadas := l_salteadas + 1;
+      ELSE
+        DELETE FROM postulaciones WHERE id_postulacion = r.id_postulacion;
+        l_borradas := l_borradas + 1;
+      END IF;
+    END LOOP;
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('eliminadas', l_borradas);
+    APEX_JSON.WRITE('salteadas', l_salteadas);
+    APEX_JSON.WRITE('message', 'Se eliminaron las postulaciones');
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      ROLLBACK;
+      p_error(500, 'Internal Server Error', 'Error al eliminar: ' || SQLERRM);
+  END eliminar_lote;
+
 END PKG_POSTULACIONES_ETHOS;
 /
 
@@ -895,6 +1101,9 @@ BEGIN
   FOR r IN (SELECT 'postulaciones' AS p FROM dual
             UNION ALL SELECT 'postulaciones/opciones' FROM dual
             UNION ALL SELECT 'postulaciones/formulario' FROM dual
+            UNION ALL SELECT 'postulaciones/todas' FROM dual
+            UNION ALL SELECT 'postulaciones/generar' FROM dual
+            UNION ALL SELECT 'postulaciones/eliminar-lote' FROM dual
             UNION ALL SELECT 'postulaciones/:id' FROM dual
             UNION ALL SELECT 'postulaciones/:id/estado' FROM dual) LOOP
     FOR m IN (SELECT 'GET' AS v FROM dual UNION ALL SELECT 'POST' FROM dual
@@ -910,6 +1119,12 @@ BEGIN
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'postulaciones/opciones',
                        p_priority => 2, p_etag_type => 'NONE');
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'postulaciones/formulario',
+                       p_priority => 2, p_etag_type => 'NONE');
+  ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'postulaciones/todas',
+                       p_priority => 2, p_etag_type => 'NONE');
+  ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'postulaciones/generar',
+                       p_priority => 2, p_etag_type => 'NONE');
+  ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'postulaciones/eliminar-lote',
                        p_priority => 2, p_etag_type => 'NONE');
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'postulaciones/:id',
                        p_priority => 1, p_etag_type => 'NONE');
@@ -935,6 +1150,19 @@ BEGIN
 
   handler('postulaciones/:id', 'DELETE', '
     PKG_POSTULACIONES_ETHOS.ELIMINAR(p_token => l_token, p_id => :id);');
+
+  handler('postulaciones/todas', 'GET', '
+    PKG_POSTULACIONES_ETHOS.LISTAR_TODAS(p_token => l_token, p_anio => :anio,
+        p_id_departamento => :id_departamento, p_id_ciudad => :id_ciudad,
+        p_id_barrio => :id_barrio, p_id_institucion => :id_institucion, p_turno => :turno);');
+
+  handler('postulaciones/generar', 'POST', '
+    PKG_POSTULACIONES_ETHOS.GENERAR(
+        p_token => l_token, p_id_institucion => :id_institucion, p_turno => :turno);');
+
+  handler('postulaciones/eliminar-lote', 'POST', '
+    PKG_POSTULACIONES_ETHOS.ELIMINAR_LOTE(p_token => l_token,
+        p_id_institucion => :id_institucion, p_turno => :turno, p_anio => :anio);');
 
   handler('postulaciones/:id/estado', 'PUT', '
     PKG_POSTULACIONES_ETHOS.CAMBIAR_ESTADO(
@@ -975,6 +1203,9 @@ BEGIN
   preflight('postulaciones');
   preflight('postulaciones/opciones');
   preflight('postulaciones/formulario');
+  preflight('postulaciones/todas');
+  preflight('postulaciones/generar');
+  preflight('postulaciones/eliminar-lote');
   preflight('postulaciones/:id');
   preflight('postulaciones/:id/estado');
   COMMIT;
@@ -1005,6 +1236,9 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('       PUT    postulaciones/:id');
     DBMS_OUTPUT.PUT_LINE('       DELETE postulaciones/:id');
     DBMS_OUTPUT.PUT_LINE('       PUT    postulaciones/:id/estado');
+    DBMS_OUTPUT.PUT_LINE('       GET    postulaciones/todas');
+    DBMS_OUTPUT.PUT_LINE('       POST   postulaciones/generar');
+    DBMS_OUTPUT.PUT_LINE('       POST   postulaciones/eliminar-lote');
   ELSE
     DBMS_OUTPUT.PUT_LINE('[ERROR] PKG_POSTULACIONES_ETHOS quedo INVALID.');
     FOR e IN (SELECT line, text FROM user_errors

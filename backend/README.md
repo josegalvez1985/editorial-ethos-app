@@ -5,7 +5,7 @@
 | **[`auth.sql`](auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
 | **[`anios_lectivos.sql`](anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` + el ABM de `/anios-lectivos` (`PKG_ANIOS_LECTIVOS_ETHOS`, `anios-lectivos[/:id]`; el paquete necesita `roles_paginas.sql`: en una instalación nueva, correrlo de nuevo después) | 2º |
 | **[`evaluaciones_facilitadores.sql`](evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos y de la tarjeta de dirección (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
-| **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`) | independiente |
+| **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`); desde el 09/10/2026 también el mapa de la página 25 (`intervenciones/mapa`, `intervenciones/mapa/facilitadores`) | independiente |
 | **[`intervenciones_crud.sql`](intervenciones_crud.sql)** | Carga manual de intervenciones (`PKG_INTERV_CRUD_ETHOS`) | independiente |
 | **[`agendas.sql`](agendas.sql)** | Horario semanal sobre `V_AGENDA` (`PKG_AGENDAS_ETHOS`) | independiente |
 | **[`inventarios.sql`](inventarios.sql)** | Inventario de manuales por sucursal (`PKG_INVENTARIOS_ETHOS`) + corrige `INVENTARIOS_ACTUALIZAR_EXISTENCIAS` | independiente |
@@ -561,6 +561,14 @@ la 36 usa `instituciones-directores` (todas las filas, y el alta/edición/baja d
 listado de `instituciones`; la 45 usa `coordinadores` y `GET instituciones-coordinadores` sin
 `id_institucion`. **La 47 (Instituciones y Coordinadores, `/instituciones-coordinadores`)**,
 igual que la 36 con `instituciones-coordinadores`. Sin cambios en el backend.
+
+**La 20 (Postulaciones, `/postulaciones`) sí cambió `postulaciones.sql`** (09/10/2026; hay
+que correrlo de nuevo): `GET postulaciones/todas` (todas las instituciones con los filtros de
+la 20), `POST postulaciones/generar` (las 8 filas del botón Generar) y
+`POST postulaciones/eliminar-lote` (el botón Eliminar: solo el año elegido, y saltea las que
+tienen intervenciones o evaluaciones). El `guardar` ahora también cambia la institución y el
+teléfono si vienen en los datos (el modal 22); la grilla de la ficha no los manda y sigue igual.
+El listado de la ficha y el de la 20 escriben las filas con el mismo `escribir_data`.
 
 | Script | Tabla | Paquete | Endpoints |
 | --- | --- | --- | --- |

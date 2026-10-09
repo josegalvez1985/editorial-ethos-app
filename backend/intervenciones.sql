@@ -5,6 +5,12 @@
 -- QUE PUBLICA ESTE SCRIPT
 --
 --   GET  intervenciones  ?anio=&mes=&id_facilitador=&limite=
+--   GET  intervenciones/por-dia  ?anio=&mes=&si_no=
+--   GET  intervenciones/mapa  ?desde=&hasta=&id_facilitador=   (09/10/2026)
+--   GET  intervenciones/mapa/facilitadores  ?desde=&hasta=     (09/10/2026)
+--
+--   Los dos de mapa son la pagina 25 de APEX (/mapa-intervenciones): ver
+--   "EL MAPA" en el cuerpo del paquete. Fechas como YYYY-MM-DD.
 --
 -- UN SOLO ENDPOINT. Devuelve las filas de V_HISTORIAL_INTERVENCIONES tal como
 -- las da la consulta de referencia: una fila por marcacion, con los grados
@@ -193,6 +199,19 @@ CREATE OR REPLACE PACKAGE PKG_INTERVENCIONES_ETHOS AS
       p_mes   IN VARCHAR2 DEFAULT NULL,
       p_si_no IN VARCHAR2 DEFAULT NULL);
 
+  -- El mapa de la pagina 25: las marcaciones de un facilitador en el rango.
+  PROCEDURE mapa(
+      p_token          IN VARCHAR2,
+      p_desde          IN VARCHAR2,
+      p_hasta          IN VARCHAR2,
+      p_id_facilitador IN NUMBER);
+
+  -- Los facilitadores con marcaciones en el rango, con cuantas.
+  PROCEDURE mapa_facilitadores(
+      p_token IN VARCHAR2,
+      p_desde IN VARCHAR2,
+      p_hasta IN VARCHAR2);
+
 END PKG_INTERVENCIONES_ETHOS;
 /
 
@@ -244,6 +263,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
   -- marco, y "no se sabe" no es "marco lejos".
   ------------------------------------------------------------------------------
   c_umbral_metros CONSTANT PLS_INTEGER := 1000;
+
+  -- El mapa: tope de puntos y de dias por pedido. Un facilitador hace unas
+  -- pocas marcaciones por dia; 3000 alcanza para mas de un año.
+  c_mapa_limite CONSTANT PLS_INTEGER := 3000;
+  c_mapa_dias   CONSTANT PLS_INTEGER := 366;
 
   ------------------------------------------------------------------------------
   -- Mismo contrato de respuesta que los otros paquetes, para que el cliente no
@@ -883,6 +907,188 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
       p_error_tardio('Error: ' || SQLERRM);
   END por_dia;
 
+  ------------------------------------------------------------------------------
+  -- EL MAPA (pagina 25 de APEX, /mapa-intervenciones)  —  09/10/2026
+  --
+  -- Las marcaciones de UN facilitador en un rango de fechas, para dibujarlas
+  -- en el mapa. Lee la TABLA INTERVENCIONES (como el proceso COORDENADAS de
+  -- APEX), no la vista: aca interesa cada marcacion, sin agrupar por grado.
+  --
+  -- Lo que corrige de APEX:
+  --   * APEX filtraba con to_date(fecha_hora,'dd/mm/yyyy') sobre un DATE: una
+  --     conversion implicita a texto y de vuelta que depende del NLS de la
+  --     sesion y puede correr el dia. Aca es un rango sobre el DATE.
+  --   * APEX hacia INNER JOIN con INDICES_MANUALES: una marcacion sin indice no
+  --     aparecia en el mapa. Aca es LEFT JOIN.
+  --
+  -- El punto de cada institucion es la MEDIANA de sus propias marcaciones,
+  -- igual que en `listar` (UBICACION_INSITUTCION no tiene coordenadas, ver la
+  -- nota de f_coord). Solo se calcula para las instituciones del resultado.
+  -- La distancia y el umbral de "lejos" son los de `listar` (c_umbral_metros).
+  ------------------------------------------------------------------------------
+  PROCEDURE mapa(
+      p_token          IN VARCHAR2,
+      p_desde          IN VARCHAR2,
+      p_hasta          IN VARCHAR2,
+      p_id_facilitador IN NUMBER
+  ) IS
+    l_desde DATE;
+    l_hasta DATE;
+  BEGIN
+    IF f_usuario(p_token) IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+    BEGIN
+      l_desde := TO_DATE(SUBSTR(TRIM(p_desde), 1, 10), 'YYYY-MM-DD');
+      l_hasta := TO_DATE(SUBSTR(TRIM(p_hasta), 1, 10), 'YYYY-MM-DD');
+    EXCEPTION
+      WHEN OTHERS THEN
+        p_error(400, 'Bad Request', 'Las fechas van como YYYY-MM-DD');
+        RETURN;
+    END;
+    IF l_desde IS NULL OR l_hasta IS NULL OR l_hasta < l_desde THEN
+      p_error(400, 'Bad Request', 'El periodo no es valido');
+      RETURN;
+    END IF;
+    IF l_hasta - l_desde > c_mapa_dias THEN
+      p_error(400, 'Bad Request', 'El periodo no puede pasar de ' || c_mapa_dias || ' dias');
+      RETURN;
+    END IF;
+    IF p_id_facilitador IS NULL THEN
+      p_error(400, 'Bad Request', 'Elegi el facilitador');
+      RETURN;
+    END IF;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('umbral_metros', c_umbral_metros);
+    APEX_JSON.WRITE('limite', c_mapa_limite);
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        WITH base AS (
+            SELECT i.id_intervencion, i.fecha_hora, i.id_institucion, i.manual,
+                   i.id_indice, i.observacion,
+                   f_coord(i.latitud  || ',0', 1) AS lat,
+                   f_coord(i.longitud || ',0', 1) AS lon
+              FROM intervenciones i
+             WHERE i.id_facilitador = p_id_facilitador
+               AND i.fecha_hora >= l_desde
+               AND i.fecha_hora <  l_hasta + 1
+        ),
+        ref AS (
+            SELECT id_institucion,
+                   MEDIAN(f_coord(latitud  || ',0', 1)) AS lat,
+                   MEDIAN(f_coord(longitud || ',0', 1)) AS lon
+              FROM intervenciones
+             WHERE id_institucion IN (SELECT id_institucion FROM base)
+               AND f_coord(latitud  || ',0', 1) IS NOT NULL
+               AND f_coord(longitud || ',0', 1) IS NOT NULL
+               -- (0,0): sin ubicacion (ver c_umbral_metros).
+               AND NOT (f_coord(latitud  || ',0', 1) = 0
+                    AND f_coord(longitud || ',0', 1) = 0)
+             GROUP BY id_institucion
+        )
+        SELECT b.id_intervencion,
+               TO_CHAR(b.fecha_hora, 'YYYY-MM-DD') AS dia,
+               TO_CHAR(b.fecha_hora, 'HH24:MI')    AS hora,
+               b.id_institucion, ins.nombre AS institucion,
+               b.manual, b.id_indice, im.nro_indice, im.titulo, b.observacion,
+               CASE WHEN b.lat = 0 AND b.lon = 0 THEN NULL ELSE b.lat END AS lat,
+               CASE WHEN b.lat = 0 AND b.lon = 0 THEN NULL ELSE b.lon END AS lon,
+               ref.lat AS inst_lat,
+               ref.lon AS inst_lon,
+               CASE WHEN b.lat = 0 AND b.lon = 0 THEN NULL
+                    ELSE f_distancia(b.lat, b.lon, ref.lat, ref.lon) END AS dist_m
+          FROM base b
+          LEFT JOIN instituciones ins   ON ins.id_institucion = b.id_institucion
+          LEFT JOIN indices_manuales im ON im.id_indice = b.id_indice
+          LEFT JOIN ref                 ON ref.id_institucion = b.id_institucion
+         ORDER BY b.fecha_hora, b.id_intervencion
+         FETCH FIRST c_mapa_limite ROWS ONLY
+    ) LOOP
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id',             r.id_intervencion);
+      APEX_JSON.WRITE('dia',            r.dia);
+      APEX_JSON.WRITE('hora',           r.hora);
+      APEX_JSON.WRITE('id_institucion', r.id_institucion);
+      APEX_JSON.WRITE('institucion',    r.institucion);
+      APEX_JSON.WRITE('manual',         r.manual);
+      APEX_JSON.WRITE('id_indice',      r.id_indice);
+      APEX_JSON.WRITE('nro_indice',     r.nro_indice);
+      APEX_JSON.WRITE('indice',         r.titulo);
+      APEX_JSON.WRITE('observacion',    r.observacion);
+      APEX_JSON.WRITE('lat',            r.lat);
+      APEX_JSON.WRITE('lng',            r.lon);
+      APEX_JSON.WRITE('inst_lat',       r.inst_lat);
+      APEX_JSON.WRITE('inst_lng',       r.inst_lon);
+      APEX_JSON.WRITE('distancia_metros', ROUND(r.dist_m));
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error_tardio('Error: ' || SQLERRM);
+  END mapa;
+
+  ------------------------------------------------------------------------------
+  -- Los facilitadores con marcaciones en el rango, con cuantas: la lista para
+  -- elegir (la LOV P25_ID_FACILITADOR de APEX, con la cantidad agregada).
+  ------------------------------------------------------------------------------
+  PROCEDURE mapa_facilitadores(
+      p_token IN VARCHAR2,
+      p_desde IN VARCHAR2,
+      p_hasta IN VARCHAR2
+  ) IS
+    l_desde DATE;
+    l_hasta DATE;
+  BEGIN
+    IF f_usuario(p_token) IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+    BEGIN
+      l_desde := TO_DATE(SUBSTR(TRIM(p_desde), 1, 10), 'YYYY-MM-DD');
+      l_hasta := TO_DATE(SUBSTR(TRIM(p_hasta), 1, 10), 'YYYY-MM-DD');
+    EXCEPTION
+      WHEN OTHERS THEN
+        p_error(400, 'Bad Request', 'Las fechas van como YYYY-MM-DD');
+        RETURN;
+    END;
+    IF l_desde IS NULL OR l_hasta IS NULL OR l_hasta < l_desde
+       OR l_hasta - l_desde > c_mapa_dias THEN
+      p_error(400, 'Bad Request', 'El periodo no es valido');
+      RETURN;
+    END IF;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT i.id_facilitador, f.nombre_apellido, COUNT(*) AS cantidad
+          FROM intervenciones i
+          JOIN facilitadores f ON f.id_facilitador = i.id_facilitador
+         WHERE i.fecha_hora >= l_desde
+           AND i.fecha_hora <  l_hasta + 1
+         GROUP BY i.id_facilitador, f.nombre_apellido
+         ORDER BY UPPER(f.nombre_apellido)
+    ) LOOP
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id_facilitador', r.id_facilitador);
+      APEX_JSON.WRITE('nombre',         r.nombre_apellido);
+      APEX_JSON.WRITE('cantidad',       r.cantidad);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error_tardio('Error: ' || SQLERRM);
+  END mapa_facilitadores;
+
 END PKG_INTERVENCIONES_ETHOS;
 /
 
@@ -905,6 +1111,10 @@ BEGIN
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones',         'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/por-dia', 'GET');     EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/por-dia', 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/mapa', 'GET');        EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/mapa', 'OPTIONS');    EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/mapa/facilitadores', 'GET');     EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/mapa/facilitadores', 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
 
   BEGIN
     ORDS.DEFINE_TEMPLATE(
@@ -1003,6 +1213,95 @@ END;
       p_param_type         => 'STRING',
       p_access_method      => 'IN');
 
+  ----------------------------------------------------------------------------
+  -- intervenciones/mapa y intervenciones/mapa/facilitadores (la pagina 25).
+  -- La mas larga con mas prioridad, por lo mismo que por-dia.
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'ethos',
+        p_pattern     => 'intervenciones/mapa',
+        p_priority    => 1,
+        p_etag_type   => 'NONE');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'ethos',
+      p_pattern     => 'intervenciones/mapa',
+      p_method      => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token VARCHAR2(256);
+    l_pos   PLS_INTEGER;
+BEGIN
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN
+            l_token := TRIM(SUBSTR(l_token, l_pos + 7));
+        END IF;
+    END IF;
+    PKG_INTERVENCIONES_ETHOS.MAPA(
+        p_token          => l_token,
+        p_desde          => :desde,
+        p_hasta          => :hasta,
+        p_id_facilitador => TO_NUMBER(:id_facilitador));
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'ethos',
+      p_pattern            => 'intervenciones/mapa',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'ethos',
+        p_pattern     => 'intervenciones/mapa/facilitadores',
+        p_priority    => 2,
+        p_etag_type   => 'NONE');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'ethos',
+      p_pattern     => 'intervenciones/mapa/facilitadores',
+      p_method      => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token VARCHAR2(256);
+    l_pos   PLS_INTEGER;
+BEGIN
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN
+            l_token := TRIM(SUBSTR(l_token, l_pos + 7));
+        END IF;
+    END IF;
+    PKG_INTERVENCIONES_ETHOS.MAPA_FACILITADORES(
+        p_token => l_token,
+        p_desde => :desde,
+        p_hasta => :hasta);
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'ethos',
+      p_pattern            => 'intervenciones/mapa/facilitadores',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Handlers de intervenciones publicados.');
 EXCEPTION
@@ -1038,6 +1337,8 @@ END;
 BEGIN
   preflight('intervenciones');
   preflight('intervenciones/por-dia');
+  preflight('intervenciones/mapa');
+  preflight('intervenciones/mapa/facilitadores');
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado.');
 EXCEPTION
@@ -1064,6 +1365,8 @@ BEGIN
   IF l_estado = 'VALID' THEN
     DBMS_OUTPUT.PUT_LINE('[OK]   PKG_INTERVENCIONES_ETHOS compilado.');
     DBMS_OUTPUT.PUT_LINE('       GET intervenciones ?anio=&mes=&id_facilitador=&limite=');
+    DBMS_OUTPUT.PUT_LINE('       GET intervenciones/mapa ?desde=&hasta=&id_facilitador=');
+    DBMS_OUTPUT.PUT_LINE('       GET intervenciones/mapa/facilitadores ?desde=&hasta=');
   ELSE
     DBMS_OUTPUT.PUT_LINE('[ERROR] PKG_INTERVENCIONES_ETHOS quedo INVALID.');
     DBMS_OUTPUT.PUT_LINE('        SELECT * FROM user_errors WHERE name = ''PKG_INTERVENCIONES_ETHOS'';');
