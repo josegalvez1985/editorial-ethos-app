@@ -4,20 +4,23 @@ import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
-import { ActividadChart } from "@/components/actividad-chart";
+import { ActividadChart, type SerieActividad } from "@/components/actividad-chart";
 import { SelectorModal } from "@/components/selector-modal";
 import { PuntualidadChart } from "@/components/puntualidad-chart";
 import { PuntualidadModal } from "@/components/puntualidad-modal";
 import { UbicacionChart } from "@/components/ubicacion-chart";
 import { UbicacionModal } from "@/components/ubicacion-modal";
 import {
-  actividadPorDia,
+  actividadPorDiaDesglose,
   agruparPorFacilitador,
   agruparPorUbicacion,
   filtrarPorDesarrollo,
+  filtrarPorSemana,
   keysIntervenciones,
   listarIntervenciones,
   MESES,
+  semanasDelMes,
+  textoSemana,
   type FiltroDesarrollo,
   type ResumenFacilitador,
   type ResumenUbicacion,
@@ -83,6 +86,13 @@ function Puntualidad() {
    * filtro existiera—. Ver `FiltroDesarrollo` en `lib/intervenciones.ts`.
    */
   const [desarrollo, setDesarrollo] = useState<FiltroDesarrollo>("TODOS");
+  /*
+   * La semana del mes (09/10/2026, a pedido). 0 = todas: arranca así, el mes
+   * entero como antes. Manda sobre los TRES gráficos y se aplica en memoria
+   * sobre lo que ya trajo el mes: cambiarla no pide nada al servidor.
+   * Cambiar de mes o de año la vuelve a "Todas" (las semanas son otras).
+   */
+  const [nSemana, setNSemana] = useState(0);
   // Qué barra se tocó en cada gráfico. `null` = ese modal está cerrado.
   const [elegido, setElegido] = useState<ResumenFacilitador | null>(null);
   const [elegidoUbi, setElegidoUbi] = useState<ResumenUbicacion | null>(null);
@@ -122,10 +132,13 @@ function Puntualidad() {
    * selector no dispara una descarga nueva y el cambio es instantáneo. Meterlo
    * en la query key traería tres veces el mismo mes.
    *
-   * El gráfico de Actividad no puede hacer esto —viene agregado por día— y por
-   * eso ese sí filtra en el backend. Ver `actividadPorDia`.
+   * El gráfico de Actividad viene agregado por día: trae las tres series
+   * (total, desarrolladas, no desarrolladas) y el filtro elige cuáles se
+   * dibujan. Ver `actividadPorDiaDesglose`.
    */
-  const filtradas = data ? filtrarPorDesarrollo(data, desarrollo) : [];
+  const semanas = semanasDelMes(anio, mes);
+  const semana = semanas.find((s) => s.n === nSemana) ?? null;
+  const filtradas = data ? filtrarPorSemana(filtrarPorDesarrollo(data, desarrollo), semana) : [];
   const resumen = filtradas.length ? agruparPorFacilitador(filtradas) : [];
   const ubicacion = filtradas.length ? agruparPorUbicacion(filtradas) : [];
 
@@ -137,14 +150,25 @@ function Puntualidad() {
    * gráfico de infracciones con nombre de actividad. Este endpoint cuenta
    * todas.
    */
+  //
+  // Desde el 09/10/2026 trae las TRES series por día (total, desarrolladas y no
+  // desarrolladas) para las barras agrupadas. Viene del mismo endpoint, así que
+  // el filtro de desarrollo ya no viaja: elige qué series se dibujan.
   const {
-    data: dias,
+    data: diasMes,
     isLoading: cargandoDias,
     isError: errorDias,
   } = useQuery({
-    queryKey: keysIntervenciones.porDia(anio, mes, desarrollo),
-    queryFn: () => actividadPorDia(anio, mes, desarrollo),
+    queryKey: keysIntervenciones.porDiaDesglose(anio, mes),
+    queryFn: () => actividadPorDiaDesglose(anio, mes),
   });
+  const series: SerieActividad[] =
+    desarrollo === "SI" ? ["si"] : desarrollo === "NO" ? ["no"] : ["total", "si", "no"];
+  // La semana, en memoria; y fuera los días sin nada en las series que se ven.
+  const dias = diasMes?.filter(
+    (d) =>
+      (!semana || (d.dia >= semana.desde && d.dia <= semana.hasta)) && series.some((k) => d[k] > 0),
+  );
 
   // Los últimos cinco años, del actual hacia atrás: no hay tabla de años para
   // este módulo y pedirla sería una consulta más para llenar un combo.
@@ -164,6 +188,10 @@ function Puntualidad() {
       : desarrollo === "NO"
         ? ", entre las que no desarrollaron el índice"
         : "";
+  // "Octubre de 2026", o "la semana del 6 al 12 de Octubre de 2026".
+  const periodo = semana
+    ? `la semana del ${semana.desde === semana.hasta ? semana.desde : `${semana.desde} al ${semana.hasta}`} de ${MESES[mes - 1]} de ${anio}`
+    : `${MESES[mes - 1]} de ${anio}`;
 
   return (
     <>
@@ -173,31 +201,56 @@ function Puntualidad() {
         no en el otro, y dos tableros del mismo período mostrando meses
         distintos es la peor forma de leer esto.
       */}
-      <div className="mt-7 mb-3 flex gap-2">
+      {/*
+        Orden (09/10/2026, a pedido): Año, Mes, Semana y Desarrollo. En el
+        celular van de a dos por fila; desde `sm`, los cuatro en una, con el
+        año angosto (cuatro dígitos no usan más).
+      */}
+      <div className="mt-7 mb-3 grid grid-cols-2 gap-2 sm:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <SelectorModal
+          label="Año"
+          mostrarLabel={false}
+          value={anio}
+          onChange={(v) => {
+            setAnio(v);
+            setNSemana(0);
+          }}
+          opciones={anios.map((a) => ({ valor: a, texto: a }))}
+          className="h-10 px-3 text-sm"
+        />
         <SelectorModal
           label="Mes"
           mostrarLabel={false}
           value={String(mes)}
-          onChange={(v) => setMes(Number(v))}
+          onChange={(v) => {
+            setMes(Number(v));
+            setNSemana(0);
+          }}
           opciones={MESES.map((m, i) => ({ valor: String(i + 1), texto: m }))}
           className="h-10 px-3 text-sm"
         />
         {/*
-          El año NO es `flex-1`: con doce meses y tres opciones de desarrollo al
-          lado, dejarlo crecer le da un ancho que cuatro dígitos no usan.
+          La semana: de lunes a domingo, recortada al mes. En el botón, corto
+          ("Sem. 2 · 6-12"); adentro, explicada.
         */}
-        <div className="w-24 shrink-0">
-          <SelectorModal
-            label="Año"
-            mostrarLabel={false}
-            value={anio}
-            onChange={setAnio}
-            opciones={anios.map((a) => ({ valor: a, texto: a }))}
-            className="h-10 px-3 text-sm"
-          />
-        </div>
+        <SelectorModal
+          label="Semana"
+          mostrarLabel={false}
+          descripcion={`Las semanas de ${MESES[mes - 1]} de ${anio}, de lunes a domingo`}
+          value={String(nSemana)}
+          onChange={(v) => setNSemana(Number(v))}
+          opciones={[
+            { valor: "0", texto: "Todas las semanas", extra: "El mes entero" },
+            ...semanas.map((s) => ({
+              valor: String(s.n),
+              texto: `Sem. ${s.n} · ${s.desde === s.hasta ? s.desde : `${s.desde}-${s.hasta}`}`,
+              extra: textoSemana(s),
+            })),
+          ]}
+          className="h-10 px-3 text-sm"
+        />
         {/*
-          El filtro de desarrollo, en la MISMA fila que mes y año.
+          El filtro de desarrollo, en la MISMA fila que los otros.
 
           En el BOTÓN el texto es corto —"Desarrollados"— porque comparte la
           fila con otros dos controles; adentro del modal, donde el ancho no
@@ -219,8 +272,90 @@ function Puntualidad() {
         />
       </div>
 
-      {/* ── Gráfico 1: horarios ──────────────────────────────────────────── */}
+      {/* ── Gráfico 1: actividad diaria ──────────────────────────────────── */}
       <section>
+        <div className="mb-3">
+          <h2 className="font-display text-xl font-bold">Actividad</h2>
+          {/*
+            "Todas" es el dato que evita el malentendido: los dos gráficos de
+            arriba muestran solo desvíos, y sin esta aclaración se leería como
+            si estas barras también fueran problemas.
+
+            Con el filtro de desarrollo puesto ya NO son todas, así que el texto
+            lo dice: dejarlo fijo en "Todas" mientras el backend cuenta un
+            subconjunto sería la única línea de la pantalla que miente.
+          */}
+          <p className="text-xs text-muted-foreground">
+            {desarrollo === "TODOS"
+              ? "Todas las intervenciones, por día" + (semana ? " de la semana" : " del mes")
+              : desarrollo === "SI"
+                ? "Intervenciones que desarrollaron el índice, por día" +
+                  (semana ? " de la semana" : " del mes")
+                : "Intervenciones que no desarrollaron el índice, por día" +
+                  (semana ? " de la semana" : " del mes")}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
+          {cargandoDias ? (
+            <div className="h-40 animate-pulse rounded-xl bg-muted" />
+          ) : errorDias ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No se pudo cargar la actividad.
+            </p>
+          ) : !dias?.length ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Sin intervenciones registradas en {periodo}
+              {coletilla}.
+            </p>
+          ) : (
+            <ActividadChart datos={dias} series={series} anio={anio} mes={mes} />
+          )}
+        </div>
+      </section>
+
+      {/* ── Gráfico 2: ubicación ─────────────────────────────────────────── */}
+      <section className="mt-7">
+        <div className="mb-3">
+          <h2 className="font-display text-xl font-bold">Ubicación</h2>
+          <p className="text-xs text-muted-foreground">
+            Marcaciones a más de 1 km de la institución
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
+          {isLoading ? (
+            <div className="h-40 animate-pulse rounded-xl bg-muted" />
+          ) : isError ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No se pudo cargar la ubicación.
+            </p>
+          ) : !ubicacion.length ? (
+            /*
+              El texto dice "sin marcaciones fuera de rango" y NO "todos
+              marcaron donde debían", porque también cae acá el caso de que no
+              haya con qué comparar: una institución con una sola marcación
+              histórica tiene su punto de referencia sobre esa misma marcación,
+              así que la distancia da 0 y nunca aparece. Ver el join `ref` en
+              `intervenciones.sql`.
+            */
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Sin marcaciones fuera de rango en {periodo}
+              {coletilla}.
+            </p>
+          ) : (
+            <>
+              <UbicacionChart datos={ubicacion} onSeleccionar={setElegidoUbi} />
+              <p className="mt-3 border-t border-border/60 pt-2.5 text-center text-[11px] text-muted-foreground">
+                Tocá una barra para ver el detalle y el mapa
+              </p>
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* ── Gráfico 3: horarios ──────────────────────────────────────────── */}
+      <section className="mt-7">
         {/*
           El ojo va en la CABECERA y no adentro de la tarjeta: lo que se oculta
           es la tarjeta entera, así que el control tiene que sobrevivirla.
@@ -267,7 +402,7 @@ function Puntualidad() {
               Las dos son "no hay nada que revisar".
             */
               <p className="py-6 text-center text-sm text-muted-foreground">
-                Sin desvíos de 15 minutos o más en {MESES[mes - 1]} de {anio}
+                Sin desvíos de 15 minutos o más en {periodo}
                 {coletilla}.
               </p>
             ) : (
@@ -282,96 +417,18 @@ function Puntualidad() {
         )}
       </section>
 
-      {/* ── Gráfico 2: ubicación ─────────────────────────────────────────── */}
-      <section className="mt-7">
-        <div className="mb-3">
-          <h2 className="font-display text-xl font-bold">Ubicación</h2>
-          <p className="text-xs text-muted-foreground">
-            Marcaciones a más de 1 km de la institución
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
-          {isLoading ? (
-            <div className="h-40 animate-pulse rounded-xl bg-muted" />
-          ) : isError ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No se pudo cargar la ubicación.
-            </p>
-          ) : !ubicacion.length ? (
-            /*
-              El texto dice "sin marcaciones fuera de rango" y NO "todos
-              marcaron donde debían", porque también cae acá el caso de que no
-              haya con qué comparar: una institución con una sola marcación
-              histórica tiene su punto de referencia sobre esa misma marcación,
-              así que la distancia da 0 y nunca aparece. Ver el join `ref` en
-              `intervenciones.sql`.
-            */
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              Sin marcaciones fuera de rango en {MESES[mes - 1]} de {anio}
-              {coletilla}.
-            </p>
-          ) : (
-            <>
-              <UbicacionChart datos={ubicacion} onSeleccionar={setElegidoUbi} />
-              <p className="mt-3 border-t border-border/60 pt-2.5 text-center text-[11px] text-muted-foreground">
-                Tocá una barra para ver el detalle y el mapa
-              </p>
-            </>
-          )}
-        </div>
-      </section>
-
-      {/* ── Gráfico 3: actividad diaria ──────────────────────────────────── */}
-      <section className="mt-7">
-        <div className="mb-3">
-          <h2 className="font-display text-xl font-bold">Actividad</h2>
-          {/*
-            "Todas" es el dato que evita el malentendido: los dos gráficos de
-            arriba muestran solo desvíos, y sin esta aclaración se leería como
-            si estas barras también fueran problemas.
-
-            Con el filtro de desarrollo puesto ya NO son todas, así que el texto
-            lo dice: dejarlo fijo en "Todas" mientras el backend cuenta un
-            subconjunto sería la única línea de la pantalla que miente.
-          */}
-          <p className="text-xs text-muted-foreground">
-            {desarrollo === "TODOS"
-              ? "Todas las intervenciones, por día del mes"
-              : desarrollo === "SI"
-                ? "Intervenciones que desarrollaron el índice, por día del mes"
-                : "Intervenciones que no desarrollaron el índice, por día del mes"}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
-          {cargandoDias ? (
-            <div className="h-40 animate-pulse rounded-xl bg-muted" />
-          ) : errorDias ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No se pudo cargar la actividad.
-            </p>
-          ) : !dias?.length ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              Sin intervenciones registradas en {MESES[mes - 1]} de {anio}
-              {coletilla}.
-            </p>
-          ) : (
-            <ActividadChart datos={dias} />
-          )}
-        </div>
-      </section>
-
       <PuntualidadModal
         facilitador={elegido}
         anio={anio}
         mes={mes}
+        semana={semana ? textoSemana(semana) : undefined}
         onClose={() => setElegido(null)}
       />
       <UbicacionModal
         facilitador={elegidoUbi}
         anio={anio}
         mes={mes}
+        semana={semana ? textoSemana(semana) : undefined}
         onClose={() => setElegidoUbi(null)}
       />
     </>

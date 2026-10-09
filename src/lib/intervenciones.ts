@@ -246,6 +246,57 @@ export function filtrarPorDesarrollo(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Semanas del mes (el filtro del inicio, 09/10/2026)                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Una semana del mes: de lunes a domingo, recortada al mes. La primera puede
+ * empezar un miércoles (el 1) y la última terminar un martes (el 31).
+ */
+export type Semana = { n: number; desde: number; hasta: number };
+
+/** Las semanas de ese mes, de lunes a domingo. `mes` 1–12. */
+export function semanasDelMes(anio: string | number, mes: number): Semana[] {
+  const a = Number(anio);
+  const ultimo = new Date(Date.UTC(a, mes, 0)).getUTCDate();
+  const semanas: Semana[] = [];
+  let desde = 1;
+  while (desde <= ultimo) {
+    // getUTCDay: domingo = 0. Días que faltan hasta el domingo.
+    const dow = new Date(Date.UTC(a, mes - 1, desde)).getUTCDay();
+    const hasta = Math.min(ultimo, desde + ((7 - dow) % 7));
+    semanas.push({ n: semanas.length + 1, desde, hasta });
+    desde = hasta + 1;
+  }
+  return semanas;
+}
+
+/** "Semana 2 · 6 al 12". */
+export const textoSemana = (s: Semana) =>
+  `Semana ${s.n} · ${s.desde === s.hasta ? s.desde : `${s.desde} al ${s.hasta}`}`;
+
+/**
+ * El día del mes de una marcación. `FECHA` es texto `DD/MM/YYYY` (la vista);
+ * si viniera ISO (`YYYY-MM-DD…`) también se entiende. `null` si no se lee.
+ */
+export function diaDeFecha(fecha: string | null): number | null {
+  if (!fecha) return null;
+  const dmy = fecha.match(/^(\d{1,2})\/\d{1,2}\/\d{4}/);
+  if (dmy) return Number(dmy[1]);
+  const iso = fecha.match(/^\d{4}-\d{2}-(\d{2})/);
+  return iso ? Number(iso[1]) : null;
+}
+
+/** Las marcaciones de esa semana; sin semana, todas. */
+export function filtrarPorSemana(filas: Intervencion[], semana: Semana | null): Intervencion[] {
+  if (!semana) return filas;
+  return filas.filter((f) => {
+    const d = diaDeFecha(f.fecha);
+    return d != null && d >= semana.desde && d <= semana.hasta;
+  });
+}
+
+/* -------------------------------------------------------------------------- */
 /* El agrupado para el gráfico                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -375,6 +426,41 @@ export async function actividadPorDia(
     dia: Number(row.dia),
     cantidad: Number(row.cantidad ?? 0),
   }));
+}
+
+/**
+ * Un día con el total y cuántas desarrollaron y no desarrollaron el índice.
+ * `total` puede ser más que `si + no`: las marcaciones sin `si_no` legible
+ * entran en el total y en ninguno de los otros dos.
+ */
+export type ActividadDiaDesglose = { dia: number; total: number; si: number; no: number };
+
+/**
+ * La actividad del mes con las tres series del gráfico de Actividad (09/10/2026):
+ * todas, desarrolladas y no desarrolladas. Son tres pedidos al MISMO endpoint
+ * (`si_no` vacío, 'SI' y 'NO'), en paralelo: así no hubo que tocar el backend
+ * ni volver a correr el script. Un día que solo tiene una de las series viene
+ * con 0 en las otras.
+ */
+export async function actividadPorDiaDesglose(
+  anio?: string,
+  mes?: number,
+): Promise<ActividadDiaDesglose[]> {
+  const [todos, si, no] = await Promise.all([
+    actividadPorDia(anio, mes, "TODOS"),
+    actividadPorDia(anio, mes, "SI"),
+    actividadPorDia(anio, mes, "NO"),
+  ]);
+  const porDia = new Map<number, ActividadDiaDesglose>();
+  const fila = (dia: number) => {
+    const f = porDia.get(dia) ?? { dia, total: 0, si: 0, no: 0 };
+    porDia.set(dia, f);
+    return f;
+  };
+  for (const d of todos) fila(d.dia).total = d.cantidad;
+  for (const d of si) fila(d.dia).si = d.cantidad;
+  for (const d of no) fila(d.dia).no = d.cantidad;
+  return [...porDia.values()].sort((a, b) => a.dia - b.dia);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -564,4 +650,7 @@ export const keysIntervenciones = {
   historial: (anio: string, mes: number) => ["intervenciones", anio, mes] as const,
   porDia: (anio: string, mes: number, desarrollo: FiltroDesarrollo = "TODOS") =>
     ["intervenciones-por-dia", anio, mes, desarrollo] as const,
+  /** Las tres series juntas (total, desarrolladas, no desarrolladas). */
+  porDiaDesglose: (anio: string, mes: number) =>
+    ["intervenciones-por-dia", anio, mes, "desglose"] as const,
 };

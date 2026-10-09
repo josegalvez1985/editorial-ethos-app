@@ -128,12 +128,15 @@ export function UbicacionModal({
   facilitador,
   anio,
   mes,
+  semana,
   onClose,
 }: {
   /** `null` = cerrado. */
   facilitador: ResumenUbicacion | null;
   anio: string;
   mes: number;
+  /** "Semana 2 · 6 al 12" si el inicio filtra por semana: el detalle es de esa semana. */
+  semana?: string;
   onClose: () => void;
 }) {
   const abierto = facilitador !== null;
@@ -149,6 +152,7 @@ export function UbicacionModal({
           </DialogTitle>
           <DialogDescription className="text-xs">
             {MESES[mes - 1]} {anio}
+            {semana ? ` · ${semana}` : ""}
             {facilitador &&
               ` · ${facilitador.fuera} ${
                 facilitador.fuera === 1 ? "marcación" : "marcaciones"

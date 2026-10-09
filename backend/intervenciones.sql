@@ -6,6 +6,8 @@
 --
 --   GET  intervenciones  ?anio=&mes=&id_facilitador=&limite=
 --   GET  intervenciones/por-dia  ?anio=&mes=&si_no=
+--   GET  intervenciones/por-dia/detalle  ?anio=&mes=&dia=   (09/10/2026: quien,
+--        por facilitador e institucion, al tocar una barra de Actividad)
 --   GET  intervenciones/mapa  ?desde=&hasta=&id_facilitador=   (09/10/2026)
 --   GET  intervenciones/mapa/facilitadores  ?desde=&hasta=     (09/10/2026)
 --
@@ -198,6 +200,14 @@ CREATE OR REPLACE PACKAGE PKG_INTERVENCIONES_ETHOS AS
       p_anio  IN VARCHAR2 DEFAULT NULL,
       p_mes   IN VARCHAR2 DEFAULT NULL,
       p_si_no IN VARCHAR2 DEFAULT NULL);
+
+  -- Quien hizo las intervenciones de UN dia, por facilitador e institucion,
+  -- con total / desarrolladas / no desarrolladas. Ver el cuerpo.
+  PROCEDURE por_dia_detalle(
+      p_token IN VARCHAR2,
+      p_anio  IN VARCHAR2 DEFAULT NULL,
+      p_mes   IN VARCHAR2 DEFAULT NULL,
+      p_dia   IN VARCHAR2 DEFAULT NULL);
 
   -- El mapa de la pagina 25: las marcaciones de un facilitador en el rango.
   PROCEDURE mapa(
@@ -908,6 +918,89 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
   END por_dia;
 
   ------------------------------------------------------------------------------
+  -- POR_DIA_DETALLE: quien hizo las intervenciones de UN dia (09/10/2026).
+  --
+  -- Lo que se abre al tocar una barra del grafico de Actividad: por
+  -- facilitador e institucion, cuantas en total, cuantas desarrollaron el
+  -- indice y cuantas no. MISMA fuente, MISMOS filtros y MISMA forma de contar
+  -- que `por_dia` (filas de la vista, fecha validada, SI_NO normalizado), para
+  -- que la suma del detalle de un dia de exactamente su barra.
+  --
+  -- Las tres cuentas vienen juntas: el modal cambia de serie sin otro pedido.
+  ------------------------------------------------------------------------------
+  PROCEDURE por_dia_detalle(
+      p_token IN VARCHAR2,
+      p_anio  IN VARCHAR2 DEFAULT NULL,
+      p_mes   IN VARCHAR2 DEFAULT NULL,
+      p_dia   IN VARCHAR2 DEFAULT NULL
+  ) IS
+    l_anio VARCHAR2(4);
+    l_mes  NUMBER;
+    l_dia  NUMBER;
+  BEGIN
+    IF f_usuario(p_token) IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+    BEGIN
+      l_dia := TO_NUMBER(TRIM(p_dia));
+    EXCEPTION
+      WHEN OTHERS THEN l_dia := NULL;
+    END;
+    IF l_dia IS NULL OR l_dia NOT BETWEEN 1 AND 31 OR l_dia <> TRUNC(l_dia) THEN
+      p_error(400, 'Bad Request', 'El dia tiene que ser un numero de 1 a 31');
+      RETURN;
+    END IF;
+    -- El periodo, igual que `por_dia`.
+    IF UPPER(TRIM(p_anio)) = 'TODOS' THEN
+      l_anio := NULL;
+    ELSIF TRIM(p_anio) IS NOT NULL THEN
+      l_anio := TRIM(p_anio);
+    ELSE
+      l_anio := TO_CHAR(SYSDATE, 'YYYY');
+    END IF;
+    l_mes := NVL(f_mes(p_mes), EXTRACT(MONTH FROM SYSDATE));
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('anio', l_anio);
+    APEX_JSON.WRITE('mes',  l_mes);
+    APEX_JSON.WRITE('dia',  l_dia);
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT id_facilitador, nombre_facilitador, id_institucion, nombre,
+               COUNT(*) AS total,
+               SUM(CASE WHEN UPPER(TRIM(si_no)) = 'SI' THEN 1 ELSE 0 END) AS cant_si,
+               SUM(CASE WHEN UPPER(TRIM(si_no)) = 'NO' THEN 1 ELSE 0 END) AS cant_no
+          FROM v_historial_intervenciones
+         WHERE (l_anio IS NULL OR anio = l_anio)
+           AND EXTRACT(MONTH FROM fecha_hora) = l_mes
+           -- La fecha validada antes de usarla, como en `por_dia`. El dia es
+           -- lo que `por_dia` saca con TO_CHAR(TO_DATE(fecha), 'DD').
+           AND REGEXP_LIKE(TRIM(fecha), '^\d{2}/\d{2}/\d{4}$')
+           AND TO_NUMBER(SUBSTR(TRIM(fecha), 1, 2)) = l_dia
+         GROUP BY id_facilitador, nombre_facilitador, id_institucion, nombre
+         ORDER BY UPPER(nombre_facilitador), UPPER(nombre)
+    ) LOOP
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id_facilitador',     r.id_facilitador);
+      APEX_JSON.WRITE('nombre_facilitador', r.nombre_facilitador);
+      APEX_JSON.WRITE('id_institucion',     r.id_institucion);
+      APEX_JSON.WRITE('institucion',        r.nombre);
+      APEX_JSON.WRITE('total',              r.total);
+      APEX_JSON.WRITE('si',                 r.cant_si);
+      APEX_JSON.WRITE('no',                 r.cant_no);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error_tardio('Error: ' || SQLERRM);
+  END por_dia_detalle;
+
+  ------------------------------------------------------------------------------
   -- EL MAPA (pagina 25 de APEX, /mapa-intervenciones)  —  09/10/2026
   --
   -- Las marcaciones de UN facilitador en un rango de fechas, para dibujarlas
@@ -1111,6 +1204,8 @@ BEGIN
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones',         'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/por-dia', 'GET');     EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/por-dia', 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/por-dia/detalle', 'GET');     EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/por-dia/detalle', 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/mapa', 'GET');        EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/mapa', 'OPTIONS');    EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/mapa/facilitadores', 'GET');     EXCEPTION WHEN OTHERS THEN NULL; END;
@@ -1206,6 +1301,53 @@ END;
   ORDS.DEFINE_PARAMETER(
       p_module_name        => 'ethos',
       p_pattern            => 'intervenciones/por-dia',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  ----------------------------------------------------------------------------
+  -- intervenciones/por-dia/detalle  ?anio=&mes=&dia=
+  -- Prioridad 2: mas especifica que por-dia (1).
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'ethos',
+        p_pattern     => 'intervenciones/por-dia/detalle',
+        p_priority    => 2,
+        p_etag_type   => 'NONE');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'ethos',
+      p_pattern     => 'intervenciones/por-dia/detalle',
+      p_method      => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token VARCHAR2(256);
+    l_pos   PLS_INTEGER;
+BEGIN
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN
+            l_token := TRIM(SUBSTR(l_token, l_pos + 7));
+        END IF;
+    END IF;
+    PKG_INTERVENCIONES_ETHOS.POR_DIA_DETALLE(
+        p_token => l_token,
+        p_anio  => :anio,
+        p_mes   => :mes,
+        p_dia   => :dia);
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'ethos',
+      p_pattern            => 'intervenciones/por-dia/detalle',
       p_method             => 'GET',
       p_name               => 'Authorization',
       p_bind_variable_name => 'authorization',
@@ -1337,6 +1479,7 @@ END;
 BEGIN
   preflight('intervenciones');
   preflight('intervenciones/por-dia');
+  preflight('intervenciones/por-dia/detalle');
   preflight('intervenciones/mapa');
   preflight('intervenciones/mapa/facilitadores');
   COMMIT;
@@ -1365,6 +1508,7 @@ BEGIN
   IF l_estado = 'VALID' THEN
     DBMS_OUTPUT.PUT_LINE('[OK]   PKG_INTERVENCIONES_ETHOS compilado.');
     DBMS_OUTPUT.PUT_LINE('       GET intervenciones ?anio=&mes=&id_facilitador=&limite=');
+    DBMS_OUTPUT.PUT_LINE('       GET intervenciones/por-dia/detalle ?anio=&mes=&dia=');
     DBMS_OUTPUT.PUT_LINE('       GET intervenciones/mapa ?desde=&hasta=&id_facilitador=');
     DBMS_OUTPUT.PUT_LINE('       GET intervenciones/mapa/facilitadores ?desde=&hasta=');
   ELSE
