@@ -127,7 +127,8 @@ Las reglas acordadas desde el 08/10/2026. Valen para cada página que se recrea:
    `src/lib/<tabla>.ts`. Nada de backends genéricos para varias tablas.
 2. **Los modales de APEX no son páginas ni entradas del menú.** Son diálogos o secciones de la
    pantalla principal y usan los permisos de esa página. Ejemplos: Roles de páginas (2, 3 y
-   19), Usuarios (67 y 68), Facilitadores (14, 15 y 63 a 66).
+   19), Usuarios (67 y 68), Facilitadores (14, 15 y 63 a 66), Instituciones (16, 21, 33, 35,
+   38, 43, 46 y 60).
 3. **La página ya existe en `MENU_PAGINAS`** con su número de APEX y su ruta (ver
    [`backend/menu_paginas.sql`](backend/menu_paginas.sql)). No se crea otra: la pantalla usa esa
    ruta, y los permisos que ya tenía en `ROLES_PAGINAS` valen al publicarla.
@@ -141,6 +142,10 @@ Las reglas acordadas desde el 08/10/2026. Valen para cada página que se recrea:
      Barrios): `<CatalogoNombre>`, alta y edición en un diálogo;
    - fichas grandes (Facilitadores): una pantalla con secciones, las listas hijas adentro y un
      solo **Guardar** fijo al pie;
+   - fichas con listas que son tablas aparte y tienen su propia página en APEX
+     (Instituciones: autoridades, horario): **pestañas**; Datos con su Guardar al pie y cada
+     lista guardada fila por fila en un diálogo. Las piezas de las fichas están en
+     `components/ficha-ui.tsx`;
    - las listas de valores cortas como pastillas de un toque; campos y botones `rounded-xl`;
    - botones según los permisos de la página: sin insertar no hay "Nuevo", y así.
 6. **Ubicación en cascada:** se elige el nivel más bajo (ciudad, barrio) y el resto se deriva en
@@ -190,6 +195,7 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Núcleo de Datos | **Departamentos**: los de cada país, filtrados y agrupados por país; alta, modificación y baja (solo si nada lo usa). Páginas 6 y 7 (modal) de APEX | `/departamentos` | `departamentos.sql` |
 | Núcleo de Datos | **Ciudades**: las de cada departamento, filtradas y agrupadas por departamento; el país sale del departamento. Alta, modificación y baja (solo si nada la usa). Páginas 8 y 9 (modal) de APEX | `/ciudades` | `ciudades.sql` |
 | Núcleo de Datos | **Barrios**: los de cada ciudad, filtrados y agrupados por ciudad; departamento y país salen de la ciudad. Alta, modificación y baja (solo si nada lo usa). Páginas 10 y 11 (modal) de APEX | `/barrios` | `barrios.sql` |
+| Núcleo de Datos | **Instituciones**: listado con cómo va el año lectivo en cada una (horario, pre-horarios confirmados, postulaciones) y "Limpiar filtros", y la ficha con pestañas: **Datos** (con "asignar el facilitador a los pre-horarios"), **Autoridades** (directores y coordinadores, con alta de persona ahí mismo), **Horario** (por año, con "copiar el del año anterior"), **Pre-horarios** y **Postulaciones** (grillas editables iguales a los IG de la 43 y la 38, con "horarios de otro año", postulaciones por año y el Formulario N° 1 en **PDF e imagen**). Páginas 16, 21, 33, 35, 38, 43, 46 y 60 de APEX | `/instituciones` | `instituciones.sql`, `instituciones_directores.sql`, `instituciones_coordinadores.sql`, `horario_instituciones.sql`, `pre_horarios.sql`, `postulaciones.sql`, `directores.sql`, `coordinadores.sql` |
 | Núcleo de Datos | **Sucursales**: alta, modificación y baja (solo si nada la usa) | `/sucursales` | `sucursales.sql` |
 | Operaciones | **Evaluaciones** de facilitadores, con su calificación y su cierre | `/evaluaciones` | `evaluaciones_facilitadores.sql` |
 | Operaciones | **Intervenciones**: carga manual de las que quedaron sin registrar | `/intervenciones` | `intervenciones_crud.sql` |
@@ -215,6 +221,12 @@ Los dos PDF comparten encabezado con logo, pie, tarjetas y estilo de tabla en
 [`src/lib/pdf-base.ts`](src/lib/pdf-base.ts): un reporte nuevo arma solo su cuerpo. jsPDF se
 descarga recién al tocar el botón, y el PDF se abre en una pestaña nueva (en el APK puede no
 abrirse: la WebView no abre pestañas).
+
+**El Formulario N° 1 de postulaciones es la excepción** (pestaña Postulaciones de una
+institución): no usa ese encabezado, copia el formulario oficial que generaba APEX —bandas,
+colores de los manuales, declaración y firma—. Se dibuja una sola vez en
+[`src/lib/formulario-postulacion.ts`](src/lib/formulario-postulacion.ts) y sale en **PDF**
+(oficio apaisado, paginado) y en **imagen PNG** del mismo dibujo, así no se desincronizan.
 
 En **Auditoría**, la vista *Movimientos* tiene un buscador que mira en todos los campos de
 cada tabla, y tocar un movimiento abre la historia del registro con **todos sus campos** y los
@@ -246,6 +258,14 @@ nunca un `max-w-*` que la encierre.
 en celular la única columna es `auto` y crece hasta el texto más largo que no corta: el
 `truncate` no actúa y la página entera se corre de costado. Pasó en las 16 grillas del cambio
 del 24/09/2026 y se arregló el 06/10/2026.
+
+**Pre-horarios y Postulaciones son la excepción al diseño de tarjetas** (pestañas de una
+institución): Jose pidió el 09/10/2026 que se vieran y funcionaran igual que los Interactive
+Grid de APEX (páginas 43 y 38). Las dos usan
+[`src/components/grilla-editable.tsx`](src/components/grilla-editable.tsx): una tabla con las
+columnas de APEX que se edita en la celda, con Agregar fila, Eliminar, Duplicar y Guardar. En
+celular se desplaza de costado dentro de su caja (la página no se corre). No usarla en otras
+pantallas sin que se pida.
 
 En escritorio, el botón **Guardar** del formulario de evaluación es *sticky* dentro del
 contenido y no *fixed*: fixed ocupaba toda la ventana y tapaba el pie de la sidebar.

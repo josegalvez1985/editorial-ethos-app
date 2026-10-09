@@ -247,6 +247,7 @@ export const PANTALLAS: Record<string, { descripcion: string; enBarra?: false }>
   "/ciudades": { descripcion: "Las ciudades de cada departamento", enBarra: false },
   "/departamentos": { descripcion: "Los departamentos de cada país", enBarra: false },
   "/sucursales": { descripcion: "Alta y modificación de sucursales", enBarra: false },
+  "/instituciones": { descripcion: "Datos, autoridades y horario de cada una", enBarra: false },
   "/evaluaciones": { descripcion: "Evaluación de facilitadores" },
   "/intervenciones": { descripcion: "Carga manual de intervenciones" },
   "/inventario": { descripcion: "Conteo de manuales por sucursal" },

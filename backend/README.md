@@ -21,6 +21,14 @@
 | **[`departamentos.sql`](departamentos.sql)** | ABM de departamentos, cada uno de un país (`PKG_DEPARTAMENTOS_ETHOS`) | después de `paises.sql` |
 | **[`ciudades.sql`](ciudades.sql)** | ABM de ciudades, cada una de un departamento; el país sale del departamento (`PKG_CIUDADES_ETHOS`) | después de `departamentos.sql` |
 | **[`barrios.sql`](barrios.sql)** | ABM de barrios, cada uno de una ciudad; departamento y país salen de la ciudad (`PKG_BARRIOS_ETHOS`) | después de `ciudades.sql` |
+| **[`directores.sql`](directores.sql)** | Directores: las personas (`PKG_DIRECTORES_ETHOS`) | después de `roles_paginas.sql` |
+| **[`coordinadores.sql`](coordinadores.sql)** | Coordinadores: las personas (`PKG_COORDINADORES_ETHOS`) | después de `roles_paginas.sql` |
+| **[`instituciones.sql`](instituciones.sql)** | Instituciones con su ficha (`PKG_INSTITUCIONES_ETHOS`) | después de `anios_lectivos.sql`, `ciudades.sql`, `barrios.sql` y `facilitadores.sql` |
+| **[`instituciones_directores.sql`](instituciones_directores.sql)** | Quién dirige cada institución (`PKG_INST_DIRECTORES_ETHOS`) | después de `directores.sql` |
+| **[`instituciones_coordinadores.sql`](instituciones_coordinadores.sql)** | Quién coordina en cada institución (`PKG_INST_COORDINADORES_ETHOS`) | después de `coordinadores.sql` |
+| **[`horario_instituciones.sql`](horario_instituciones.sql)** | El horario de cada institución, por año (`PKG_HORARIO_INST_ETHOS`) | después de `anios_lectivos.sql` |
+| **[`pre_horarios.sql`](pre_horarios.sql)** | Pre-horarios: la planificación del año; confirmarlos crea la postulación (`PKG_PRE_HORARIOS_ETHOS`) | después de `instituciones.sql` |
+| **[`postulaciones.sql`](postulaciones.sql)** | Postulaciones de una institución: la grilla de la 38 y el formulario PDF / imagen (`PKG_POSTULACIONES_ETHOS`) | después de `anios_lectivos.sql` |
 
 Todos son idempotentes. Solo `auth.sql` define el módulo y habilita el esquema; los demás
 agregan handlers al módulo `ethos` que creó él. Los "independiente" solo necesitan `auth.sql`.
@@ -458,6 +466,129 @@ que en el sitio es el diálogo de `/barrios`, con los permisos de la 10. Paquete
 
 La pantalla es `<CatalogoNombre>` con la ciudad como `padre`. En el selector de ciudad,
 debajo de cada una va su departamento (hay más de uno), lo que separa las ciudades homónimas.
+
+## Instituciones (`instituciones.sql` y siete más)
+
+Reemplaza a la página 16 de APEX (el listado) y a todo lo que colgaba de su modal 21 (Crear
+Institución): los IG de Directores y Coordinadores, los modales 35 (Crear Director) y 46 (Crear
+Coordinador), el 33 (Horarios, botón "Horario IE"), el 43 (Pre Horarios, botón "Pre
+Postulación"), el 38 (Datos, botón "Postulaciones") y la página 60 (Consulta de Postulaciones,
+con su PDF e imagen). En el sitio: el listado es `/instituciones` y la ficha es
+`/instituciones/$id` (`nueva` para el alta), con cinco pestañas —Datos, Autoridades, Horario,
+Pre-horarios y Postulaciones—, todo con los permisos de la 16.
+
+**Un script por tabla** (09/10/2026). Las de autoridades, horario y postulaciones tienen además
+su propia página en APEX (36, 47, 31, 20 y 24), y las personas la suya (34 y 45): cuando se
+pasen, usan estos mismos backends.
+
+| Script | Tabla | Paquete | Endpoints |
+| --- | --- | --- | --- |
+| `directores.sql` | `DIRECTORES` | `PKG_DIRECTORES_ETHOS` | `directores`, `directores/:id` |
+| `coordinadores.sql` | `COORDINADORES` | `PKG_COORDINADORES_ETHOS` | `coordinadores`, `coordinadores/:id` |
+| `instituciones.sql` | `INSTITUCIONES` | `PKG_INSTITUCIONES_ETHOS` | `instituciones`, `/opciones`, `/:id`, `/:id/facilitador` |
+| `instituciones_directores.sql` | `INSTITUCIONES_DIRECTORES` | `PKG_INST_DIRECTORES_ETHOS` | `instituciones-directores`, `/opciones`, `/:id` |
+| `instituciones_coordinadores.sql` | `INSTITUCIONES_COORDNADORES` | `PKG_INST_COORDINADORES_ETHOS` | `instituciones-coordinadores`, `/opciones`, `/:id` |
+| `horario_instituciones.sql` | `HORARIO_INSTITUCIONES` | `PKG_HORARIO_INST_ETHOS` | `horario-instituciones`, `/opciones`, `/copiar`, `/:id` |
+| `pre_horarios.sql` | `PRE_HORARIOS` | `PKG_PRE_HORARIOS_ETHOS` | `pre-horarios`, `/opciones`, `/confirmar`, `/:id` |
+| `postulaciones.sql` | `POSTULACIONES` | `PKG_POSTULACIONES_ETHOS` | `postulaciones`, `/opciones`, `/formulario`, `/:id`, `/:id/estado` |
+
+Orden para correrlos: `directores.sql` y `coordinadores.sql`, después `instituciones.sql` y por
+último los otros cinco.
+
+| Método | Ruta | Exige | Qué hace |
+| --- | --- | --- | --- |
+| GET | `instituciones` | sesión | El listado, con el director vigente y cómo va el año lectivo (`anio`): autoridades activas, bloques de horario, pre-horarios y confirmados, postulaciones activas |
+| GET | `instituciones/opciones` | sesión | La lista `ACTIVO_INACTIVO` de APEX y el año lectivo |
+| GET | `instituciones/:id` | sesión | La ficha, con `usos` y cuántos pre-horarios del año no tienen facilitador |
+| POST | `instituciones` | insertar en la página de `/instituciones` | `{nombre, estado, id_ciudad, id_barrio, direccion, ubicacion, zona, comentario, id_facilitador}` → `{id_institucion, autoridades_cambiadas}` |
+| PUT | `instituciones/:id` | actualizar | Lo mismo |
+| DELETE | `instituciones/:id` | borrar | **409** si algo la usa fuera de su ficha; autoridades y horario se borran con ella |
+| POST | `instituciones/:id/facilitador` | actualizar | El "Actualizar Facilitador" de la 21: el facilitador guardado a los pre-horarios del año que no tienen → `{actualizados}` |
+| GET | `instituciones-directores?id_institucion=` | sesión | Las filas de una institución (sin el parámetro, todas); misma forma en `instituciones-coordinadores` |
+| POST/PUT/DELETE | `instituciones-directores[/:id]` | actualizar en `/instituciones`, o la acción en `/instituciones-directores` | Una fila por vez |
+| GET | `directores` | sesión | Las personas, con en cuántas instituciones figuran |
+| POST | `directores` | insertar en `/directores`, o actualizar en `/instituciones` | Alta de persona desde la ficha (era el modal 35) |
+| GET | `horario-instituciones?id_institucion=` | sesión | Los bloques de TODOS los años, con `anio_actual` |
+| POST | `horario-instituciones/copiar` | insertar (como las autoridades) | `{id_institucion, desde}`: copia ese año al lectivo actual; **409** si el actual ya tiene bloques |
+| GET | `pre-horarios?id_institucion=&anio=` | sesión | Los del año (sin `anio`, el actual), con `id_postulacion` y sus `usos` (> 0 = bloqueado) |
+| GET | `pre-horarios/opciones` | sesión | Turnos y "confirmado" (listas de APEX), materias, énfasis y docentes (con `es_activo`) |
+| POST/PUT/DELETE | `pre-horarios[/:id]` | actualizar en `/instituciones` | Una clase por vez; **409** si está bloqueado o no es del año actual |
+| POST | `pre-horarios/confirmar` | actualizar en `/instituciones` | `{id_institucion, ids, estado}`: confirma varios; saltea bloqueados e incompletos. Hoy el sitio no lo usa (la grilla confirma fila por fila, como la 43) |
+| GET | `postulaciones?id_institucion=&anio=` | sesión | Las del año, con `anios` (los que tiene la institución) y `usos` |
+| GET | `postulaciones/formulario?id_institucion=&anio=` | sesión | Lo que imprime el Formulario N° 1 (el proceso DATOS de la 60) |
+| POST/PUT | `postulaciones[/:id]` | insertar / actualizar en `/instituciones` o `/postulaciones` | `{datos}`: la fila de la grilla como **texto JSON** (ORDS bindea solo campos sueltos). No toca `NOMBRE_PROFESOR`, `TELEFONO`, `ID_PRE_HORARIO` ni `ANIO` (ocultas en la 38) |
+| DELETE | `postulaciones/:id` | eliminar en `/instituciones` o `/postulaciones` | **409** si tiene intervenciones o evaluaciones |
+| PUT | `postulaciones/:id/estado` | actualizar en `/instituciones` o `/postulaciones` | `{estado, obs_estado}`. Hoy el sitio no lo usa (el estado se cambia en la grilla) |
+
+- **Ubicación con FK COMPUESTAS** (distinto de facilitadores). `INSTITUCIONES` tiene FK a
+  `BARRIOS` (país, departamento, ciudad, barrio), a `CIUDADES` (país, departamento, ciudad) y
+  a `DEPARTAMENTOS` (país, departamento). Por eso país y departamento se copian **de la fila
+  del barrio**, o de la ciudad si no hay barrio: así las FK se cumplen siempre. Una ciudad con
+  datos viejos desalineados no tiene combinación que las cumpla: la base da ORA-02291 y se
+  avisa que hay que corregirla (la verificación de `ciudades.sql` imprime el `UPDATE`). La
+  ciudad es obligatoria, como en APEX.
+- **El estado arrastra a las autoridades.** `TRG_UPD_ESTADO_INSTITUCIONES` (ya estaba, no se
+  toca) pone el nuevo estado a TODAS las filas de directores y coordinadores de la institución:
+  reactivarla reactiva también las de períodos viejos. `guardar` las cuenta
+  (`autoridades_cambiadas`) y la pantalla lo avisa antes y después de guardar. Si el estado
+  anterior era NULL el trigger no hace nada (compara con `!=`).
+- **Activa = 'A' o NULL**, el mismo criterio que `evaluaciones_facilitadores.sql`.
+- **Las columnas viejas** de `INSTITUCIONES` que APEX ya no mostraba (`DIRECTOR`, `NRO_CI`,
+  `TELEFONO`, `COORDINADOR…`, `HORARIO`, `CARGO`, `NIVEL`, `TURNO`, `ID_DIRECTOR`,
+  `ID_COORDINADOR`) no se leen ni se tocan.
+- **"Actualizar Facilitador"** es el proceso de la 21 tal cual. `TRG_POSTULACIONES` (el
+  trigger de `PRE_HORARIOS`) borra y vuelve a crear la postulación de cada pre-horario
+  confirmado que se toca, como pasaba en APEX: la ficha dice cuántos son antes de confirmar.
+- **Autoridades**: el período lo propone la pantalla con el año del calendario, como APEX
+  (`to_char(sysdate,'yyyy')`); es texto libre. La misma persona con el mismo período, cargo
+  (o tipo), nivel y turno en la misma institución es **409**: sería la misma fila dos veces.
+- **Coordinadores, distinto de directores**: el id se llama `ID_INSTITUION_COORDINADOR` y la
+  tabla `INSTITUCIONES_COORDNADORES` (así están en la base); el "cargo" es `TIPO_COORDINADOR`;
+  período y estado pueden venir vacíos; `NRO_TELEFONO` es **`CHAR(200)`** y se lee con `TRIM`
+  (si no, llega con ~190 espacios atrás). La persona es **obligatoria** al guardar aunque la
+  tabla la deje en NULL: la verificación avisa cuántas filas viejas no tienen.
+- **Personas**: CI repetida es 409; el nombre repetido solo lo avisa la pantalla (puede haber
+  homónimos). Borrar una persona, solo si no figura en ninguna institución.
+- **Horario por año.** `ANIO` lo completan dos triggers iguales (`TRG_ANIO_LECTIVO` y
+  `TRG_HORARIO_INSTITUCIONES_SET_ANIO`). El modal 33 mostraba todos los años mezclados; el PDF
+  de la 60 imprime solo el elegido. La pantalla los separa por año y ofrece copiar el de otro
+  año cuando el actual está vacío.
+- **Horas**: viajan como `'HH:MM'` y se guardan sobre el 01/01/2025, la fecha que usa
+  `TRG_POSTULACIONES_SET_FEC_HORA`. Las de APEX tienen otra fecha, así que todo se compara y
+  ordena por `TO_CHAR(…, 'HH24:MI')`. `TOTAL` lo calcula el backend; la hora de fin tiene que
+  ser posterior a la de inicio (APEX la dejaba en 00:00).
+- **Turno**: en el horario es el `NUMBER` 1/2/3 de `POSTULACIONES.TURNO`; en las autoridades,
+  texto de otra lista. Son dos dominios distintos con el mismo nombre.
+- **Confirmar un pre-horario crea su postulación.** Lo hace `TRG_POSTULACIONES` (ya estaba, no
+  se toca): con `ESTADO = 'SI'` inserta la postulación (la cantidad en la columna de su grado y
+  de su manual, las horas en las de su día); en cada UPDATE la **borra y la vuelve a crear**
+  (otro id, y vuelve Activa); en un DELETE la borra. Dos consecuencias:
+  - El trigger hace `CASE` sobre `GRADO`, `DIA` y `MANUAL` **sin ELSE**: un valor vacío o
+    desconocido da ORA-06592 al confirmar. Por eso los tres son obligatorios y se validan contra
+    las listas fijas de la 43 (APEX no los pedía).
+  - `INTERVENCIONES` y `EVALUACIONES_FACILITADORES` tienen FK a `POSTULACIONES`: si la
+    postulación ya tiene alguna, el trigger no puede borrarla y **ese pre-horario queda
+    bloqueado** (en APEX fallaba igual, con el error del trigger). El listado lo marca y el
+    paquete lo rechaza antes, con un mensaje claro.
+- **Solo se modifican los pre-horarios del año actual**: la postulación regenerada toma el año
+  lectivo actual (`TRG_POSTULACIONES_SET_ANIO`), no el del pre-horario.
+- **Elegir el docente pisa el teléfono** con el suyo, como la acción dinámica de la 43. La
+  lista ofrece todos los docentes, "nombre (teléfono)", como el LOV de APEX.
+- **Pre-horarios y Postulaciones son grillas editables como los IG de la 43 y la 38**
+  (`src/components/grilla-editable.tsx`, pedido el 09/10/2026: "que funcione igual que
+  APEX"): mismas columnas, mismo orden y mismas listas; se edita en la celda, Agregar fila,
+  Eliminar (tacha hasta guardar) y Guardar, que manda las filas una por una.
+- **"Horarios de otro año"** (en la pantalla) reemplaza el doble clic que copiaba el
+  horario de la 60 y lo pegaba en la 43: lee las postulaciones del año anterior y agrega la
+  fila.
+- **Postulaciones: se edita la fila entera, como en la 38.** Ojo, igual que en APEX: si la
+  postulación salió de un pre-horario y después se modifica ese pre-horario, el trigger la
+  regenera y lo cambiado en la grilla se pierde. Activa = no 'Inactivo' (criterio de la 60).
+- **El formulario** (`postulaciones/formulario`) devuelve lo mismo que el proceso DATOS de la
+  60, con un arreglo: DATOS filtraba `i.id_pais = 1` y el encabezado salía **vacío** para una
+  institución sin país 1. El PDF y la imagen los arma el sitio
+  (`src/lib/formulario-postulacion.ts`), con el diseño del que generaba APEX; si cambia el
+  contacto impreso (Cecilia Rafael), se cambia ahí.
 
 ## Usuarios (`usuarios.sql`)
 
@@ -950,6 +1081,17 @@ sitio*. Del lado de Oracle, lo que ya se aprendió:
   solo campo de texto con el JSON (`datos` en `facilitadores.sql`) y se lee con `APEX_JSON`.
 - **`UNISTR` devuelve NVARCHAR2:** en un `UNION` con un texto común da ORA-12704. Va con
   `TO_CHAR(UNISTR(...))`.
+- **FK compuestas** (`INSTITUCIONES` hacia `BARRIOS`, `CIUDADES` y `DEPARTAMENTOS`): los ids
+  de ubicación se copian **de la fila** del barrio o de la ciudad, no se derivan por separado;
+  si no, una fila vieja desalineada hace fallar la FK (ver *Instituciones*).
+- **`CHAR(n)` viene relleno de espacios** hasta n: se lee con `TRIM`
+  (`INSTITUCIONES_COORDNADORES.NRO_TELEFONO`).
+- **Nombres con errores de tipeo en la base** (`INSTITUCIONES_COORDNADORES`,
+  `ID_INSTITUION_COORDINADOR`): el SQL usa el de la base; el archivo, el endpoint y el front,
+  el bien escrito.
+- **Los scripts son ASCII** (salvo la raya del título). Un mensaje con ñ va con `UNISTR`:
+  `'No hay un ' || UNISTR('a\00f1o') || ' lectivo'`. Ojo al generarlo con `sed`: en el
+  reemplazo, `\0` es "toda la coincidencia" (pasó el 09/10/2026).
 - **Tildes:** en datos, `UNISTR` (el upload de SQL Scripts puede no respetar la codificación).
   Una **columna** con tilde (`DENOMINACIÓN`) se busca en `USER_TAB_COLUMNS` y se usa con SQL
   dinámico.

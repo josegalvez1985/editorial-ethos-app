@@ -300,13 +300,14 @@ export function rotuloContinuacion(doc: jsPDF, paginaInicio: number, texto: stri
 export function abrirPdfEnPestana(
   generar: () => Promise<Blob>,
   nombreArchivo: string,
+  /** Lo que se genera, para el aviso: "el PDF" o "la imagen" (09/10/2026). */
+  que = "el PDF",
 ): Promise<void> {
   const pestana = window.open("", "_blank");
   if (pestana) {
     try {
-      pestana.document.title = "Generando PDF…";
-      pestana.document.body.innerHTML =
-        '<p style="font:14px system-ui,sans-serif;color:#555;padding:32px">Generando el PDF…</p>';
+      pestana.document.title = "Generando…";
+      pestana.document.body.innerHTML = `<p style="font:14px system-ui,sans-serif;color:#555;padding:32px">Generando ${que}…</p>`;
     } catch {
       /* algunos navegadores no dejan escribir en la pestaña: no importa */
     }

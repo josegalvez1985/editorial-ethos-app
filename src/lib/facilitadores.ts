@@ -12,6 +12,7 @@
  */
 
 import { authFetch } from "@/lib/api";
+import type { ValorLista } from "@/lib/utils";
 
 export type Uso = { tabla: string; cantidad: number };
 
@@ -30,8 +31,8 @@ export type FacilitadorFila = {
   usos: Uso[];
 };
 
-/** Un valor de una lista de APEX (SI_NO, estado civil…): lo que se guarda y lo que se ve. */
-export type ValorLista = { valor: string; mostrar: string };
+/** Vive en `lib/utils` desde el 09/10/2026: la usan también otras fichas. */
+export type { ValorLista };
 
 export type OpcionesFacilitador = {
   si_no: ValorLista[];

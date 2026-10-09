@@ -24,6 +24,8 @@ import { Route as EvaluacionesIdRouteImport } from './routes/evaluaciones.$id'
 import { Route as EvaluacionesNuevaRouteImport } from './routes/evaluaciones.nueva'
 import { Route as FacilitadoresIndexRouteImport } from './routes/facilitadores.index'
 import { Route as FacilitadoresIdRouteImport } from './routes/facilitadores.$id'
+import { Route as InstitucionesIndexRouteImport } from './routes/instituciones.index'
+import { Route as InstitucionesIdRouteImport } from './routes/instituciones.$id'
 import { Route as IntervencionesIndexRouteImport } from './routes/intervenciones.index'
 import { Route as IntervencionesIdRouteImport } from './routes/intervenciones.$id'
 import { Route as IntervencionesNuevaRouteImport } from './routes/intervenciones.nueva'
@@ -116,6 +118,16 @@ const FacilitadoresIdRoute = FacilitadoresIdRouteImport.update({
   path: '/facilitadores/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InstitucionesIndexRoute = InstitucionesIndexRouteImport.update({
+  id: '/instituciones/',
+  path: '/instituciones/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InstitucionesIdRoute = InstitucionesIdRouteImport.update({
+  id: '/instituciones/$id',
+  path: '/instituciones/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IntervencionesIndexRoute = IntervencionesIndexRouteImport.update({
   id: '/intervenciones/',
   path: '/intervenciones/',
@@ -194,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/facilitadores/$id': typeof FacilitadoresIdRoute
+  '/instituciones/$id': typeof InstitucionesIdRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
@@ -207,6 +220,7 @@ export interface FileRoutesByFullPath {
   '/departamentos/': typeof DepartamentosIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/facilitadores/': typeof FacilitadoresIndexRoute
+  '/instituciones/': typeof InstitucionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
   '/nacionalidades/': typeof NacionalidadesIndexRoute
@@ -225,6 +239,7 @@ export interface FileRoutesByTo {
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/facilitadores/$id': typeof FacilitadoresIdRoute
+  '/instituciones/$id': typeof InstitucionesIdRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
@@ -238,6 +253,7 @@ export interface FileRoutesByTo {
   '/departamentos': typeof DepartamentosIndexRoute
   '/evaluaciones': typeof EvaluacionesIndexRoute
   '/facilitadores': typeof FacilitadoresIndexRoute
+  '/instituciones': typeof InstitucionesIndexRoute
   '/intervenciones': typeof IntervencionesIndexRoute
   '/inventario': typeof InventarioIndexRoute
   '/nacionalidades': typeof NacionalidadesIndexRoute
@@ -257,6 +273,7 @@ export interface FileRoutesById {
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/facilitadores/$id': typeof FacilitadoresIdRoute
+  '/instituciones/$id': typeof InstitucionesIdRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
@@ -270,6 +287,7 @@ export interface FileRoutesById {
   '/departamentos/': typeof DepartamentosIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/facilitadores/': typeof FacilitadoresIndexRoute
+  '/instituciones/': typeof InstitucionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
   '/nacionalidades/': typeof NacionalidadesIndexRoute
@@ -290,6 +308,7 @@ export interface FileRouteTypes {
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
     | '/facilitadores/$id'
+    | '/instituciones/$id'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
     | '/transferencias/$id'
@@ -303,6 +322,7 @@ export interface FileRouteTypes {
     | '/departamentos/'
     | '/evaluaciones/'
     | '/facilitadores/'
+    | '/instituciones/'
     | '/intervenciones/'
     | '/inventario/'
     | '/nacionalidades/'
@@ -321,6 +341,7 @@ export interface FileRouteTypes {
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
     | '/facilitadores/$id'
+    | '/instituciones/$id'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
     | '/transferencias/$id'
@@ -334,6 +355,7 @@ export interface FileRouteTypes {
     | '/departamentos'
     | '/evaluaciones'
     | '/facilitadores'
+    | '/instituciones'
     | '/intervenciones'
     | '/inventario'
     | '/nacionalidades'
@@ -352,6 +374,7 @@ export interface FileRouteTypes {
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
     | '/facilitadores/$id'
+    | '/instituciones/$id'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
     | '/transferencias/$id'
@@ -365,6 +388,7 @@ export interface FileRouteTypes {
     | '/departamentos/'
     | '/evaluaciones/'
     | '/facilitadores/'
+    | '/instituciones/'
     | '/intervenciones/'
     | '/inventario/'
     | '/nacionalidades/'
@@ -384,6 +408,7 @@ export interface RootRouteChildren {
   EvaluacionesIdRoute: typeof EvaluacionesIdRoute
   EvaluacionesNuevaRoute: typeof EvaluacionesNuevaRoute
   FacilitadoresIdRoute: typeof FacilitadoresIdRoute
+  InstitucionesIdRoute: typeof InstitucionesIdRoute
   IntervencionesIdRoute: typeof IntervencionesIdRoute
   IntervencionesNuevaRoute: typeof IntervencionesNuevaRoute
   TransferenciasIdRoute: typeof TransferenciasIdRoute
@@ -397,6 +422,7 @@ export interface RootRouteChildren {
   DepartamentosIndexRoute: typeof DepartamentosIndexRoute
   EvaluacionesIndexRoute: typeof EvaluacionesIndexRoute
   FacilitadoresIndexRoute: typeof FacilitadoresIndexRoute
+  InstitucionesIndexRoute: typeof InstitucionesIndexRoute
   IntervencionesIndexRoute: typeof IntervencionesIndexRoute
   InventarioIndexRoute: typeof InventarioIndexRoute
   NacionalidadesIndexRoute: typeof NacionalidadesIndexRoute
@@ -516,6 +542,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FacilitadoresIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/instituciones/': {
+      id: '/instituciones/'
+      path: '/instituciones'
+      fullPath: '/instituciones/'
+      preLoaderRoute: typeof InstitucionesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/instituciones/$id': {
+      id: '/instituciones/$id'
+      path: '/instituciones/$id'
+      fullPath: '/instituciones/$id'
+      preLoaderRoute: typeof InstitucionesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/intervenciones/': {
       id: '/intervenciones/'
       path: '/intervenciones'
@@ -624,6 +664,7 @@ const rootRouteChildren: RootRouteChildren = {
   EvaluacionesIdRoute: EvaluacionesIdRoute,
   EvaluacionesNuevaRoute: EvaluacionesNuevaRoute,
   FacilitadoresIdRoute: FacilitadoresIdRoute,
+  InstitucionesIdRoute: InstitucionesIdRoute,
   IntervencionesIdRoute: IntervencionesIdRoute,
   IntervencionesNuevaRoute: IntervencionesNuevaRoute,
   TransferenciasIdRoute: TransferenciasIdRoute,
@@ -637,6 +678,7 @@ const rootRouteChildren: RootRouteChildren = {
   DepartamentosIndexRoute: DepartamentosIndexRoute,
   EvaluacionesIndexRoute: EvaluacionesIndexRoute,
   FacilitadoresIndexRoute: FacilitadoresIndexRoute,
+  InstitucionesIndexRoute: InstitucionesIndexRoute,
   IntervencionesIndexRoute: IntervencionesIndexRoute,
   InventarioIndexRoute: InventarioIndexRoute,
   NacionalidadesIndexRoute: NacionalidadesIndexRoute,
