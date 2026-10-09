@@ -41,15 +41,13 @@ import {
   YAxis,
 } from "recharts";
 
-import type { ActividadDiaDesglose } from "@/lib/intervenciones";
+import {
+  SERIES_ACTIVIDAD,
+  type ActividadDiaDesglose,
+  type SerieActividad,
+} from "@/lib/intervenciones";
 
-export type SerieActividad = "total" | "si" | "no";
-
-const SERIES: Record<SerieActividad, { nombre: string; claro: string; oscuro: string }> = {
-  total: { nombre: "Total", claro: "#3a4a9f", oscuro: "#7c6fe0" },
-  si: { nombre: "Desarrollados", claro: "#0f8ab0", oscuro: "#2aa3c4" },
-  no: { nombre: "No desarrollados", claro: "#c2660a", oscuro: "#c47a28" },
-};
+const SERIES = SERIES_ACTIVIDAD;
 
 /** Alto fijo: es una sola fila de barras, no crece con la cantidad de días. */
 const ALTO = 215;
@@ -69,6 +67,19 @@ const MAX_ETIQUETAS = 21;
  */
 const FRANJA = { claro: "#eef0f6", oscuro: "#262a36" };
 
+/**
+ * La ALERTA (09/10/2026, a pedido): un día con más intervenciones que NO
+ * desarrollaron el índice que las que sí. Color de advertencia (ámbar), y
+ * siempre con ícono y texto, nunca solo el color: el fondo del día, un ⚠
+ * arriba, el número del día en ámbar, el aviso con la lista de días debajo y
+ * la línea en el detalle al pasar el mouse. Hex por lo mismo que FRANJA.
+ */
+const ALERTA = {
+  fondo: { claro: "#fdebc8", oscuro: "#3d2f12" },
+  texto: { claro: "#b45309", oscuro: "#f59e0b" },
+};
+const enAlerta = (d: Pick<ActividadDiaDesglose, "si" | "no">) => d.no > d.si;
+
 /** L M M J V S D: la inicial del día de la semana, debajo del número. */
 const INICIAL = ["D", "L", "M", "M", "J", "V", "S"];
 
@@ -77,6 +88,7 @@ export function ActividadChart({
   series,
   anio,
   mes,
+  onSeleccionar,
 }: {
   datos: ActividadDiaDesglose[];
   series: SerieActividad[];
@@ -84,6 +96,8 @@ export function ActividadChart({
   anio: string;
   /** 1–12. */
   mes: number;
+  /** Tocar una barra: el día y la serie (abre el detalle de ese día). */
+  onSeleccionar?: (dia: number, serie: SerieActividad) => void;
 }) {
   const conEtiquetas = datos.length * series.length <= MAX_ETIQUETAS;
   const suma = (k: SerieActividad) => datos.reduce((n, d) => n + d[k], 0);
@@ -104,6 +118,10 @@ export function ActividadChart({
   const franja = oscuro ? FRANJA.oscuro : FRANJA.claro;
   const inicial = (dia: number) =>
     INICIAL[new Date(Date.UTC(Number(anio), mes - 1, dia)).getUTCDay()];
+  const ambar = oscuro ? ALERTA.texto.oscuro : ALERTA.texto.claro;
+  const diasAlerta = datos.filter(enAlerta);
+  const alertaDe = new Set(diasAlerta.map((d) => d.dia));
+  const periodoEnAlerta = suma("no") > suma("si");
 
   return (
     <div>
@@ -137,7 +155,20 @@ export function ActividadChart({
             así que las vecinas se tocan y el día queda encerrado.
           */}
           {datos.map((d, i) =>
-            i % 2 === 0 ? (
+            alertaDe.has(d.dia) ? (
+              // El día en alerta: fondo ámbar (en lugar de la franja) y un ⚠
+              // arriba, en el margen del gráfico.
+              <ReferenceArea
+                key={`f${d.dia}`}
+                x1={d.dia}
+                x2={d.dia}
+                fill={oscuro ? ALERTA.fondo.oscuro : ALERTA.fondo.claro}
+                fillOpacity={1}
+                strokeOpacity={0}
+                ifOverflow="visible"
+                label={{ value: "⚠", position: "top", fill: ambar, fontSize: 12, fontWeight: 700 }}
+              />
+            ) : i % 2 === 0 ? (
               <ReferenceArea
                 key={`f${d.dia}`}
                 x1={d.dia}
@@ -162,7 +193,8 @@ export function ActividadChart({
                   dy={10}
                   textAnchor="middle"
                   fontSize={11}
-                  style={{ fill: "var(--foreground)" }}
+                  fontWeight={alertaDe.has(payload.value) ? 700 : 400}
+                  style={{ fill: alertaDe.has(payload.value) ? ambar : "var(--foreground)" }}
                 >
                   {payload.value}
                 </text>
@@ -197,6 +229,7 @@ export function ActividadChart({
                 label={p.label as string | number | undefined}
                 series={series}
                 color={color}
+                ambar={ambar}
               />
             )}
           />
@@ -210,6 +243,10 @@ export function ActividadChart({
               radius={[4, 4, 0, 0]}
               isAnimationActive={false}
               maxBarSize={22}
+              cursor={onSeleccionar ? "pointer" : undefined}
+              onClick={(d: { payload?: ActividadDiaDesglose }) => {
+                if (d?.payload) onSeleccionar?.(d.payload.dia, k);
+              }}
             >
               {conEtiquetas && (
                 <LabelList
@@ -236,6 +273,47 @@ export function ActividadChart({
           </span>
         ))}
       </div>
+      {/* El aviso de la alerta, con los días (tocarlos abre su detalle). */}
+      {(diasAlerta.length > 0 || periodoEnAlerta) && (
+        <div
+          role="status"
+          className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-[12.5px] text-amber-800 dark:text-amber-300"
+        >
+          <p className="font-semibold">
+            ⚠{" "}
+            {diasAlerta.length
+              ? `En ${diasAlerta.length} ${diasAlerta.length === 1 ? "día" : "días"} los no desarrollados superaron a los desarrollados`
+              : "En el período, los no desarrollados superan a los desarrollados"}
+          </p>
+          {diasAlerta.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {diasAlerta.map((d) => (
+                <button
+                  key={d.dia}
+                  type="button"
+                  onClick={() => onSeleccionar?.(d.dia, "no")}
+                  disabled={!onSeleccionar}
+                  title={`${d.no} no desarrollados contra ${d.si} desarrollados`}
+                  className="tap rounded-full border border-amber-500/50 bg-card px-2.5 py-0.5 text-[12px] font-semibold tabular-nums hover:bg-amber-500/15"
+                >
+                  {inicial(d.dia)} {d.dia} · {d.no} vs {d.si}
+                </button>
+              ))}
+            </div>
+          )}
+          {periodoEnAlerta && diasAlerta.length > 0 && (
+            <p className="mt-1.5">
+              En todo el período también: {suma("no").toLocaleString("es-PY")} no desarrollados
+              contra {suma("si").toLocaleString("es-PY")} desarrollados.
+            </p>
+          )}
+        </div>
+      )}
+      {onSeleccionar && (
+        <p className="mt-2 text-center text-[11px] text-muted-foreground">
+          Tocá una barra para ver los facilitadores y sus instituciones
+        </p>
+      )}
       {series.includes("total") && series.length > 1 && sinDato > 0 && (
         <p className="mt-1 text-center text-[11px] text-muted-foreground">
           {sinDato.toLocaleString("es-PY")} sin el dato de desarrollo: entran en el total y en
@@ -253,12 +331,14 @@ function Detalle({
   label,
   series,
   color,
+  ambar,
 }: {
   active?: boolean;
   payload?: { payload?: unknown }[];
   label?: string | number;
   series: SerieActividad[];
   color: (k: SerieActividad) => string;
+  ambar: string;
 }) {
   if (!active || !payload?.length) return null;
   const fila = payload[0]?.payload as ActividadDiaDesglose | undefined;
@@ -273,6 +353,11 @@ function Detalle({
           <strong className="tabular-nums">{fila[k].toLocaleString("es-PY")}</strong>
         </p>
       ))}
+      {enAlerta(fila) && (
+        <p className="mt-1 font-semibold" style={{ color: ambar }}>
+          ⚠ Más no desarrollados que desarrollados
+        </p>
+      )}
     </div>
   );
 }

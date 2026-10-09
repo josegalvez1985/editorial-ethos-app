@@ -186,7 +186,7 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 
 | Menú principal | Módulo | Ruta | Backend |
 | --- | --- | --- | --- |
-| — | **Inicio**: gráficos de puntualidad, ubicación y actividad del mes | `/home` | `intervenciones.sql` |
+| — | **Inicio**: filtros Año → Mes → **Semana** (o todas) → Desarrollo del índice, y los gráficos en este orden: **Actividad** (por día, tres barras: todas, desarrollados y no desarrollados, con una franja de fondo por día y una alerta en ámbar cuando los no desarrollados superan a los desarrollados; tocar una barra abre el día con sus facilitadores e instituciones), **Ubicación** y **Puntualidad** | `/home` | `intervenciones.sql` |
 | Administrador | **Roles de páginas** (página 2 + modales 3 y 19) | `/permisos` | `roles_paginas.sql` |
 | Administrador (fija) | **Crear páginas** | `/paginas` | `menu_paginas.sql`, `roles_paginas.sql` |
 | Núcleo de Datos | **Países**: alta, modificación y baja (solo si nada lo usa). Páginas 4 y 5 (modal) de APEX | `/paises` | `paises.sql` |
@@ -195,7 +195,7 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Núcleo de Datos | **Departamentos**: los de cada país, filtrados y agrupados por país; alta, modificación y baja (solo si nada lo usa). Páginas 6 y 7 (modal) de APEX | `/departamentos` | `departamentos.sql` |
 | Núcleo de Datos | **Ciudades**: las de cada departamento, filtradas y agrupadas por departamento; el país sale del departamento. Alta, modificación y baja (solo si nada la usa). Páginas 8 y 9 (modal) de APEX | `/ciudades` | `ciudades.sql` |
 | Núcleo de Datos | **Barrios**: los de cada ciudad, filtrados y agrupados por ciudad; departamento y país salen de la ciudad. Alta, modificación y baja (solo si nada lo usa). Páginas 10 y 11 (modal) de APEX | `/barrios` | `barrios.sql` |
-| Núcleo de Datos | **Instituciones**: listado con cómo va el año lectivo en cada una (horario, pre-horarios confirmados, postulaciones) y "Limpiar filtros", y la ficha con pestañas: **Datos** (con "asignar el facilitador a los pre-horarios"), **Autoridades** (directores y coordinadores, con alta de persona ahí mismo), **Horario** (por año, con "copiar el del año anterior"), **Pre-horarios** y **Postulaciones** (grillas editables iguales a los IG de la 43 y la 38, con "horarios de otro año", postulaciones por año y el Formulario N° 1 en **PDF e imagen**). Páginas 16, 21, 33, 35, 38, 43, 46 y 60 de APEX | `/instituciones` | `instituciones.sql`, `instituciones_directores.sql`, `instituciones_coordinadores.sql`, `horario_instituciones.sql`, `pre_horarios.sql`, `postulaciones.sql`, `directores.sql`, `coordinadores.sql` |
+| Núcleo de Datos | **Instituciones**: listado con cómo va el año lectivo en cada una (horario, pre-horarios confirmados, postulaciones) y "Limpiar filtros", y la ficha con pestañas: **Datos** (con "asignar el facilitador a los pre-horarios"), **Autoridades** (directores y coordinadores, con alta de persona ahí mismo), **Horario** (por año, con "copiar el del año anterior"), **Pre-horarios** y **Postulaciones** (grillas editables iguales a los IG de la 43 y la 38, con la lupa, todas las filas a la vista, los manuales en su color, los días agrupados en Desde/Hasta y las horas escritas con un clic, con "horarios de otro año", postulaciones por año y el Formulario N° 1 en **PDF e imagen**). Páginas 16, 21, 33, 35, 38, 43, 46 y 60 de APEX | `/instituciones` | `instituciones.sql`, `instituciones_directores.sql`, `instituciones_coordinadores.sql`, `horario_instituciones.sql`, `pre_horarios.sql`, `postulaciones.sql`, `directores.sql`, `coordinadores.sql` |
 | Núcleo de Datos | **Docentes**: activos e inactivos en pastillas, buscador por nombre, CI o teléfono, aviso de CI o nombre repetido; uno en uso no se borra, se marca inactivo. Páginas 41 y 42 (modal) de APEX | `/docentes` | `docentes.sql` |
 | Núcleo de Datos | **Materias** y **Énfasis**: alta, modificación y baja (solo si nada los usa, contando pre-horarios y postulaciones). Páginas 17/18 y 26/27 (modales) de APEX | `/materias`, `/enfasis` | `materias.sql`, `enfasis.sql` |
 | Núcleo de Datos | **Índices**: los de cada manual, agrupados y en orden, con pastillas por manual y buscador; el alta propone el número siguiente y "Agregar y seguir" carga un índice entero de corrido. No repite un número dentro del manual; uno en uso no se borra ni cambia de manual. Páginas 28 y 29 (modal) de APEX | `/indices` | `indices.sql` |
@@ -210,7 +210,7 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Núcleo de Datos | **Áreas de Evaluación**: alta, modificación y baja (solo si ningún ítem ni evaluación la usa), con `<CatalogoNombre>`. Páginas 81 y 82 (modal) de APEX | `/areas-evaluacion` | `areas_evaluaciones.sql` |
 | Núcleo de Datos | **Evaluaciones** (los ítems): agrupados por área con pastillas y buscador; cada uno dice en cuántas evaluaciones se usó (en uso no se borra ni cambia de área). "Agregar y seguir" para cargar varios de corrido. Páginas 83 y 84 (modal) de APEX | `/items-evaluacion` | `evaluaciones.sql` |
 | Núcleo de Datos | **Escalas de Evaluaciones**: la escala por **tramos** (Deficiente, Aceptable…) sobre una barra de 0 al máximo; "Editar tramos" cambia topes y textos de todos a la vez; avisa si faltan números. Las filas sueltas, a mano como en APEX (una usada no se borra ni cambia de número). Páginas 85 y 86 (modal) de APEX | `/escalas-evaluacion` | `escalas_evaluaciones.sql` |
-| Operaciones | **Postulaciones** (con el formato de APEX, a pedido): filtros Año / Departamento / Ciudades / Barrios / Institución / Turno encadenados, botones **Generar** (8 filas), **Eliminar** (solo el año elegido; saltea las que tienen intervenciones o evaluaciones), **Imprimir** (el PDF oficio apaisado de la 20) y Limpiar Filtros; la grilla con las columnas y colores del IG y el lápiz que abre el modal 22 con sus campos y colores. Páginas 20 y 22 (modal) de APEX | `/postulaciones` | `postulaciones.sql` |
+| Operaciones | **Postulaciones** (con el formato de APEX, a pedido): filtros Año / Departamento / Ciudades / Barrios / Institución / Turno encadenados, botones **Generar** (8 filas), **Eliminar** (solo el año elegido; saltea las que tienen intervenciones o evaluaciones), **Imprimir** (el PDF oficio apaisado de la 20) y Limpiar Filtros; la grilla con las columnas y colores del IG y el lápiz que abre el modal 22 con sus campos y colores. La grilla **carga recién con una institución elegida** (antes de eso solo se piden los años) y tiene la lupa y todas las filas a la vista, como las de la ficha. Páginas 20 y 22 (modal) de APEX | `/postulaciones` | `postulaciones.sql` |
 | Operaciones | **Intervenciones en el Mapa**: período con atajos (Hoy, Esta semana…), facilitador (con cuántas marcaciones tiene) e institución, sin botón "Ver"; resumen con las marcaciones **lejos** de la institución (más de 1 km del punto que se deduce de sus marcaciones); mapa grande (Leaflet + OpenStreetMap) con pines numerados por hora, el recorrido de cada día y cada institución; línea de tiempo por día que vuela el mapa a cada marcación. Página 25 de APEX | `/mapa-intervenciones` | `intervenciones.sql` |
 | Núcleo de Datos | **Sucursales**: alta, modificación y baja (solo si nada la usa) | `/sucursales` | `sucursales.sql` |
 | Operaciones | **Evaluaciones** de facilitadores, con su calificación y su cierre | `/evaluaciones` | `evaluaciones_facilitadores.sql` |
@@ -220,6 +220,7 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Reportes y Consultas | **Agendas**: el horario semanal | `/agendas` | `agendas.sql` |
 | Reportes y Consultas | **Consulta de inventarios**: conteos pendientes y cerrados por sucursal, gráfico comparativo entre inventarios y PDF con el logo | `/consulta-inventarios` | `inventarios.sql` |
 | Reportes y Consultas | **Consulta de transferencias**: envíos entre sucursales por ruta y por manual, con el detalle de cada una y PDF | `/consulta-transferencias` | `transferencias.sql` |
+| Reportes y Consultas | **Consulta de postulaciones**: las activas de un año, combinables por ciudad, institución, facilitador y "¿tiene facilitador?" (cada opción dice cuántas quedan con los otros filtros), con buscador, Restablecer y la descarga para **Excel** (CSV con `;`). Arriba el resumen (postulaciones, instituciones, con y sin facilitador, con el % cubierto); abajo las tarjetas agrupadas por institución, con link a su ficha. Tocar una abre el modal 22 (el mismo de `/postulaciones`, en [`editor-postulacion.tsx`](src/components/editor-postulacion.tsx)). Página 24 de APEX | `/consulta-postulaciones` | `postulaciones.sql` (sin SQL propio: usa `postulaciones/todas`) |
 | Administrador | **Usuarios**: las cuentas del workspace, con su estado y cuántas páginas tienen; activar y bloquear. Páginas 67 y 68 (modal) de APEX | `/usuarios` | `usuarios.sql`, `auth.sql` |
 | Administrador | **Auditoría**: qué tablas tienen bitácora y quién cambió qué | `/auditoria` | `auditoria.sql` |
 | Sistema | **Mi cuenta**: tema, color y cierre de sesión | `/account` | — |
@@ -282,6 +283,18 @@ Grid de APEX (páginas 43 y 38). Las dos usan
 columnas de APEX que se edita en la celda, con Agregar fila, Eliminar, Duplicar y Guardar. En
 celular se desplaza de costado dentro de su caja (la página no se corre). No usarla en otras
 pantallas sin que se pida.
+
+**Las planillas con lupa** (09/10/2026): esa grilla y la de Postulaciones de Operaciones
+([`postulaciones.index.tsx`](src/routes/postulaciones.index.tsx)) muestran todas las filas sin
+barra propia (se baja con la página), con columnas compactas de ancho fijo (`table-fixed`) y una
+lupa que achica columnas y letras juntas (CSS `zoom`; "Ajustar" la deja del ancho de la
+pantalla). Si la planilla entra a lo ancho, el encabezado queda pegado bajo la cabecera de la
+app; si no, solo se desplaza de costado. La lógica es una sola, en
+[`src/lib/lupa.ts`](src/lib/lupa.ts) (`usePlanilla`, y las horas escritas a mano sin el reloj de
+`<input type="time">`), y los botones en
+[`lupa-planilla.tsx`](src/components/lupa-planilla.tsx). Las listas de la grilla son botones
+hasta que se tocan: con un `<select>` por celda, Postulaciones tenía ~25.000 `<option>` y
+tardaba 3 s en abrir.
 
 En escritorio, el botón **Guardar** del formulario de evaluación es *sticky* dentro del
 contenido y no *fixed*: fixed ocupaba toda la ventana y tapaba el pie de la sidebar.

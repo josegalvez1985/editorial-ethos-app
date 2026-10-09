@@ -435,6 +435,23 @@ export async function actividadPorDia(
  */
 export type ActividadDiaDesglose = { dia: number; total: number; si: number; no: number };
 
+/** Las tres series del gráfico de Actividad. */
+export type SerieActividad = "total" | "si" | "no";
+
+/**
+ * Nombre y color de cada serie, en claro y oscuro: validados con el script de
+ * la guía de visualización (todos los pares, daltonismo incluido). Los usan el
+ * gráfico y el detalle de un día.
+ */
+export const SERIES_ACTIVIDAD: Record<
+  SerieActividad,
+  { nombre: string; claro: string; oscuro: string }
+> = {
+  total: { nombre: "Total", claro: "#3a4a9f", oscuro: "#7c6fe0" },
+  si: { nombre: "Desarrollados", claro: "#0f8ab0", oscuro: "#2aa3c4" },
+  no: { nombre: "No desarrollados", claro: "#c2660a", oscuro: "#c47a28" },
+};
+
 /**
  * La actividad del mes con las tres series del gráfico de Actividad (09/10/2026):
  * todas, desarrolladas y no desarrolladas. Son tres pedidos al MISMO endpoint
@@ -461,6 +478,39 @@ export async function actividadPorDiaDesglose(
   for (const d of si) fila(d.dia).si = d.cantidad;
   for (const d of no) fila(d.dia).no = d.cantidad;
   return [...porDia.values()].sort((a, b) => a.dia - b.dia);
+}
+
+/**
+ * Quién hizo las intervenciones de un día: una fila por facilitador e
+ * institución, con las tres cuentas del gráfico de Actividad.
+ */
+export type DetalleDia = {
+  idFacilitador: number | null;
+  facilitador: string;
+  idInstitucion: number | null;
+  institucion: string;
+  total: number;
+  si: number;
+  no: number;
+};
+
+/**
+ * El detalle de UN día del gráfico de Actividad (`intervenciones/por-dia/detalle`).
+ * Cuenta igual que `por-dia`, así que la suma da la barra.
+ */
+export async function detalleDia(anio: string, mes: number, dia: number): Promise<DetalleDia[]> {
+  const r = (await authFetch(
+    `intervenciones/por-dia/detalle${qs({ anio, mes: nombreMes(mes), dia: String(dia) })}`,
+  )) as { data?: Record<string, unknown>[] };
+  return (r.data ?? []).map((x) => ({
+    idFacilitador: x.id_facilitador == null ? null : Number(x.id_facilitador),
+    facilitador: x.nombre_facilitador == null ? "" : String(x.nombre_facilitador),
+    idInstitucion: x.id_institucion == null ? null : Number(x.id_institucion),
+    institucion: x.institucion == null ? "" : String(x.institucion),
+    total: Number(x.total ?? 0),
+    si: Number(x.si ?? 0),
+    no: Number(x.no ?? 0),
+  }));
 }
 
 /* -------------------------------------------------------------------------- */

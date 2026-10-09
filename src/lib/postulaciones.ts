@@ -14,6 +14,8 @@
  * (`pre_horarios.sql`).
  */
 
+import type { CSSProperties } from "react";
+
 import { authFetch } from "@/lib/api";
 import type { ValorLista } from "@/lib/utils";
 
@@ -438,3 +440,17 @@ export const keysPostulaciones = {
   todas: (f: FiltrosPostulaciones) => ["postulaciones", "todas", f] as const,
   opciones: ["postulaciones", "opciones"] as const,
 };
+
+/**
+ * Los colores de APEX (el CSS en línea de las páginas 20 y 22), con la letra
+ * oscura para que se lean igual en el tema oscuro.
+ */
+export const COLORES_APEX = {
+  filtro: { backgroundColor: "#aed6f1", color: "#0f172a" },
+  ubicacion: { backgroundColor: "#d1f2eb", color: "#0f172a" },
+  grado: { backgroundColor: "#d4e6f1", color: "#0f172a" },
+  dia: { backgroundColor: "#e8daef", color: "#0f172a" },
+  docente: { backgroundColor: "#d5d8dc", color: "#0f172a" },
+  observacion: { backgroundColor: "#f2d7d5", color: "#0f172a" },
+  facilitador: { backgroundColor: "#2e86c1", color: "#ffffff" },
+} satisfies Record<string, CSSProperties>;

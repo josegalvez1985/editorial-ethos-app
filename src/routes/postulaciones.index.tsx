@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Eraser, FileText, FolderPlus, Loader2, Pencil, Search, Trash2, X } from "lucide-react";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { Eraser, FileText, FolderPlus, Loader2, Pencil, Search, Trash2 } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import { Cargando, Fallo, SoloLectura } from "@/components/admin-ui";
+import { Cargando, Fallo } from "@/components/admin-ui";
 import { AppShell } from "@/components/app-shell";
-import { PickerModal } from "@/components/picker-modal";
+import { Campo, EditorPostulacion, Filtro } from "@/components/editor-postulacion";
+import { LupaPlanilla } from "@/components/lupa-planilla";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,33 +18,24 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { keysBarrios, listarBarrios } from "@/lib/barrios";
 import { keysCiudades, listarCiudades } from "@/lib/ciudades";
 import { keysDepartamentos, listarDepartamentos } from "@/lib/departamentos";
 import type { Opcion } from "@/lib/evaluaciones";
-import { keysFacilitadores, listarFacilitadores } from "@/lib/facilitadores";
 import { keysInstituciones, listarInstituciones } from "@/lib/instituciones";
 import { abrirPdfEnPestana } from "@/lib/pdf-base";
+import { usePlanilla } from "@/lib/lupa";
 import { generarPdfPostulaciones, nombrePdfPostulaciones } from "@/lib/pdf-postulaciones";
 import { usePermisos } from "@/lib/permisos";
 import {
+  COLORES_APEX as APEX,
   DIAS,
-  eliminarPostulacion,
   eliminarPostulacionesLote,
   generarPostulaciones,
   GRADOS,
-  guardarPostulacion,
   keysPostulaciones,
   listarTodasPostulaciones,
   MANUALES,
-  opcionesPostulacion,
   type FiltrosPostulaciones,
   type PostulacionFila,
 } from "@/lib/postulaciones";
@@ -54,27 +46,13 @@ export const Route = createFileRoute("/postulaciones/")({
   head: () => ({
     meta: [
       { title: "Postulaciones — Juventud con Valores" },
-      { name: "description", content: "Las postulaciones de todas las instituciones, por año." },
+      { name: "description", content: "Las postulaciones de cada institución, por año." },
     ],
   }),
   component: PostulacionesPage,
 });
 
 const RUTA = "/postulaciones";
-
-/**
- * Los colores de APEX (el CSS en línea de las páginas 20 y 22), con la letra
- * oscura para que se lean igual en el tema oscuro.
- */
-const APEX = {
-  filtro: { backgroundColor: "#aed6f1", color: "#0f172a" },
-  ubicacion: { backgroundColor: "#d1f2eb", color: "#0f172a" },
-  grado: { backgroundColor: "#d4e6f1", color: "#0f172a" },
-  dia: { backgroundColor: "#e8daef", color: "#0f172a" },
-  docente: { backgroundColor: "#d5d8dc", color: "#0f172a" },
-  observacion: { backgroundColor: "#f2d7d5", color: "#0f172a" },
-  facilitador: { backgroundColor: "#2e86c1", color: "#ffffff" },
-} satisfies Record<string, CSSProperties>;
 
 const SIN_FILTROS: Omit<FiltrosPostulaciones, "anio"> = {
   idDepartamento: null,
@@ -84,8 +62,26 @@ const SIN_FILTROS: Omit<FiltrosPostulaciones, "anio"> = {
   turno: null,
 };
 
-/** Cuántas filas se pintan de entrada; "Mostrar más" suma de a tanto (scroll del IG). */
-const PAGINA = 200;
+/**
+ * El ancho de cada columna de la grilla, en el orden en que se pintan: lo
+ * más compacto que se puede sin achicar la letra (12 px), como la grilla de
+ * la ficha. El total es el ancho natural de la planilla, el que usa la lupa.
+ */
+const COLUMNAS = [
+  32, // lápiz
+  170, // institución
+  64, // turno
+  46, // sección
+  ...GRADOS.map(() => 32),
+  96, // énfasis
+  ...MANUALES.map(() => 38),
+  ...DIAS.map(() => 78), // "07:00-07:40"
+  110, // materia
+  150, // profesor
+  84, // teléfono
+  130, // facilitador
+];
+const ANCHO_TABLA = COLUMNAS.reduce((n, c) => n + c, 0);
 
 const cant = (n: number) => (n ? String(n) : "");
 const franja = (f: { desde: string; hasta: string }) =>
@@ -111,6 +107,8 @@ const franja = (f: { desde: string; hasta: string }) =>
  *
  * Distinto de APEX, a propósito:
  *
+ * - **La grilla carga recién con una institución elegida** (a pedido): antes
+ *   traía las de todas. Hasta entonces solo se piden los años del filtro.
  * - **Eliminar** borra solo las del AÑO elegido (APEX borraba las de todos
  *   los años de la institución) y saltea las que tienen intervenciones o
  *   evaluaciones; pide confirmación diciendo cuántas son.
@@ -130,16 +128,29 @@ function PostulacionesPage() {
   const [anio, setAnio] = useState("");
   const [f, setF] = useState(SIN_FILTROS);
   const [buscar, setBuscar] = useState("");
-  const [mostrar, setMostrar] = useState(PAGINA);
   const [editando, setEditando] = useState<PostulacionFila | null>(null);
   const [eliminando, setEliminando] = useState(false);
   const [imprimiendo, setImprimiendo] = useState(false);
+  const { marco, zoom, setZoom, cabe, ajustar, topEncabezado } = usePlanilla(ANCHO_TABLA);
 
+  // Las postulaciones se cargan recién con una institución elegida (09/10/2026,
+  // a pedido): sin ella eran las de todas y la página tardaba en abrir.
+  const conInst = f.idInstitucion != null;
   const filtros: FiltrosPostulaciones = { anio, ...f };
   const lista = useQuery({
     queryKey: keysPostulaciones.todas(filtros),
     queryFn: () => listarTodasPostulaciones(filtros),
+    enabled: conInst,
   });
+  // Mientras tanto, solo los años para el filtro: la institución -1 no
+  // existe, así que el backend no trae filas.
+  const soloAnios: FiltrosPostulaciones = { anio: "", ...SIN_FILTROS, idInstitucion: -1 };
+  const anuario = useQuery({
+    queryKey: keysPostulaciones.todas(soloAnios),
+    queryFn: () => listarTodasPostulaciones(soloAnios),
+    enabled: !conInst,
+  });
+  const base = lista.data ?? anuario.data;
   const deps = useQuery({ queryKey: keysDepartamentos.todo, queryFn: listarDepartamentos });
   const ciudades = useQuery({ queryKey: keysCiudades.todo, queryFn: listarCiudades });
   const barrios = useQuery({ queryKey: keysBarrios.todo, queryFn: listarBarrios });
@@ -150,10 +161,10 @@ function PostulacionesPage() {
     staleTime: 10 * 60 * 1000,
   });
 
-  const anioElegido = lista.data?.anio ?? anio;
-  const anios = [
-    ...new Set([lista.data?.anioActual ?? "", ...(lista.data?.anios ?? [])].filter(Boolean)),
-  ].sort((a, b) => b.localeCompare(a));
+  const anioElegido = lista.data?.anio ?? (anio || (base?.anioActual ?? ""));
+  const anios = [...new Set([base?.anioActual ?? "", ...(base?.anios ?? [])].filter(Boolean))].sort(
+    (a, b) => b.localeCompare(a),
+  );
   const turnos = opciones.data?.turno ?? [];
   const nombreTurno = (t: number | null) =>
     t == null ? "" : (turnos.find((o) => o.valor === String(t))?.mostrar ?? String(t));
@@ -383,7 +394,6 @@ function PostulacionesPage() {
                 value={buscar}
                 onChange={(e) => {
                   setBuscar(e.target.value);
-                  setMostrar(PAGINA);
                 }}
                 placeholder="Buscar"
                 aria-label="Buscar en la grilla"
@@ -392,7 +402,11 @@ function PostulacionesPage() {
             </div>
           </div>
 
-          {lista.isLoading ? (
+          {!conInst ? (
+            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+              Elegí una institución en los parámetros para ver sus postulaciones.
+            </p>
+          ) : lista.isLoading ? (
             <Cargando />
           ) : lista.isError ? (
             <div className="p-4">
@@ -404,88 +418,103 @@ function PostulacionesPage() {
             </p>
           ) : (
             <>
-              <div className="max-h-[70vh] overflow-auto">
-                <table className="w-max min-w-full border-collapse text-[12.5px]">
-                  <thead className="sticky top-0 z-10 bg-muted">
+              <div className="border-b border-border px-4 py-2">
+                <LupaPlanilla zoom={zoom} setZoom={setZoom} ajustar={ajustar} />
+              </div>
+              {/*
+                Como la grilla de la ficha (09/10/2026, a pedido): todas las
+                filas a la vista y sin barra propia (se baja con el scroll de
+                la página), columnas compactas de ancho fijo para que la lupa
+                achique columnas y letras juntas, y el encabezado pegado bajo
+                la cabecera de la app cuando la planilla entra a lo ancho. Si
+                no entra, queda solo el desplazamiento de costado ("Ajustar"
+                lo saca).
+              */}
+              <div ref={marco} className={cabe ? "" : "overflow-x-auto"}>
+                <table
+                  style={{ zoom, width: ANCHO_TABLA }}
+                  className={`table-fixed border-separate border-spacing-0 text-[12px] ${zoom >= 1 ? "min-w-full" : ""}`}
+                >
+                  <colgroup>
+                    {COLUMNAS.map((c, i) => (
+                      <col key={i} style={{ width: c }} />
+                    ))}
+                  </colgroup>
+                  <thead
+                    className={cabe ? "sticky z-10" : ""}
+                    style={cabe ? { top: topEncabezado } : undefined}
+                  >
                     <tr>
                       <Th />
                       <Th>Institución</Th>
                       <Th>Turno</Th>
-                      <Th>Seccion</Th>
+                      <Th titulo="Sección">Secc.</Th>
                       {GRADOS.map((g) => (
-                        <Th key={g.clave}>{g.corto.replace("°", "º")}</Th>
+                        <Th key={g.clave} centro>
+                          {g.corto.replace("°", "º")}
+                        </Th>
                       ))}
                       <Th>Énfasis</Th>
                       {MANUALES.map((m) => (
-                        <Th key={m.clave}>{m.nombre}</Th>
+                        <Th key={m.clave} titulo={m.nombre} centro>
+                          {m.corto}
+                        </Th>
                       ))}
                       {DIAS.map((d) => (
-                        <Th key={d.clave}>{d.corto}</Th>
+                        <Th key={d.clave} titulo={d.nombre} centro>
+                          {d.corto}
+                        </Th>
                       ))}
                       <Th>Materia</Th>
-                      <Th>Nombre Profesor</Th>
-                      <Th>Telefono</Th>
+                      <Th titulo="Nombre Profesor">Profesor</Th>
+                      <Th>Teléfono</Th>
                       <Th>Facilitador</Th>
                     </tr>
                   </thead>
                   <tbody>
-                    {visibles.slice(0, mostrar).map((p) => (
-                      <tr key={p.id} className="border-b border-border/60 hover:bg-muted/40">
-                        <td className="px-2 py-1.5 text-center">
+                    {visibles.map((p) => (
+                      <tr key={p.id} className="hover:bg-muted/40">
+                        <td className="border-b border-border/60 text-center">
                           <button
                             type="button"
                             onClick={() => setEditando(p)}
                             aria-label="Editar"
                             title="Editar"
-                            className="grid size-7 place-items-center rounded text-primary hover:bg-primary-soft"
+                            className="inline-grid size-6 place-items-center rounded text-primary hover:bg-primary-soft"
                           >
                             <Pencil className="size-3.5" />
                           </button>
                         </td>
-                        <Td ancho>{p.institucion}</Td>
-                        <Td>{nombreTurno(p.turno)}</Td>
-                        <Td>{p.seccion}</Td>
+                        <Td texto={p.institucion} />
+                        <Td texto={nombreTurno(p.turno)} />
+                        <Td texto={p.seccion} />
                         {GRADOS.map((g) => (
-                          <Td key={g.clave} num>
-                            {cant(p.grados[g.clave])}
-                          </Td>
+                          <Td key={g.clave} texto={cant(p.grados[g.clave])} num />
                         ))}
-                        <Td>{p.enfasis}</Td>
+                        <Td texto={p.enfasis} />
                         {MANUALES.map((m) => (
                           <td
                             key={m.clave}
-                            className="border-x border-border/40 px-2 py-1.5 text-center font-semibold tabular-nums"
+                            className="border-r border-b border-border/40 px-1 py-1 text-center font-semibold tabular-nums"
                             style={{ backgroundColor: m.color, color: m.tinta }}
                           >
                             {cant(p.manuales[m.clave])}
                           </td>
                         ))}
                         {DIAS.map((d) => (
-                          <Td key={d.clave}>{franja(p.dias[d.clave])}</Td>
+                          <Td key={d.clave} texto={franja(p.dias[d.clave])} num />
                         ))}
-                        <Td>{p.materia}</Td>
-                        <Td ancho>{p.docente}</Td>
-                        <Td>{p.telefono}</Td>
-                        <Td ancho>{p.facilitador}</Td>
+                        <Td texto={p.materia} />
+                        <Td texto={p.docente} />
+                        <Td texto={p.telefono} />
+                        <Td texto={p.facilitador} />
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2 text-[12px] text-muted-foreground">
-                <span>
-                  Total {visibles.length}
-                  {visibles.length > mostrar ? ` · mostrando ${mostrar}` : ""}
-                </span>
-                {visibles.length > mostrar && (
-                  <button
-                    type="button"
-                    onClick={() => setMostrar((n) => n + PAGINA)}
-                    className="font-semibold text-primary"
-                  >
-                    Mostrar más
-                  </button>
-                )}
+              <div className="border-t border-border px-4 py-2 text-[12px] text-muted-foreground">
+                Total {visibles.length}
               </div>
             </>
           )}
@@ -543,85 +572,6 @@ function PostulacionesPage() {
 /* Piezas                                                                     */
 /* -------------------------------------------------------------------------- */
 
-function Campo({
-  etiqueta,
-  req,
-  children,
-}: {
-  etiqueta: string;
-  req?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <label className="block min-w-0">
-      <span className="mb-1 block text-[13px] font-medium">
-        {etiqueta}
-        {req && <span className="ml-0.5 text-destructive">*</span>}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-/** Una LOV emergente de APEX ("Todos" = sin valor), con la cruz para limpiarla. */
-function Filtro({
-  etiqueta,
-  opciones,
-  valor,
-  texto,
-  onCambio,
-  estilo = APEX.filtro,
-  vacio = "Todos",
-  req,
-}: {
-  etiqueta: string;
-  opciones: Opcion[];
-  valor: number | null;
-  texto: string | null;
-  onCambio: (id: number | null) => void;
-  estilo?: CSSProperties;
-  vacio?: string;
-  req?: boolean;
-}) {
-  return (
-    <div className="flex min-w-0 items-end gap-1">
-      {/* El color de APEX en el botón del campo. `key`: al limpiarlo desde
-          afuera, el picker no recuerda el texto elegido antes. */}
-      <div
-        className="min-w-0 flex-1 [&_button]:!min-h-10 [&_button]:!rounded-md [&_button]:!py-1.5 [&_button]:!text-sm [&_label]:!mb-1 [&_label]:!text-[13px]"
-        style={{
-          ["--fondo" as string]: estilo.backgroundColor,
-          ["--tinta" as string]: estilo.color,
-        }}
-      >
-        <div className="[&_button]:![background-color:var(--fondo)] [&_button_span]:![color:var(--tinta)]">
-          <PickerModal
-            key={valor ?? "x"}
-            label={etiqueta}
-            opciones={opciones}
-            value={valor}
-            valueText={texto}
-            onChange={(o) => onCambio(o.id)}
-            placeholder={vacio}
-            requerido={req}
-          />
-        </div>
-      </div>
-      {valor != null && (
-        <button
-          type="button"
-          onClick={() => onCambio(null)}
-          aria-label={`Quitar ${etiqueta.toLowerCase()}`}
-          title="Quitar"
-          className="mb-1 grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted"
-        >
-          <X className="size-4" />
-        </button>
-      )}
-    </div>
-  );
-}
-
 function Boton({
   icono,
   onClick,
@@ -657,429 +607,38 @@ function Boton({
   );
 }
 
-function Th({ children }: { children?: ReactNode }) {
+/** El encabezado compacto; el título completo queda en el `title` si se abrevia. */
+function Th({
+  children,
+  titulo,
+  centro,
+}: {
+  children?: ReactNode;
+  titulo?: string;
+  centro?: boolean;
+}) {
   return (
-    <th className="border-x border-b border-border/60 px-2 py-2 text-left text-[12px] font-semibold whitespace-nowrap">
+    <th
+      title={titulo ?? (typeof children === "string" ? children : undefined)}
+      className={`truncate border-r border-b border-border/60 bg-muted px-1 py-1.5 text-[11px] font-semibold ${
+        centro ? "text-center" : "text-left"
+      }`}
+    >
       {children}
     </th>
   );
 }
 
-function Td({ children, num, ancho }: { children?: ReactNode; num?: boolean; ancho?: boolean }) {
+/** La celda compacta: lo que no entra se corta con "…" y se lee entero al pasar el mouse. */
+function Td({ texto, num }: { texto: string; num?: boolean }) {
   return (
     <td
-      className={`border-x border-border/40 px-2 py-1.5 whitespace-nowrap ${
+      title={texto || undefined}
+      className={`truncate border-r border-b border-border/40 px-1 py-1 ${
         num ? "text-center tabular-nums" : ""
-      } ${ancho ? "max-w-[18rem] truncate" : ""}`}
+      }`}
     >
-      {children}
+      {texto}
     </td>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* El modal 22 (Crear Postulación)                                            */
-/* -------------------------------------------------------------------------- */
-
-/** Los grados en el orden en que APEX buscaba el valor a copiar (COPIAR_VALOR). */
-const ORDEN_COPIA = ["g1m", "g2m", "g3m", "g2", "g3", "g4", "g5", "g6", "g7", "g8"] as const;
-
-function EditorPostulacion({
-  p,
-  onCerrar,
-  onGuardado,
-}: {
-  p: PostulacionFila;
-  onCerrar: () => void;
-  onGuardado: () => void;
-}) {
-  const { puedeRuta } = usePermisos();
-  const ficha = puedeRuta("/instituciones", "actualizar");
-  const puedeGuardar = ficha || puedeRuta(RUTA, "actualizar");
-  const puedeBorrar = ficha || puedeRuta(RUTA, "borrar");
-
-  const opciones = useQuery({
-    queryKey: keysPreHorarios.opciones,
-    queryFn: opcionesPreHorario,
-    staleTime: 10 * 60 * 1000,
-  });
-  const estados = useQuery({
-    queryKey: keysPostulaciones.opciones,
-    queryFn: opcionesPostulacion,
-    staleTime: 10 * 60 * 1000,
-  });
-  const ciudades = useQuery({ queryKey: keysCiudades.todo, queryFn: listarCiudades });
-  const insts = useQuery({ queryKey: keysInstituciones.lista, queryFn: listarInstituciones });
-  const facs = useQuery({ queryKey: keysFacilitadores.lista, queryFn: listarFacilitadores });
-
-  const [ciudad, setCiudad] = useState<number | null>(null);
-  const [idInstitucion, setIdInstitucion] = useState<number | null>(p.idInstitucion);
-  const [d, setD] = useState<Record<string, string>>(() => ({
-    turno: p.turno == null ? "" : String(p.turno),
-    seccion: p.seccion,
-    id_enfasis: p.idEnfasis == null ? "" : String(p.idEnfasis),
-    ...Object.fromEntries(GRADOS.map((g) => [g.clave, cant(p.grados[g.clave])])),
-    ...Object.fromEntries(MANUALES.map((m) => [m.clave, cant(p.manuales[m.clave])])),
-    ...Object.fromEntries(
-      DIAS.flatMap((x) => [
-        [`${x.clave}_desde`, p.dias[x.clave].desde],
-        [`${x.clave}_hasta`, p.dias[x.clave].hasta],
-      ]),
-    ),
-    id_materia: p.idMateria == null ? "" : String(p.idMateria),
-    id_docente: p.idDocente == null ? "" : String(p.idDocente),
-    telefono: p.telefono,
-    observacion: p.observacion,
-    id_facilitador: p.idFacilitador == null ? "" : String(p.idFacilitador),
-    estado: p.estado,
-    obs_estado: p.obsEstado,
-  }));
-  const [confirmarBorrado, setConfirmarBorrado] = useState(false);
-  const set = (k: string, v: string) => setD((x) => ({ ...x, [k]: v }));
-
-  // COPIAR_VALOR de APEX: el primer grado con cantidad.
-  const sugerido = () => {
-    for (const k of ORDEN_COPIA) if (Number(d[k]) > 0) return d[k];
-    return d.g9;
-  };
-
-  const instsCiudad = (insts.data?.items ?? []).filter(
-    (i) => ciudad == null || i.idCiudad === ciudad || i.id === idInstitucion,
-  );
-  const docentes = (opciones.data?.docentes ?? []).filter(
-    (x) => x.activo || String(x.id) === d.id_docente,
-  );
-  const facilitadores = (facs.data ?? []).filter(
-    (x) => x.activo || String(x.id) === d.id_facilitador,
-  );
-
-  const faltan = [...(idInstitucion == null ? ["institución"] : []), ...(d.turno ? [] : ["turno"])];
-
-  const guardar = useMutation({
-    mutationFn: () => guardarPostulacion(p.id, idInstitucion!, d),
-    onSuccess: () => {
-      onGuardado();
-      toast.success("Postulación actualizada");
-      onCerrar();
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo guardar"),
-  });
-  const borrar = useMutation({
-    mutationFn: () => eliminarPostulacion(p.id),
-    onSuccess: () => {
-      onGuardado();
-      toast.success("Postulación eliminada");
-      onCerrar();
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar"),
-  });
-  const ocupado = guardar.isPending || borrar.isPending;
-
-  const cargando = opciones.isLoading || insts.isLoading;
-  const input = "h-9 w-full rounded-md border border-input px-2 text-sm outline-none";
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && !ocupado && onCerrar()}>
-      <DialogContent className="max-h-[92vh] w-[calc(100vw-2rem)] max-w-4xl overflow-y-auto rounded-xl">
-        <DialogHeader className="text-left">
-          <DialogTitle className="text-xl">Crear Postulación</DialogTitle>
-          <DialogDescription className="text-xs">
-            {p.institucion}
-            {p.anio ? ` · ${p.anio}` : ""}
-            {p.usos ? ` · con ${p.usos} intervención(es) o evaluación(es)` : ""}
-          </DialogDescription>
-        </DialogHeader>
-
-        {cargando ? (
-          <Cargando />
-        ) : (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (faltan.length) {
-                toast.error(`Falta completar: ${faltan.join(", ")}`);
-                return;
-              }
-              guardar.mutate();
-            }}
-            className="space-y-4"
-          >
-            <fieldset disabled={!puedeGuardar || ocupado} className="space-y-4">
-              {/* Parámetros: la ciudad solo filtra la institución, como en APEX. */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Filtro
-                  etiqueta="Ciudad"
-                  opciones={(ciudades.data?.items ?? []).map((c) => ({
-                    id: c.id,
-                    texto: c.nombre,
-                    extra: c.padre?.nombre,
-                    busqueda: normalizar(`${c.nombre} ${c.padre?.nombre ?? ""}`),
-                  }))}
-                  valor={ciudad}
-                  texto={ciudades.data?.items.find((c) => c.id === ciudad)?.nombre ?? null}
-                  onCambio={setCiudad}
-                  estilo={APEX.ubicacion}
-                  vacio="Todas"
-                />
-                <Filtro
-                  etiqueta="Institución"
-                  req
-                  opciones={instsCiudad.map((i) => ({
-                    id: i.id,
-                    texto: i.nombre,
-                    extra: i.ciudad,
-                    busqueda: normalizar(`${i.nombre} ${i.ciudad}`),
-                  }))}
-                  valor={idInstitucion}
-                  texto={
-                    insts.data?.items.find((i) => i.id === idInstitucion)?.nombre ?? p.institucion
-                  }
-                  onCambio={setIdInstitucion}
-                  estilo={APEX.ubicacion}
-                  vacio="Elegir"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <Campo etiqueta="Turno" req>
-                  <select
-                    value={d.turno}
-                    onChange={(e) => set("turno", e.target.value)}
-                    style={APEX.grado}
-                    className={input}
-                  >
-                    <option value=""></option>
-                    {(opciones.data?.turno ?? []).map((t) => (
-                      <option key={t.valor} value={t.valor}>
-                        {t.mostrar}
-                      </option>
-                    ))}
-                  </select>
-                </Campo>
-                <Campo etiqueta="Énfasis">
-                  <select
-                    value={d.id_enfasis}
-                    onChange={(e) => set("id_enfasis", e.target.value)}
-                    style={APEX.grado}
-                    className={input}
-                  >
-                    <option value=""></option>
-                    {(opciones.data?.enfasis ?? []).map((x) => (
-                      <option key={x.id} value={x.id}>
-                        {x.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </Campo>
-                <Campo etiqueta="Sección">
-                  <input
-                    value={d.seccion}
-                    maxLength={5}
-                    onChange={(e) => set("seccion", e.target.value.toUpperCase())}
-                    style={APEX.grado}
-                    className={input}
-                  />
-                </Campo>
-              </div>
-
-              <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-11">
-                {GRADOS.map((g) => (
-                  <Campo key={g.clave} etiqueta={g.corto.replace("°", "º")}>
-                    <input
-                      value={d[g.clave]}
-                      inputMode="numeric"
-                      onChange={(e) => set(g.clave, e.target.value.replace(/\D/g, ""))}
-                      style={APEX.grado}
-                      className={`${input} text-center tabular-nums`}
-                    />
-                  </Campo>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
-                {MANUALES.map((m) => (
-                  <Campo key={m.clave} etiqueta={m.nombre}>
-                    <input
-                      value={d[m.clave]}
-                      inputMode="numeric"
-                      onFocus={() => {
-                        if (!d[m.clave]) set(m.clave, sugerido());
-                      }}
-                      onChange={(e) => set(m.clave, e.target.value.replace(/\D/g, ""))}
-                      style={{ backgroundColor: m.color, color: m.tinta }}
-                      className={`${input} text-center font-semibold tabular-nums`}
-                    />
-                  </Campo>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-5">
-                {DIAS.map((x) => (
-                  <div key={x.clave} className="grid grid-cols-2 gap-1.5 sm:grid-cols-1">
-                    <Campo etiqueta={`${x.nombre} Desde`}>
-                      <input
-                        type="time"
-                        value={d[`${x.clave}_desde`]}
-                        onChange={(e) => set(`${x.clave}_desde`, e.target.value)}
-                        style={APEX.dia}
-                        className={input}
-                      />
-                    </Campo>
-                    <Campo etiqueta={`${x.nombre} Hasta`}>
-                      <input
-                        type="time"
-                        value={d[`${x.clave}_hasta`]}
-                        onChange={(e) => set(`${x.clave}_hasta`, e.target.value)}
-                        style={APEX.dia}
-                        className={input}
-                      />
-                    </Campo>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Campo etiqueta="Materia">
-                  <select
-                    value={d.id_materia}
-                    onChange={(e) => set("id_materia", e.target.value)}
-                    style={APEX.docente}
-                    className={input}
-                  >
-                    <option value=""></option>
-                    {(opciones.data?.materias ?? []).map((x) => (
-                      <option key={x.id} value={x.id}>
-                        {x.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </Campo>
-                <Filtro
-                  etiqueta="Docente"
-                  opciones={docentes.map((x) => ({
-                    id: x.id,
-                    texto: x.nombre,
-                    extra: x.telefono || undefined,
-                    busqueda: normalizar(`${x.nombre} ${x.telefono}`),
-                  }))}
-                  valor={d.id_docente ? Number(d.id_docente) : null}
-                  texto={docentes.find((x) => String(x.id) === d.id_docente)?.nombre ?? null}
-                  onCambio={(id) => set("id_docente", id == null ? "" : String(id))}
-                  estilo={APEX.docente}
-                  vacio="Sin Docente"
-                />
-                <Campo etiqueta="Teléfono">
-                  <input
-                    value={d.telefono}
-                    maxLength={500}
-                    onChange={(e) => set("telefono", e.target.value)}
-                    style={APEX.docente}
-                    className={input}
-                  />
-                </Campo>
-              </div>
-
-              <Campo etiqueta="Observación">
-                <textarea
-                  value={d.observacion}
-                  maxLength={1000}
-                  rows={4}
-                  onChange={(e) => set("observacion", e.target.value)}
-                  style={APEX.observacion}
-                  className="w-full rounded-md border border-input px-2 py-1.5 text-sm outline-none"
-                />
-              </Campo>
-
-              <Filtro
-                etiqueta="Facilitador"
-                opciones={facilitadores.map((x) => ({
-                  id: x.id,
-                  texto: x.nombre,
-                  busqueda: normalizar(x.nombre),
-                }))}
-                valor={d.id_facilitador ? Number(d.id_facilitador) : null}
-                texto={
-                  facilitadores.find((x) => String(x.id) === d.id_facilitador)?.nombre ??
-                  (p.facilitador || null)
-                }
-                onCambio={(id) => set("id_facilitador", id == null ? "" : String(id))}
-                estilo={APEX.facilitador}
-                vacio="Sin Facilitador"
-              />
-
-              <div role="radiogroup" aria-label="Estado">
-                <span className="mb-1 block text-[13px] font-medium">Estado</span>
-                <div className="grid grid-cols-3 gap-2">
-                  {(estados.data?.estado ?? []).map((o) => (
-                    <label key={o.valor} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="estado"
-                        checked={d.estado === o.valor}
-                        onChange={() => set("estado", o.valor)}
-                      />
-                      {o.mostrar}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <Campo etiqueta="Observación del Estado">
-                <textarea
-                  value={d.obs_estado}
-                  maxLength={2000}
-                  rows={4}
-                  onChange={(e) => set("obs_estado", e.target.value)}
-                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none"
-                />
-              </Campo>
-            </fieldset>
-
-            {!puedeGuardar && (
-              <SoloLectura texto="Solo lectura: tu usuario no puede modificar postulaciones." />
-            )}
-
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-              <button
-                type="button"
-                onClick={onCerrar}
-                disabled={ocupado}
-                className="h-9 rounded-md border border-border px-4 text-sm font-semibold"
-              >
-                Cancelar
-              </button>
-              <div className="flex gap-2">
-                {puedeBorrar && (
-                  <button
-                    type="button"
-                    disabled={ocupado || p.usos > 0}
-                    title={p.usos > 0 ? "Tiene intervenciones o evaluaciones" : undefined}
-                    onClick={() => (confirmarBorrado ? borrar.mutate() : setConfirmarBorrado(true))}
-                    className={`flex h-9 items-center gap-1.5 rounded-md px-4 text-sm font-semibold disabled:opacity-50 ${
-                      confirmarBorrado
-                        ? "bg-destructive text-destructive-foreground"
-                        : "border border-destructive/50 text-destructive"
-                    }`}
-                  >
-                    {borrar.isPending && <Loader2 className="size-4 animate-spin" />}
-                    {confirmarBorrado ? "¿Suprimir?" : "Suprimir"}
-                  </button>
-                )}
-                {puedeGuardar && (
-                  <button
-                    type="submit"
-                    disabled={ocupado}
-                    className="flex h-9 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-                  >
-                    {guardar.isPending && <Loader2 className="size-4 animate-spin" />}
-                    Aplicar Cambios
-                  </button>
-                )}
-              </div>
-            </div>
-          </form>
-        )}
-      </DialogContent>
-    </Dialog>
   );
 }

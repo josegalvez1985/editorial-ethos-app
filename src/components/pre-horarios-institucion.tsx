@@ -91,7 +91,7 @@ export function PreHorariosInstitucion({
 
   // Las columnas y listas de la 43, en su orden.
   const columnas: ColumnaGrilla[] = [
-    { clave: "turno", titulo: "Turno", tipo: "lista", opciones: op.turno, ancho: 100 },
+    { clave: "turno", titulo: "Turno", tipo: "lista", opciones: op.turno, ancho: 64 },
     {
       clave: "grado",
       titulo: "Grado",
@@ -101,17 +101,17 @@ export function PreHorariosInstitucion({
         valor: g.valor,
         mostrar: g.valor.endsWith("M") ? g.valor : `${g.valor}°`,
       })),
-      ancho: 72,
+      ancho: 46,
     },
-    { clave: "seccion", titulo: "Seccion", ancho: 76, mayusculas: true, max: 5 },
+    { clave: "seccion", titulo: "Seccion", ancho: 46, mayusculas: true, max: 5 },
     {
       clave: "idEnfasis",
       titulo: "Énfasis",
       tipo: "lista",
       opciones: op.enfasis.map((e) => ({ valor: String(e.id), mostrar: e.nombre })),
-      ancho: 150,
+      ancho: 96,
     },
-    { clave: "cantidad", titulo: "Cant.", tipo: "numero", alinear: "der", ancho: 64, max: 4 },
+    { clave: "cantidad", titulo: "Cant.", tipo: "numero", alinear: "der", ancho: 40, max: 4 },
     {
       clave: "manual",
       titulo: "Manual",
@@ -120,23 +120,29 @@ export function PreHorariosInstitucion({
         valor: m.valor,
         mostrar: m.valor === "CARACTER" ? "Caracter" : m.nombre,
       })),
-      ancho: 104,
+      ancho: 70,
+      // Cada manual en su color (los de la 38 y del formulario), 09/10/2026.
+      colorValor: (v) => {
+        const m = manualDe(v);
+        return m ? { fondo: m.color, tinta: m.tinta } : undefined;
+      },
     },
     {
       clave: "dia",
       titulo: "Dia",
       tipo: "lista",
       opciones: DIAS.map((d, i) => ({ valor: d.valor, mostrar: DIA_APEX[i] })),
-      ancho: 84,
+      ancho: 52,
     },
-    { clave: "desde", titulo: "Hora Desde", tipo: "hora" },
-    { clave: "hasta", titulo: "Hora Hasta", tipo: "hora" },
+    // "Hora" arriba y Desde / Hasta debajo, para que las dos entren angostas.
+    { clave: "desde", titulo: "Hora Desde", tipo: "hora", grupo: "Hora", subtitulo: "Desde" },
+    { clave: "hasta", titulo: "Hora Hasta", tipo: "hora", grupo: "Hora", subtitulo: "Hasta" },
     {
       clave: "idMateria",
       titulo: "Materia",
       tipo: "lista",
       opciones: op.materias.map((m) => ({ valor: String(m.id), mostrar: m.nombre })),
-      ancho: 170,
+      ancho: 110,
     },
     {
       clave: "idDocente",
@@ -147,9 +153,9 @@ export function PreHorariosInstitucion({
         valor: String(d.id),
         mostrar: `${d.nombre} (${d.telefono})`,
       })),
-      ancho: 230,
+      ancho: 150,
     },
-    { clave: "telefono", titulo: "Telefono", ancho: 120, max: 200 },
+    { clave: "telefono", titulo: "Telefono", ancho: 84, max: 200 },
     {
       clave: "idFacilitador",
       titulo: "Facilitador",
@@ -159,9 +165,9 @@ export function PreHorariosInstitucion({
         mostrar: f.nombre,
         inactiva: !f.activo,
       })),
-      ancho: 190,
+      ancho: 130,
     },
-    { clave: "observacion", titulo: "Observacion", ancho: 220, max: 2000 },
+    { clave: "observacion", titulo: "Observacion", ancho: 120, max: 2000 },
     {
       clave: "confirmado",
       titulo: "Confirmado",
@@ -172,7 +178,7 @@ export function PreHorariosInstitucion({
             { valor: "SI", mostrar: "SI" },
             { valor: "NO", mostrar: "NO" },
           ],
-      ancho: 96,
+      ancho: 70,
     },
   ];
 

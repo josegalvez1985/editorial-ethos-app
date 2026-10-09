@@ -262,7 +262,10 @@ export const PANTALLAS: Record<string, { descripcion: string }> = {
   "/areas-evaluacion": { descripcion: "Las áreas de la evaluación de facilitadores" },
   "/items-evaluacion": { descripcion: "Los ítems que se califican, por área" },
   "/escalas-evaluacion": { descripcion: "Qué calificación sale según los ítems marcados" },
-  "/postulaciones": { descripcion: "Las postulaciones de todas las instituciones, por año" },
+  "/postulaciones": { descripcion: "Las postulaciones de cada institución, por año" },
+  "/consulta-postulaciones": {
+    descripcion: "Quién cubre cada postulación, por ciudad, institución y facilitador",
+  },
   "/mapa-intervenciones": { descripcion: "Dónde marcó cada facilitador, día por día" },
   "/coordinadores": {
     descripcion: "Los coordinadores y en qué institución coordina cada uno",

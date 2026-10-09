@@ -19,6 +19,7 @@ import { Route as AuditoriaIndexRouteImport } from './routes/auditoria.index'
 import { Route as BarriosIndexRouteImport } from './routes/barrios.index'
 import { Route as CiudadesIndexRouteImport } from './routes/ciudades.index'
 import { Route as ConsultaInventariosIndexRouteImport } from './routes/consulta-inventarios.index'
+import { Route as ConsultaPostulacionesIndexRouteImport } from './routes/consulta-postulaciones.index'
 import { Route as ConsultaTransferenciasIndexRouteImport } from './routes/consulta-transferencias.index'
 import { Route as CoordinadoresIndexRouteImport } from './routes/coordinadores.index'
 import { Route as DepartamentosIndexRouteImport } from './routes/departamentos.index'
@@ -107,6 +108,12 @@ const ConsultaInventariosIndexRoute =
   ConsultaInventariosIndexRouteImport.update({
     id: '/consulta-inventarios/',
     path: '/consulta-inventarios/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ConsultaPostulacionesIndexRoute =
+  ConsultaPostulacionesIndexRouteImport.update({
+    id: '/consulta-postulaciones/',
+    path: '/consulta-postulaciones/',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ConsultaTransferenciasIndexRoute =
@@ -323,6 +330,7 @@ export interface FileRoutesByFullPath {
   '/barrios/': typeof BarriosIndexRoute
   '/ciudades/': typeof CiudadesIndexRoute
   '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
+  '/consulta-postulaciones/': typeof ConsultaPostulacionesIndexRoute
   '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
   '/coordinadores/': typeof CoordinadoresIndexRoute
   '/departamentos/': typeof DepartamentosIndexRoute
@@ -373,6 +381,7 @@ export interface FileRoutesByTo {
   '/barrios': typeof BarriosIndexRoute
   '/ciudades': typeof CiudadesIndexRoute
   '/consulta-inventarios': typeof ConsultaInventariosIndexRoute
+  '/consulta-postulaciones': typeof ConsultaPostulacionesIndexRoute
   '/consulta-transferencias': typeof ConsultaTransferenciasIndexRoute
   '/coordinadores': typeof CoordinadoresIndexRoute
   '/departamentos': typeof DepartamentosIndexRoute
@@ -424,6 +433,7 @@ export interface FileRoutesById {
   '/barrios/': typeof BarriosIndexRoute
   '/ciudades/': typeof CiudadesIndexRoute
   '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
+  '/consulta-postulaciones/': typeof ConsultaPostulacionesIndexRoute
   '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
   '/coordinadores/': typeof CoordinadoresIndexRoute
   '/departamentos/': typeof DepartamentosIndexRoute
@@ -476,6 +486,7 @@ export interface FileRouteTypes {
     | '/barrios/'
     | '/ciudades/'
     | '/consulta-inventarios/'
+    | '/consulta-postulaciones/'
     | '/consulta-transferencias/'
     | '/coordinadores/'
     | '/departamentos/'
@@ -526,6 +537,7 @@ export interface FileRouteTypes {
     | '/barrios'
     | '/ciudades'
     | '/consulta-inventarios'
+    | '/consulta-postulaciones'
     | '/consulta-transferencias'
     | '/coordinadores'
     | '/departamentos'
@@ -576,6 +588,7 @@ export interface FileRouteTypes {
     | '/barrios/'
     | '/ciudades/'
     | '/consulta-inventarios/'
+    | '/consulta-postulaciones/'
     | '/consulta-transferencias/'
     | '/coordinadores/'
     | '/departamentos/'
@@ -627,6 +640,7 @@ export interface RootRouteChildren {
   BarriosIndexRoute: typeof BarriosIndexRoute
   CiudadesIndexRoute: typeof CiudadesIndexRoute
   ConsultaInventariosIndexRoute: typeof ConsultaInventariosIndexRoute
+  ConsultaPostulacionesIndexRoute: typeof ConsultaPostulacionesIndexRoute
   ConsultaTransferenciasIndexRoute: typeof ConsultaTransferenciasIndexRoute
   CoordinadoresIndexRoute: typeof CoordinadoresIndexRoute
   DepartamentosIndexRoute: typeof DepartamentosIndexRoute
@@ -729,6 +743,13 @@ declare module '@tanstack/react-router' {
       path: '/consulta-inventarios'
       fullPath: '/consulta-inventarios/'
       preLoaderRoute: typeof ConsultaInventariosIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/consulta-postulaciones/': {
+      id: '/consulta-postulaciones/'
+      path: '/consulta-postulaciones'
+      fullPath: '/consulta-postulaciones/'
+      preLoaderRoute: typeof ConsultaPostulacionesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/consulta-transferencias/': {
@@ -1019,6 +1040,7 @@ const rootRouteChildren: RootRouteChildren = {
   BarriosIndexRoute: BarriosIndexRoute,
   CiudadesIndexRoute: CiudadesIndexRoute,
   ConsultaInventariosIndexRoute: ConsultaInventariosIndexRoute,
+  ConsultaPostulacionesIndexRoute: ConsultaPostulacionesIndexRoute,
   ConsultaTransferenciasIndexRoute: ConsultaTransferenciasIndexRoute,
   CoordinadoresIndexRoute: CoordinadoresIndexRoute,
   DepartamentosIndexRoute: DepartamentosIndexRoute,

@@ -98,37 +98,53 @@ export function PostulacionesInstitucion({
 
   // Las columnas de la 38, en su orden.
   const columnas: ColumnaGrilla[] = [
-    { clave: "turno", titulo: "Turno", tipo: "lista", opciones: op.turno, ancho: 100 },
-    { clave: "seccion", titulo: "Sección", ancho: 72, mayusculas: true, max: 5 },
+    { clave: "turno", titulo: "Turno", tipo: "lista", opciones: op.turno, ancho: 64 },
+    { clave: "seccion", titulo: "Sección", ancho: 46, mayusculas: true, max: 5 },
     ...GRADOS.map((g): ColumnaGrilla => ({
       clave: g.clave,
       titulo: g.corto,
       tipo: "numero",
       alinear: "der",
-      ancho: 52,
+      ancho: 32,
       max: 5,
     })),
     ...MANUALES.map((m): ColumnaGrilla => ({
       clave: m.clave,
-      titulo: m.valor === "CARACTER" ? "Caracter" : m.nombre,
+      // Abreviado (SER, HAC…) para que la columna sea angosta; el nombre
+      // completo sale al pasar el mouse por el encabezado.
+      titulo: m.corto,
       tipo: "numero",
       alinear: "centro",
-      ancho: m.valor === "LIDERAZGO" ? 84 : 72,
+      ancho: 38,
       max: 5,
       fondo: m.color,
       tinta: m.tinta,
     })),
     ...DIAS.flatMap((d, i): ColumnaGrilla[] => [
-      { clave: `${d.clave}_desde`, titulo: `${DIA_APEX[i]} Des`, tipo: "hora" },
-      { clave: `${d.clave}_hasta`, titulo: `${DIA_APEX[i]} Has`, tipo: "hora" },
+      // Un título por día arriba ("Lunes") y Desde / Hasta debajo: solo el
+      // encabezado; siguen siendo dos datos, como en el backend (09/10/2026).
+      {
+        clave: `${d.clave}_desde`,
+        titulo: `${DIA_APEX[i]} Des`,
+        tipo: "hora",
+        grupo: d.nombre,
+        subtitulo: "Desde",
+      },
+      {
+        clave: `${d.clave}_hasta`,
+        titulo: `${DIA_APEX[i]} Has`,
+        tipo: "hora",
+        grupo: d.nombre,
+        subtitulo: "Hasta",
+      },
     ]),
-    { clave: "observacion", titulo: "Obs.", ancho: 200, max: 1000 },
+    { clave: "observacion", titulo: "Obs.", ancho: 110, max: 1000 },
     {
       clave: "id_materia",
       titulo: "Materia",
       tipo: "lista",
       opciones: op.materias.map((m) => ({ valor: String(m.id), mostrar: m.nombre })),
-      ancho: 170,
+      ancho: 110,
     },
     {
       clave: "id_docente",
@@ -139,7 +155,7 @@ export function PostulacionesInstitucion({
         valor: String(d.id),
         mostrar: `${d.nombre} (${d.telefono})`,
       })),
-      ancho: 230,
+      ancho: 150,
     },
     {
       clave: "id_facilitador",
@@ -150,16 +166,16 @@ export function PostulacionesInstitucion({
         mostrar: f.nombre,
         inactiva: !f.activo,
       })),
-      ancho: 190,
+      ancho: 130,
     },
     {
       clave: "estado",
       titulo: "Estado",
       tipo: "lista",
       opciones: estados.data!.estado,
-      ancho: 100,
+      ancho: 70,
     },
-    { clave: "obs_estado", titulo: "Obs. Estado", ancho: 200, max: 2000 },
+    { clave: "obs_estado", titulo: "Obs. Estado", ancho: 110, max: 2000 },
   ];
 
   const filas: FilaGrilla[] = items.map((p) => ({

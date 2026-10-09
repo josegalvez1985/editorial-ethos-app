@@ -4,7 +4,8 @@ import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
-import { ActividadChart, type SerieActividad } from "@/components/actividad-chart";
+import { ActividadChart } from "@/components/actividad-chart";
+import { ActividadDiaModal } from "@/components/actividad-dia-modal";
 import { SelectorModal } from "@/components/selector-modal";
 import { PuntualidadChart } from "@/components/puntualidad-chart";
 import { PuntualidadModal } from "@/components/puntualidad-modal";
@@ -22,6 +23,7 @@ import {
   semanasDelMes,
   textoSemana,
   type FiltroDesarrollo,
+  type SerieActividad,
   type ResumenFacilitador,
   type ResumenUbicacion,
 } from "@/lib/intervenciones";
@@ -96,6 +98,8 @@ function Puntualidad() {
   // Qué barra se tocó en cada gráfico. `null` = ese modal está cerrado.
   const [elegido, setElegido] = useState<ResumenFacilitador | null>(null);
   const [elegidoUbi, setElegidoUbi] = useState<ResumenUbicacion | null>(null);
+  // La barra tocada en Actividad: el día y la serie. `null` = detalle cerrado.
+  const [elegidoDia, setElegidoDia] = useState<{ dia: number; serie: SerieActividad } | null>(null);
 
   /*
    * Puntualidad ARRANCA OCULTA, a pedido (14/08/2026).
@@ -309,7 +313,13 @@ function Puntualidad() {
               {coletilla}.
             </p>
           ) : (
-            <ActividadChart datos={dias} series={series} anio={anio} mes={mes} />
+            <ActividadChart
+              datos={dias}
+              series={series}
+              anio={anio}
+              mes={mes}
+              onSeleccionar={(dia, serie) => setElegidoDia({ dia, serie })}
+            />
           )}
         </div>
       </section>
@@ -417,6 +427,13 @@ function Puntualidad() {
         )}
       </section>
 
+      <ActividadDiaModal
+        seleccion={elegidoDia}
+        anio={anio}
+        mes={mes}
+        series={series}
+        onClose={() => setElegidoDia(null)}
+      />
       <PuntualidadModal
         facilitador={elegido}
         anio={anio}

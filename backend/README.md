@@ -5,7 +5,7 @@
 | **[`auth.sql`](auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
 | **[`anios_lectivos.sql`](anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` + el ABM de `/anios-lectivos` (`PKG_ANIOS_LECTIVOS_ETHOS`, `anios-lectivos[/:id]`; el paquete necesita `roles_paginas.sql`: en una instalación nueva, correrlo de nuevo después) | 2º |
 | **[`evaluaciones_facilitadores.sql`](evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos y de la tarjeta de dirección (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
-| **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`); desde el 09/10/2026 también el mapa de la página 25 (`intervenciones/mapa`, `intervenciones/mapa/facilitadores`) | independiente |
+| **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`); desde el 09/10/2026 también el mapa de la página 25 (`intervenciones/mapa`, `intervenciones/mapa/facilitadores`) y el detalle de un día del gráfico de Actividad (`intervenciones/por-dia/detalle`) | independiente |
 | **[`intervenciones_crud.sql`](intervenciones_crud.sql)** | Carga manual de intervenciones (`PKG_INTERV_CRUD_ETHOS`) | independiente |
 | **[`agendas.sql`](agendas.sql)** | Horario semanal sobre `V_AGENDA` (`PKG_AGENDAS_ETHOS`) | independiente |
 | **[`inventarios.sql`](inventarios.sql)** | Inventario de manuales por sucursal (`PKG_INVENTARIOS_ETHOS`) + corrige `INVENTARIOS_ACTUALIZAR_EXISTENCIAS` | independiente |
@@ -569,6 +569,13 @@ la 20), `POST postulaciones/generar` (las 8 filas del botón Generar) y
 tienen intervenciones o evaluaciones). El `guardar` ahora también cambia la institución y el
 teléfono si vienen en los datos (el modal 22); la grilla de la ficha no los manda y sigue igual.
 El listado de la ficha y el de la 20 escriben las filas con el mismo `escribir_data`.
+
+**La 24 (Consulta de Postulaciones, `/consulta-postulaciones`)** usa el mismo
+`GET postulaciones/todas` con solo el año: las facetas, las cuentas y el buscador se arman en
+el navegador (la ciudad sale de la institución). Leer no pide permiso de página (`exigir` con
+'C'), y el modal 22 guarda con los permisos de la 20. Sin cambios en el backend. Desde el
+09/10/2026 la 20 pide `id_institucion=-1` mientras no se elige una institución: así solo trae
+los años del filtro, sin filas.
 
 | Script | Tabla | Paquete | Endpoints |
 | --- | --- | --- | --- |
