@@ -251,6 +251,15 @@ export const PANTALLAS: Record<string, { descripcion: string; enBarra?: false }>
   "/docentes": { descripcion: "Los docentes de los pre-horarios", enBarra: false },
   "/materias": { descripcion: "Catálogo de materias", enBarra: false },
   "/enfasis": { descripcion: "Catálogo de énfasis", enBarra: false },
+  "/indices": { descripcion: "Los índices de cada manual, en orden", enBarra: false },
+  "/directores": {
+    descripcion: "Los directores y qué institución dirige cada uno",
+    enBarra: false,
+  },
+  "/horarios-instituciones": {
+    descripcion: "El horario de cada institución, y cuáles faltan",
+    enBarra: false,
+  },
   "/evaluaciones": { descripcion: "Evaluación de facilitadores" },
   "/intervenciones": { descripcion: "Carga manual de intervenciones" },
   "/inventario": { descripcion: "Conteo de manuales por sucursal" },

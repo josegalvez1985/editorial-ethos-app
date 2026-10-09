@@ -19,6 +19,7 @@ import { Route as CiudadesIndexRouteImport } from './routes/ciudades.index'
 import { Route as ConsultaInventariosIndexRouteImport } from './routes/consulta-inventarios.index'
 import { Route as ConsultaTransferenciasIndexRouteImport } from './routes/consulta-transferencias.index'
 import { Route as DepartamentosIndexRouteImport } from './routes/departamentos.index'
+import { Route as DirectoresIndexRouteImport } from './routes/directores.index'
 import { Route as DocentesIndexRouteImport } from './routes/docentes.index'
 import { Route as EnfasisIndexRouteImport } from './routes/enfasis.index'
 import { Route as EvaluacionesIndexRouteImport } from './routes/evaluaciones.index'
@@ -26,6 +27,8 @@ import { Route as EvaluacionesIdRouteImport } from './routes/evaluaciones.$id'
 import { Route as EvaluacionesNuevaRouteImport } from './routes/evaluaciones.nueva'
 import { Route as FacilitadoresIndexRouteImport } from './routes/facilitadores.index'
 import { Route as FacilitadoresIdRouteImport } from './routes/facilitadores.$id'
+import { Route as HorariosInstitucionesIndexRouteImport } from './routes/horarios-instituciones.index'
+import { Route as IndicesIndexRouteImport } from './routes/indices.index'
 import { Route as InstitucionesIndexRouteImport } from './routes/instituciones.index'
 import { Route as InstitucionesIdRouteImport } from './routes/instituciones.$id'
 import { Route as IntervencionesIndexRouteImport } from './routes/intervenciones.index'
@@ -96,6 +99,11 @@ const DepartamentosIndexRoute = DepartamentosIndexRouteImport.update({
   path: '/departamentos/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DirectoresIndexRoute = DirectoresIndexRouteImport.update({
+  id: '/directores/',
+  path: '/directores/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DocentesIndexRoute = DocentesIndexRouteImport.update({
   id: '/docentes/',
   path: '/docentes/',
@@ -129,6 +137,17 @@ const FacilitadoresIndexRoute = FacilitadoresIndexRouteImport.update({
 const FacilitadoresIdRoute = FacilitadoresIdRouteImport.update({
   id: '/facilitadores/$id',
   path: '/facilitadores/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HorariosInstitucionesIndexRoute =
+  HorariosInstitucionesIndexRouteImport.update({
+    id: '/horarios-instituciones/',
+    path: '/horarios-instituciones/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const IndicesIndexRoute = IndicesIndexRouteImport.update({
+  id: '/indices/',
+  path: '/indices/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InstitucionesIndexRoute = InstitucionesIndexRouteImport.update({
@@ -236,10 +255,13 @@ export interface FileRoutesByFullPath {
   '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
   '/departamentos/': typeof DepartamentosIndexRoute
+  '/directores/': typeof DirectoresIndexRoute
   '/docentes/': typeof DocentesIndexRoute
   '/enfasis/': typeof EnfasisIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/facilitadores/': typeof FacilitadoresIndexRoute
+  '/horarios-instituciones/': typeof HorariosInstitucionesIndexRoute
+  '/indices/': typeof IndicesIndexRoute
   '/instituciones/': typeof InstitucionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
@@ -272,10 +294,13 @@ export interface FileRoutesByTo {
   '/consulta-inventarios': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias': typeof ConsultaTransferenciasIndexRoute
   '/departamentos': typeof DepartamentosIndexRoute
+  '/directores': typeof DirectoresIndexRoute
   '/docentes': typeof DocentesIndexRoute
   '/enfasis': typeof EnfasisIndexRoute
   '/evaluaciones': typeof EvaluacionesIndexRoute
   '/facilitadores': typeof FacilitadoresIndexRoute
+  '/horarios-instituciones': typeof HorariosInstitucionesIndexRoute
+  '/indices': typeof IndicesIndexRoute
   '/instituciones': typeof InstitucionesIndexRoute
   '/intervenciones': typeof IntervencionesIndexRoute
   '/inventario': typeof InventarioIndexRoute
@@ -309,10 +334,13 @@ export interface FileRoutesById {
   '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
   '/departamentos/': typeof DepartamentosIndexRoute
+  '/directores/': typeof DirectoresIndexRoute
   '/docentes/': typeof DocentesIndexRoute
   '/enfasis/': typeof EnfasisIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/facilitadores/': typeof FacilitadoresIndexRoute
+  '/horarios-instituciones/': typeof HorariosInstitucionesIndexRoute
+  '/indices/': typeof IndicesIndexRoute
   '/instituciones/': typeof InstitucionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
@@ -347,10 +375,13 @@ export interface FileRouteTypes {
     | '/consulta-inventarios/'
     | '/consulta-transferencias/'
     | '/departamentos/'
+    | '/directores/'
     | '/docentes/'
     | '/enfasis/'
     | '/evaluaciones/'
     | '/facilitadores/'
+    | '/horarios-instituciones/'
+    | '/indices/'
     | '/instituciones/'
     | '/intervenciones/'
     | '/inventario/'
@@ -383,10 +414,13 @@ export interface FileRouteTypes {
     | '/consulta-inventarios'
     | '/consulta-transferencias'
     | '/departamentos'
+    | '/directores'
     | '/docentes'
     | '/enfasis'
     | '/evaluaciones'
     | '/facilitadores'
+    | '/horarios-instituciones'
+    | '/indices'
     | '/instituciones'
     | '/intervenciones'
     | '/inventario'
@@ -419,10 +453,13 @@ export interface FileRouteTypes {
     | '/consulta-inventarios/'
     | '/consulta-transferencias/'
     | '/departamentos/'
+    | '/directores/'
     | '/docentes/'
     | '/enfasis/'
     | '/evaluaciones/'
     | '/facilitadores/'
+    | '/horarios-instituciones/'
+    | '/indices/'
     | '/instituciones/'
     | '/intervenciones/'
     | '/inventario/'
@@ -456,10 +493,13 @@ export interface RootRouteChildren {
   ConsultaInventariosIndexRoute: typeof ConsultaInventariosIndexRoute
   ConsultaTransferenciasIndexRoute: typeof ConsultaTransferenciasIndexRoute
   DepartamentosIndexRoute: typeof DepartamentosIndexRoute
+  DirectoresIndexRoute: typeof DirectoresIndexRoute
   DocentesIndexRoute: typeof DocentesIndexRoute
   EnfasisIndexRoute: typeof EnfasisIndexRoute
   EvaluacionesIndexRoute: typeof EvaluacionesIndexRoute
   FacilitadoresIndexRoute: typeof FacilitadoresIndexRoute
+  HorariosInstitucionesIndexRoute: typeof HorariosInstitucionesIndexRoute
+  IndicesIndexRoute: typeof IndicesIndexRoute
   InstitucionesIndexRoute: typeof InstitucionesIndexRoute
   IntervencionesIndexRoute: typeof IntervencionesIndexRoute
   InventarioIndexRoute: typeof InventarioIndexRoute
@@ -546,6 +586,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DepartamentosIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/directores/': {
+      id: '/directores/'
+      path: '/directores'
+      fullPath: '/directores/'
+      preLoaderRoute: typeof DirectoresIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/docentes/': {
       id: '/docentes/'
       path: '/docentes'
@@ -593,6 +640,20 @@ declare module '@tanstack/react-router' {
       path: '/facilitadores/$id'
       fullPath: '/facilitadores/$id'
       preLoaderRoute: typeof FacilitadoresIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/horarios-instituciones/': {
+      id: '/horarios-instituciones/'
+      path: '/horarios-instituciones'
+      fullPath: '/horarios-instituciones/'
+      preLoaderRoute: typeof HorariosInstitucionesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/indices/': {
+      id: '/indices/'
+      path: '/indices'
+      fullPath: '/indices/'
+      preLoaderRoute: typeof IndicesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/instituciones/': {
@@ -736,10 +797,13 @@ const rootRouteChildren: RootRouteChildren = {
   ConsultaInventariosIndexRoute: ConsultaInventariosIndexRoute,
   ConsultaTransferenciasIndexRoute: ConsultaTransferenciasIndexRoute,
   DepartamentosIndexRoute: DepartamentosIndexRoute,
+  DirectoresIndexRoute: DirectoresIndexRoute,
   DocentesIndexRoute: DocentesIndexRoute,
   EnfasisIndexRoute: EnfasisIndexRoute,
   EvaluacionesIndexRoute: EvaluacionesIndexRoute,
   FacilitadoresIndexRoute: FacilitadoresIndexRoute,
+  HorariosInstitucionesIndexRoute: HorariosInstitucionesIndexRoute,
+  IndicesIndexRoute: IndicesIndexRoute,
   InstitucionesIndexRoute: InstitucionesIndexRoute,
   IntervencionesIndexRoute: IntervencionesIndexRoute,
   InventarioIndexRoute: InventarioIndexRoute,

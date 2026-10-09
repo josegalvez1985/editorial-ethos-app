@@ -31,6 +31,7 @@
 | **[`docentes.sql`](docentes.sql)** | ABM de docentes (`PKG_DOCENTES_ETHOS`) | después de `roles_paginas.sql` |
 | **[`materias.sql`](materias.sql)** | ABM de materias (`PKG_MATERIAS_ETHOS`) | después de `roles_paginas.sql` |
 | **[`enfasis.sql`](enfasis.sql)** | ABM de énfasis (`PKG_ENFASIS_ETHOS`) | después de `roles_paginas.sql` |
+| **[`indices.sql`](indices.sql)** | ABM de los índices de los manuales (`PKG_INDICES_ETHOS`) | después de `roles_paginas.sql` |
 | **[`postulaciones.sql`](postulaciones.sql)** | Postulaciones de una institución: la grilla de la 38 y el formulario PDF / imagen (`PKG_POSTULACIONES_ETHOS`) | después de `anios_lectivos.sql` |
 
 Todos son idempotentes. Solo `auth.sql` define el módulo y habilita el esquema; los demás
@@ -306,7 +307,7 @@ esa pantalla. No tienen ruta, ni fila en `MENU_PAGINAS`, ni se controlan aparte.
 ### El menú no es la seguridad
 
 Ocultar un módulo del menú no impide llamar a su endpoint con el token. **Hoy solo los
-endpoints de este script, los de `usuarios.sql` y los de escritura de `paises.sql`, `nacionalidades.sql`, `facilitadores.sql`, `departamentos.sql`, `ciudades.sql`, `barrios.sql`, `docentes.sql`, `materias.sql` y `enfasis.sql` controlan
+endpoints de este script, los de `usuarios.sql` y los de escritura de `paises.sql`, `nacionalidades.sql`, `facilitadores.sql`, `departamentos.sql`, `ciudades.sql`, `barrios.sql`, `docentes.sql`, `materias.sql`, `enfasis.sql` e `indices.sql` controlan
 permisos; los de los demás módulos solo piden sesión.** Para cerrar un módulo de verdad, su paquete tiene que preguntar antes de
 hacer nada (ver *Agregar un endpoint de negocio*; `usuarios.sql` es el ejemplo: busca su
 página con `pagina_de_ruta('/usuarios')` y pregunta `puede(...)`).
@@ -393,6 +394,33 @@ Docente), que en el sitio es el diálogo de `/docentes`, con los permisos de la 
   pantalla avisa antes de guardar, igual que con un nombre repetido.
 - El teléfono del docente es el que Pre-horarios propone al elegirlo (la acción dinámica de
   la 43). Guardar refresca también `pre-horarios/opciones`.
+
+## Índices (`indices.sql`)
+
+Reemplaza a la página 28 de APEX (Índices, IG de solo lectura sobre `INDICES_MANUALES`) y a su
+modal 29 (Crear Índice), que en el sitio es el diálogo de `/indices`, con los permisos de la 28.
+Paquete `PKG_INDICES_ETHOS`. La tabla: `ID_INDICE` (identity), `MANUAL` (obligatorio, 100),
+`NRO_INDICE` (obligatorio, número) y `TITULO` (obligatorio, 500).
+
+| Método | Ruta | Exige | Qué hace |
+| --- | --- | --- | --- |
+| GET | `indices` | sesión | Todos por manual y número, con `usos` y `tablas` |
+| POST | `indices` | insertar en la página de `/indices` | `{manual, nro_indice, titulo}` → `{id_indice, manual}` |
+| PUT | `indices/:id` | actualizar | Lo mismo |
+| DELETE | `indices/:id` | borrar | **409** si lo usa una intervención o una evaluación (con o sin FK) |
+
+- **No hay tabla de manuales**: el `DISTINCT` de `MANUAL` es el catálogo de evaluaciones,
+  intervenciones, inventario y transferencias. Un manual escrito con otras mayúsculas o
+  espacios se guarda con la grafía del que ya existe (y `manual` vuelve con la que quedó).
+- **El número no se repite dentro del manual (409)**, cosa que APEX no controlaba: el índice
+  siguiente de evaluaciones y el último que finaliza una postulación ordenan por `NRO_INDICE`.
+  Los repetidos que ya hubiera se pueden seguir editando mientras no cambien de manual ni de
+  número; la verificación del script los lista.
+- **Un índice en uso no cambia de manual (409)**: `INTERVENCIONES.MANUAL` guarda el del índice
+  y `TRG_INTERV_FINALIZA_POST` los compara. El título y el número sí se corrigen.
+- `NRO_INDICE` acepta decimales (un 3,5 para meter uno entre el 3 y el 4), con punto o coma.
+- Guardar refresca también los combos Manual → Índice, el índice siguiente y las planillas de
+  Inventario y Transferencias.
 
 ## Facilitadores (`facilitadores.sql`)
 
@@ -518,7 +546,11 @@ Pre-horarios y Postulaciones—, todo con los permisos de la 16.
 
 **Un script por tabla** (09/10/2026). Las de autoridades, horario y postulaciones tienen además
 su propia página en APEX (36, 47, 31, 20 y 24), y las personas la suya (34 y 45): cuando se
-pasen, usan estos mismos backends.
+pasen, usan estos mismos backends. **La 31 (Horarios de Instituciones, `/horarios-instituciones`)
+ya está** (09/10/2026): usa `GET horario-instituciones` sin `id_institucion` (todas) y el
+listado de `instituciones`, sin cambios en el backend. **La 34 (Directores, `/directores`)
+también**: usa `directores` y `GET instituciones-directores` sin `id_institucion` (dónde figura
+cada uno), sin cambios en el backend.
 
 | Script | Tabla | Paquete | Endpoints |
 | --- | --- | --- | --- |

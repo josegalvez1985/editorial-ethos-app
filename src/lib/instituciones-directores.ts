@@ -63,8 +63,15 @@ export async function quitarDirectorInstitucion(id: number): Promise<void> {
   await authFetch(`instituciones-directores/${id}`, { method: "DELETE" });
 }
 
+/** Las filas de TODAS las instituciones: dónde figura cada director (página 34). */
+export async function listarTodosDirectoresInstitucion(): Promise<Autoridad[]> {
+  const r = (await authFetch("instituciones-directores")) as { data?: Record<string, unknown>[] };
+  return (r.data ?? []).map(aAutoridad);
+}
+
 export const keysDirectoresInstitucion = {
   todo: ["instituciones-directores"] as const,
+  todas: ["instituciones-directores", "todas"] as const,
   institucion: (id: number) => ["instituciones-directores", id] as const,
   opciones: ["instituciones-directores", "opciones"] as const,
 };

@@ -2,9 +2,9 @@
  * Directores: las PERSONAS de `DIRECTORES` (nombre, teléfono, CI). Contrato del
  * backend: `backend/directores.sql`.
  *
- * Hoy lo usa la pestaña Autoridades de la ficha de Instituciones para elegir
- * al director y para darlo de alta ahí mismo (el modal 35 de APEX). La página
- * 34 (Directores) todavía no está en el sitio; cuando se haga, usa esto.
+ * Lo usan la pestaña Autoridades de la ficha de Instituciones, para elegir al
+ * director y darlo de alta ahí mismo, y la pantalla `/directores` (la página 34
+ * de APEX y su modal 35, desde el 09/10/2026, con `<PersonasAutoridad>`).
  *
  * No confundir con `listarDirectores` de `lib/evaluaciones.ts`: esa trae los
  * directores ACTIVOS de UNA institución, para la tarjeta del formulario de

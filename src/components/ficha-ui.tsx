@@ -59,7 +59,7 @@ export function Texto({
   tipo?: "text" | "date" | "time";
   multilinea?: boolean;
   mayusculas?: boolean;
-  inputMode?: "numeric" | "tel" | "email";
+  inputMode?: "numeric" | "decimal" | "tel" | "email";
   ayuda?: ReactNode;
   placeholder?: string;
 }) {

@@ -53,8 +53,20 @@ export type DatosBloque = {
 
 const s = (v: unknown) => (v == null ? "" : String(v));
 
-export async function listarHorario(idInstitucion: number): Promise<HorarioInstitucion> {
-  const r = (await authFetch(`horario-instituciones?id_institucion=${idInstitucion}`)) as {
+export function listarHorario(idInstitucion: number): Promise<HorarioInstitucion> {
+  return leerHorario(`horario-instituciones?id_institucion=${idInstitucion}`);
+}
+
+/**
+ * Los bloques de TODAS las instituciones y todos los años: la página 31
+ * (`/horarios-instituciones`). Es el mismo GET sin `id_institucion`.
+ */
+export function listarTodosHorarios(): Promise<HorarioInstitucion> {
+  return leerHorario("horario-instituciones");
+}
+
+async function leerHorario(ruta: string): Promise<HorarioInstitucion> {
+  const r = (await authFetch(ruta)) as {
     anio_actual?: unknown;
     data?: Record<string, unknown>[];
   };
@@ -145,8 +157,30 @@ export function textoDuracion(min: number): string {
   return r ? `${h} h ${r} min` : `${h} h`;
 }
 
+/** Minutos que dura un bloque (0 si las horas no se leen o el fin no es posterior). */
+export function duracion(b: { inicio: string; fin: string }) {
+  const i = minutos(b.inicio);
+  const f = minutos(b.fin);
+  return i != null && f != null && f > i ? f - i : 0;
+}
+
+/** Si dos bloques se pisan (comparten algún minuto). */
+export function seSuperponen(
+  a: { inicio: string; fin: string },
+  b: { inicio: string; fin: string },
+) {
+  const [ai, af, bi, bf] = [a.inicio, a.fin, b.inicio, b.fin].map(minutos);
+  if (ai == null || af == null || bi == null || bf == null) return false;
+  return ai < bf && bi < af;
+}
+
+/**
+ * `todo` es el prefijo de las tres: guardar un bloque invalida `todo` y así se
+ * refrescan a la vez la pestaña de la ficha y la vista de todas (la 31).
+ */
 export const keysHorario = {
   todo: ["horario-instituciones"] as const,
+  todas: ["horario-instituciones", "todas"] as const,
   institucion: (id: number) => ["horario-instituciones", id] as const,
   opciones: ["horario-instituciones", "opciones"] as const,
 };

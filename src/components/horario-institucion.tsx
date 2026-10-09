@@ -16,12 +16,14 @@ import { nombreTurno } from "@/lib/evaluaciones";
 import {
   aHora,
   copiarHorario,
+  duracion,
   eliminarBloque,
   guardarBloque,
   keysHorario,
   listarHorario,
   minutos,
   opcionesHorario,
+  seSuperponen,
   textoDuracion,
   type BloqueHorario,
 } from "@/lib/horario-instituciones";
@@ -44,8 +46,18 @@ import type { ValorLista } from "@/lib/utils";
  *   volver a cargarlo a mano, bloque por bloque.
  * - **El "+" de cada turno propone el siguiente bloque**: empieza donde
  *   terminó el último y dura lo mismo. Cargar un horario es casi solo "Agregar".
+ *
+ * Lo usa también la página 31 (`/horarios-instituciones`), en un diálogo, con
+ * `anioInicial` = el año que se estaba mirando allá.
  */
-export function HorarioInstitucion({ idInstitucion }: { idInstitucion: number }) {
+export function HorarioInstitucion({
+  idInstitucion,
+  anioInicial,
+}: {
+  idInstitucion: number;
+  /** El año con que abre, si la institución lo tiene (o es el actual). */
+  anioInicial?: string;
+}) {
   const qc = useQueryClient();
   const puede = usePuede();
   const horario = useQuery({
@@ -69,7 +81,8 @@ export function HorarioInstitucion({ idInstitucion }: { idInstitucion: number })
   const anios = [...new Set([...(actual ? [actual] : []), ...bloques.map((b) => b.anio)])].sort(
     (a, b) => (a === "" ? 1 : b === "" ? -1 : b.localeCompare(a)),
   );
-  const elegido = anio ?? (actual || anios[0] || "");
+  const inicial = anioInicial != null && anios.includes(anioInicial) ? anioInicial : undefined;
+  const elegido = anio ?? inicial ?? (actual || anios[0] || "");
   const delAnio = bloques.filter((b) => b.anio === elegido);
   const turnos = [...new Set(delAnio.map((b) => b.turno))].sort((a, b) => a - b);
   const listaTurnos = opciones.data?.turno ?? [];
@@ -84,7 +97,8 @@ export function HorarioInstitucion({ idInstitucion }: { idInstitucion: number })
   const copiar = useMutation({
     mutationFn: () => copiarHorario(idInstitucion, origen ?? ""),
     onSuccess: (n) => {
-      qc.invalidateQueries({ queryKey: keysHorario.institucion(idInstitucion) });
+      // `todo`: también la vista de todas las instituciones (la 31).
+      qc.invalidateQueries({ queryKey: keysHorario.todo });
       qc.invalidateQueries({ queryKey: keysInstituciones.lista });
       toast.success(`${n} ${n === 1 ? "bloque copiado" : "bloques copiados"} a ${actual}`);
     },
@@ -275,19 +289,6 @@ function usePuede() {
   };
 }
 
-/** Minutos que dura un bloque (0 si las horas no se leen). */
-function duracion(b: { inicio: string; fin: string }) {
-  const i = minutos(b.inicio);
-  const f = minutos(b.fin);
-  return i != null && f != null && f > i ? f - i : 0;
-}
-
-function seSuperponen(a: { inicio: string; fin: string }, b: { inicio: string; fin: string }) {
-  const [ai, af, bi, bf] = [a.inicio, a.fin, b.inicio, b.fin].map(minutos);
-  if (ai == null || af == null || bi == null || bf == null) return false;
-  return ai < bf && bi < af;
-}
-
 type Propuesta = { turno: number; inicio: string; fin: string };
 
 /** El bloque que sigue al último de un turno: arranca donde terminó y dura lo mismo. */
@@ -343,7 +344,7 @@ function EditorBloque({
   const listo = puedeGuardar && !!turno && dura != null && dura > 0;
 
   const invalidar = () => {
-    qc.invalidateQueries({ queryKey: keysHorario.institucion(idInstitucion) });
+    qc.invalidateQueries({ queryKey: keysHorario.todo });
     qc.invalidateQueries({ queryKey: keysInstituciones.lista });
   };
 

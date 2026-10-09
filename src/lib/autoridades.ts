@@ -8,6 +8,8 @@
  * del componente exporte solo componentes (fast refresh).
  */
 
+import type { LucideIcon } from "lucide-react";
+
 import type { ValorLista } from "@/lib/utils";
 
 /** Una persona de DIRECTORES o COORDINADORES. */
@@ -26,6 +28,8 @@ export type DatosPersona = { nombre_apellido: string; nro_telefono: string; nro_
 export type Autoridad = {
   id: number;
   idInstitucion: number;
+  /** El nombre: lo usan las pantallas de personas (34 y 45), que listan todas las filas. */
+  institucion: string;
   /** `null`: filas viejas de coordinadores sin persona (la tabla lo permite). */
   idPersona: number | null;
   persona: string;
@@ -90,6 +94,36 @@ export type ApiAutoridades = {
   };
 };
 
+/**
+ * Lo que cada tabla de personas le pasa a `<PersonasAutoridad>`: la pantalla
+ * de Directores (página 34) y, cuando se haga, la de Coordinadores (45).
+ */
+export type ApiPersonas = {
+  textos: {
+    /** "Directores" */
+    titulo: string;
+    /** "director" */
+    singular: string;
+    /** "Cargo" o "Tipo" */
+    rol: string;
+    /** "Dirige" / "Coordina" */
+    verbo: string;
+    femenino?: boolean;
+  };
+  /** El ícono que la página ya tiene en el menú (`ICONOS_MENU`): no se cambia. */
+  icono: LucideIcon;
+  /** La página de las personas (34 o 45). */
+  ruta: string;
+  key: readonly unknown[];
+  listar: () => Promise<Persona[]>;
+  guardar: (id: number | null, d: DatosPersona) => Promise<number>;
+  eliminar: (id: number) => Promise<void>;
+  /** Todas las filas de su tabla de instituciones: dónde figura cada persona. */
+  asignaciones: { key: readonly unknown[]; listar: () => Promise<Autoridad[]> };
+  /** Lo que más hay que refrescar al guardar (la pestaña Autoridades de las fichas). */
+  relacionadas: readonly (readonly unknown[])[];
+};
+
 const s = (v: unknown) => (v == null ? "" : String(v));
 
 /** Una fila de `GET instituciones-directores` o `instituciones-coordinadores`: misma forma. */
@@ -97,6 +131,7 @@ export function aAutoridad(x: Record<string, unknown>): Autoridad {
   return {
     id: Number(x.id),
     idInstitucion: Number(x.id_institucion),
+    institucion: s(x.institucion),
     idPersona: x.id_persona == null || x.id_persona === "" ? null : Number(x.id_persona),
     persona: s(x.persona),
     personaCi: s(x.persona_ci),
