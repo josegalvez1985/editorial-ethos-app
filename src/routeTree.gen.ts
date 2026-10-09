@@ -14,6 +14,7 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as AgendasIndexRouteImport } from './routes/agendas.index'
 import { Route as AniosLectivosIndexRouteImport } from './routes/anios-lectivos.index'
+import { Route as AreasEvaluacionIndexRouteImport } from './routes/areas-evaluacion.index'
 import { Route as AuditoriaIndexRouteImport } from './routes/auditoria.index'
 import { Route as BarriosIndexRouteImport } from './routes/barrios.index'
 import { Route as CiudadesIndexRouteImport } from './routes/ciudades.index'
@@ -24,6 +25,7 @@ import { Route as DepartamentosIndexRouteImport } from './routes/departamentos.i
 import { Route as DirectoresIndexRouteImport } from './routes/directores.index'
 import { Route as DocentesIndexRouteImport } from './routes/docentes.index'
 import { Route as EnfasisIndexRouteImport } from './routes/enfasis.index'
+import { Route as EscalasEvaluacionIndexRouteImport } from './routes/escalas-evaluacion.index'
 import { Route as EtapasIndexRouteImport } from './routes/etapas.index'
 import { Route as EvaluacionesIndexRouteImport } from './routes/evaluaciones.index'
 import { Route as EvaluacionesIdRouteImport } from './routes/evaluaciones.$id'
@@ -41,6 +43,7 @@ import { Route as IntervencionesIndexRouteImport } from './routes/intervenciones
 import { Route as IntervencionesIdRouteImport } from './routes/intervenciones.$id'
 import { Route as IntervencionesNuevaRouteImport } from './routes/intervenciones.nueva'
 import { Route as InventarioIndexRouteImport } from './routes/inventario.index'
+import { Route as ItemsEvaluacionIndexRouteImport } from './routes/items-evaluacion.index'
 import { Route as MateriasIndexRouteImport } from './routes/materias.index'
 import { Route as NacionalidadesIndexRouteImport } from './routes/nacionalidades.index'
 import { Route as PaginasIndexRouteImport } from './routes/paginas.index'
@@ -76,6 +79,11 @@ const AgendasIndexRoute = AgendasIndexRouteImport.update({
 const AniosLectivosIndexRoute = AniosLectivosIndexRouteImport.update({
   id: '/anios-lectivos/',
   path: '/anios-lectivos/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AreasEvaluacionIndexRoute = AreasEvaluacionIndexRouteImport.update({
+  id: '/areas-evaluacion/',
+  path: '/areas-evaluacion/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuditoriaIndexRoute = AuditoriaIndexRouteImport.update({
@@ -128,6 +136,11 @@ const DocentesIndexRoute = DocentesIndexRouteImport.update({
 const EnfasisIndexRoute = EnfasisIndexRouteImport.update({
   id: '/enfasis/',
   path: '/enfasis/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EscalasEvaluacionIndexRoute = EscalasEvaluacionIndexRouteImport.update({
+  id: '/escalas-evaluacion/',
+  path: '/escalas-evaluacion/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EtapasIndexRoute = EtapasIndexRouteImport.update({
@@ -218,6 +231,11 @@ const InventarioIndexRoute = InventarioIndexRouteImport.update({
   path: '/inventario/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ItemsEvaluacionIndexRoute = ItemsEvaluacionIndexRouteImport.update({
+  id: '/items-evaluacion/',
+  path: '/items-evaluacion/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MateriasIndexRoute = MateriasIndexRouteImport.update({
   id: '/materias/',
   path: '/materias/',
@@ -288,6 +306,7 @@ export interface FileRoutesByFullPath {
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas/': typeof AgendasIndexRoute
   '/anios-lectivos/': typeof AniosLectivosIndexRoute
+  '/areas-evaluacion/': typeof AreasEvaluacionIndexRoute
   '/auditoria/': typeof AuditoriaIndexRoute
   '/barrios/': typeof BarriosIndexRoute
   '/ciudades/': typeof CiudadesIndexRoute
@@ -298,6 +317,7 @@ export interface FileRoutesByFullPath {
   '/directores/': typeof DirectoresIndexRoute
   '/docentes/': typeof DocentesIndexRoute
   '/enfasis/': typeof EnfasisIndexRoute
+  '/escalas-evaluacion/': typeof EscalasEvaluacionIndexRoute
   '/etapas/': typeof EtapasIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/facilitadores/': typeof FacilitadoresIndexRoute
@@ -309,6 +329,7 @@ export interface FileRoutesByFullPath {
   '/instituciones/': typeof InstitucionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
+  '/items-evaluacion/': typeof ItemsEvaluacionIndexRoute
   '/materias/': typeof MateriasIndexRoute
   '/nacionalidades/': typeof NacionalidadesIndexRoute
   '/paginas/': typeof PaginasIndexRoute
@@ -333,6 +354,7 @@ export interface FileRoutesByTo {
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas': typeof AgendasIndexRoute
   '/anios-lectivos': typeof AniosLectivosIndexRoute
+  '/areas-evaluacion': typeof AreasEvaluacionIndexRoute
   '/auditoria': typeof AuditoriaIndexRoute
   '/barrios': typeof BarriosIndexRoute
   '/ciudades': typeof CiudadesIndexRoute
@@ -343,6 +365,7 @@ export interface FileRoutesByTo {
   '/directores': typeof DirectoresIndexRoute
   '/docentes': typeof DocentesIndexRoute
   '/enfasis': typeof EnfasisIndexRoute
+  '/escalas-evaluacion': typeof EscalasEvaluacionIndexRoute
   '/etapas': typeof EtapasIndexRoute
   '/evaluaciones': typeof EvaluacionesIndexRoute
   '/facilitadores': typeof FacilitadoresIndexRoute
@@ -354,6 +377,7 @@ export interface FileRoutesByTo {
   '/instituciones': typeof InstitucionesIndexRoute
   '/intervenciones': typeof IntervencionesIndexRoute
   '/inventario': typeof InventarioIndexRoute
+  '/items-evaluacion': typeof ItemsEvaluacionIndexRoute
   '/materias': typeof MateriasIndexRoute
   '/nacionalidades': typeof NacionalidadesIndexRoute
   '/paginas': typeof PaginasIndexRoute
@@ -379,6 +403,7 @@ export interface FileRoutesById {
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas/': typeof AgendasIndexRoute
   '/anios-lectivos/': typeof AniosLectivosIndexRoute
+  '/areas-evaluacion/': typeof AreasEvaluacionIndexRoute
   '/auditoria/': typeof AuditoriaIndexRoute
   '/barrios/': typeof BarriosIndexRoute
   '/ciudades/': typeof CiudadesIndexRoute
@@ -389,6 +414,7 @@ export interface FileRoutesById {
   '/directores/': typeof DirectoresIndexRoute
   '/docentes/': typeof DocentesIndexRoute
   '/enfasis/': typeof EnfasisIndexRoute
+  '/escalas-evaluacion/': typeof EscalasEvaluacionIndexRoute
   '/etapas/': typeof EtapasIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/facilitadores/': typeof FacilitadoresIndexRoute
@@ -400,6 +426,7 @@ export interface FileRoutesById {
   '/instituciones/': typeof InstitucionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
+  '/items-evaluacion/': typeof ItemsEvaluacionIndexRoute
   '/materias/': typeof MateriasIndexRoute
   '/nacionalidades/': typeof NacionalidadesIndexRoute
   '/paginas/': typeof PaginasIndexRoute
@@ -426,6 +453,7 @@ export interface FileRouteTypes {
     | '/transferencias/nueva'
     | '/agendas/'
     | '/anios-lectivos/'
+    | '/areas-evaluacion/'
     | '/auditoria/'
     | '/barrios/'
     | '/ciudades/'
@@ -436,6 +464,7 @@ export interface FileRouteTypes {
     | '/directores/'
     | '/docentes/'
     | '/enfasis/'
+    | '/escalas-evaluacion/'
     | '/etapas/'
     | '/evaluaciones/'
     | '/facilitadores/'
@@ -447,6 +476,7 @@ export interface FileRouteTypes {
     | '/instituciones/'
     | '/intervenciones/'
     | '/inventario/'
+    | '/items-evaluacion/'
     | '/materias/'
     | '/nacionalidades/'
     | '/paginas/'
@@ -471,6 +501,7 @@ export interface FileRouteTypes {
     | '/transferencias/nueva'
     | '/agendas'
     | '/anios-lectivos'
+    | '/areas-evaluacion'
     | '/auditoria'
     | '/barrios'
     | '/ciudades'
@@ -481,6 +512,7 @@ export interface FileRouteTypes {
     | '/directores'
     | '/docentes'
     | '/enfasis'
+    | '/escalas-evaluacion'
     | '/etapas'
     | '/evaluaciones'
     | '/facilitadores'
@@ -492,6 +524,7 @@ export interface FileRouteTypes {
     | '/instituciones'
     | '/intervenciones'
     | '/inventario'
+    | '/items-evaluacion'
     | '/materias'
     | '/nacionalidades'
     | '/paginas'
@@ -516,6 +549,7 @@ export interface FileRouteTypes {
     | '/transferencias/nueva'
     | '/agendas/'
     | '/anios-lectivos/'
+    | '/areas-evaluacion/'
     | '/auditoria/'
     | '/barrios/'
     | '/ciudades/'
@@ -526,6 +560,7 @@ export interface FileRouteTypes {
     | '/directores/'
     | '/docentes/'
     | '/enfasis/'
+    | '/escalas-evaluacion/'
     | '/etapas/'
     | '/evaluaciones/'
     | '/facilitadores/'
@@ -537,6 +572,7 @@ export interface FileRouteTypes {
     | '/instituciones/'
     | '/intervenciones/'
     | '/inventario/'
+    | '/items-evaluacion/'
     | '/materias/'
     | '/nacionalidades/'
     | '/paginas/'
@@ -562,6 +598,7 @@ export interface RootRouteChildren {
   TransferenciasNuevaRoute: typeof TransferenciasNuevaRoute
   AgendasIndexRoute: typeof AgendasIndexRoute
   AniosLectivosIndexRoute: typeof AniosLectivosIndexRoute
+  AreasEvaluacionIndexRoute: typeof AreasEvaluacionIndexRoute
   AuditoriaIndexRoute: typeof AuditoriaIndexRoute
   BarriosIndexRoute: typeof BarriosIndexRoute
   CiudadesIndexRoute: typeof CiudadesIndexRoute
@@ -572,6 +609,7 @@ export interface RootRouteChildren {
   DirectoresIndexRoute: typeof DirectoresIndexRoute
   DocentesIndexRoute: typeof DocentesIndexRoute
   EnfasisIndexRoute: typeof EnfasisIndexRoute
+  EscalasEvaluacionIndexRoute: typeof EscalasEvaluacionIndexRoute
   EtapasIndexRoute: typeof EtapasIndexRoute
   EvaluacionesIndexRoute: typeof EvaluacionesIndexRoute
   FacilitadoresIndexRoute: typeof FacilitadoresIndexRoute
@@ -583,6 +621,7 @@ export interface RootRouteChildren {
   InstitucionesIndexRoute: typeof InstitucionesIndexRoute
   IntervencionesIndexRoute: typeof IntervencionesIndexRoute
   InventarioIndexRoute: typeof InventarioIndexRoute
+  ItemsEvaluacionIndexRoute: typeof ItemsEvaluacionIndexRoute
   MateriasIndexRoute: typeof MateriasIndexRoute
   NacionalidadesIndexRoute: typeof NacionalidadesIndexRoute
   PaginasIndexRoute: typeof PaginasIndexRoute
@@ -629,6 +668,13 @@ declare module '@tanstack/react-router' {
       path: '/anios-lectivos'
       fullPath: '/anios-lectivos/'
       preLoaderRoute: typeof AniosLectivosIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/areas-evaluacion/': {
+      id: '/areas-evaluacion/'
+      path: '/areas-evaluacion'
+      fullPath: '/areas-evaluacion/'
+      preLoaderRoute: typeof AreasEvaluacionIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auditoria/': {
@@ -699,6 +745,13 @@ declare module '@tanstack/react-router' {
       path: '/enfasis'
       fullPath: '/enfasis/'
       preLoaderRoute: typeof EnfasisIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/escalas-evaluacion/': {
+      id: '/escalas-evaluacion/'
+      path: '/escalas-evaluacion'
+      fullPath: '/escalas-evaluacion/'
+      preLoaderRoute: typeof EscalasEvaluacionIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/etapas/': {
@@ -820,6 +873,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InventarioIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/items-evaluacion/': {
+      id: '/items-evaluacion/'
+      path: '/items-evaluacion'
+      fullPath: '/items-evaluacion/'
+      preLoaderRoute: typeof ItemsEvaluacionIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/materias/': {
       id: '/materias/'
       path: '/materias'
@@ -914,6 +974,7 @@ const rootRouteChildren: RootRouteChildren = {
   TransferenciasNuevaRoute: TransferenciasNuevaRoute,
   AgendasIndexRoute: AgendasIndexRoute,
   AniosLectivosIndexRoute: AniosLectivosIndexRoute,
+  AreasEvaluacionIndexRoute: AreasEvaluacionIndexRoute,
   AuditoriaIndexRoute: AuditoriaIndexRoute,
   BarriosIndexRoute: BarriosIndexRoute,
   CiudadesIndexRoute: CiudadesIndexRoute,
@@ -924,6 +985,7 @@ const rootRouteChildren: RootRouteChildren = {
   DirectoresIndexRoute: DirectoresIndexRoute,
   DocentesIndexRoute: DocentesIndexRoute,
   EnfasisIndexRoute: EnfasisIndexRoute,
+  EscalasEvaluacionIndexRoute: EscalasEvaluacionIndexRoute,
   EtapasIndexRoute: EtapasIndexRoute,
   EvaluacionesIndexRoute: EvaluacionesIndexRoute,
   FacilitadoresIndexRoute: FacilitadoresIndexRoute,
@@ -935,6 +997,7 @@ const rootRouteChildren: RootRouteChildren = {
   InstitucionesIndexRoute: InstitucionesIndexRoute,
   IntervencionesIndexRoute: IntervencionesIndexRoute,
   InventarioIndexRoute: InventarioIndexRoute,
+  ItemsEvaluacionIndexRoute: ItemsEvaluacionIndexRoute,
   MateriasIndexRoute: MateriasIndexRoute,
   NacionalidadesIndexRoute: NacionalidadesIndexRoute,
   PaginasIndexRoute: PaginasIndexRoute,

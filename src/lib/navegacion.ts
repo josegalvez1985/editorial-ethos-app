@@ -259,6 +259,9 @@ export const PANTALLAS: Record<string, { descripcion: string }> = {
   "/anios-lectivos": { descripcion: "Los años lectivos y cuál es el vigente" },
   "/feriados": { descripcion: "Los feriados nacionales de cada año" },
   "/etapas": { descripcion: "Las etapas de cada año, con su inicio y su fin" },
+  "/areas-evaluacion": { descripcion: "Las áreas de la evaluación de facilitadores" },
+  "/items-evaluacion": { descripcion: "Los ítems que se califican, por área" },
+  "/escalas-evaluacion": { descripcion: "Qué calificación sale según los ítems marcados" },
   "/coordinadores": {
     descripcion: "Los coordinadores y en qué institución coordina cada uno",
   },

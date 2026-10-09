@@ -34,6 +34,9 @@
 | **[`indices.sql`](indices.sql)** | ABM de los índices de los manuales (`PKG_INDICES_ETHOS`) | después de `roles_paginas.sql` |
 | **[`feriados.sql`](feriados.sql)** | ABM de los feriados nacionales y "copiar de un año a otro" (`PKG_FERIADOS_ETHOS`) | después de `roles_paginas.sql` |
 | **[`etapas.sql`](etapas.sql)** | ABM de etapas, con en qué tablas se usa cada una (`PKG_ETAPAS_ETHOS`) | después de `roles_paginas.sql` |
+| **[`areas_evaluaciones.sql`](areas_evaluaciones.sql)** | ABM de áreas de evaluación (`PKG_AREAS_EVAL_ETHOS`) | después de `roles_paginas.sql` |
+| **[`evaluaciones.sql`](evaluaciones.sql)** | ABM de los ítems de evaluación, tabla `EVALUACIONES` (no confundir con `evaluaciones_facilitadores.sql`), endpoints `items-evaluacion[/:id]` (`PKG_ITEMS_EVAL_ETHOS`) | después de `roles_paginas.sql` |
+| **[`escalas_evaluaciones.sql`](escalas_evaluaciones.sql)** | La escala de calificación: ABM por fila y `PUT escalas-evaluacion/tramos`, que reescribe la escala entera por tramos (`PKG_ESCALAS_EVAL_ETHOS`) | después de `roles_paginas.sql` |
 | **[`postulaciones.sql`](postulaciones.sql)** | Postulaciones de una institución: la grilla de la 38 y el formulario PDF / imagen (`PKG_POSTULACIONES_ETHOS`) | después de `anios_lectivos.sql` |
 
 Todos son idempotentes. Solo `auth.sql` define el módulo y habilita el esquema; los demás
