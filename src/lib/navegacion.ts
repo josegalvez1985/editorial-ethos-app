@@ -145,14 +145,6 @@ export type ItemNav = {
   icon: LucideIcon;
   /** Frase corta: la usan el drawer del celular y la cabecera de escritorio. */
   descripcion?: string;
-  /**
-   * `false` = nunca va a la barra del celular, aunque esté entre los primeros.
-   *
-   * Para los catálogos del Núcleo de Datos: van ANTES de Operaciones en el
-   * menú, y sin esto Sucursales —que se toca una vez por mes— le quitaría el
-   * lugar de la barra a Evaluaciones, que se usa todos los días. Ver `tabsDe`.
-   */
-  enBarra?: false;
 };
 
 export type GrupoNav = {
@@ -231,34 +223,44 @@ const ICONOS_MENU: Record<string, LucideIcon> = {
 };
 
 /**
- * Lo que la app sabe de cada pantalla que YA TIENE y la base no: descripción y
- * si va a la barra del celular. La clave es la `RUTA` de `MENU_PAGINAS`. El
+ * Lo que la app sabe de cada pantalla que YA TIENE y la base no: la
+ * descripción. La clave es la `RUTA` de `MENU_PAGINAS`. El
  * ícono no va acá: está en {@link ICONOS_MENU}.
  *
  * NO decide qué se muestra: una ruta que está acá pero no en la base no
  * aparece en el menú. Sirve también de lista de rutas que existen, para
  * avisar al dar de alta una página con una ruta que la app no tiene.
  */
-export const PANTALLAS: Record<string, { descripcion: string; enBarra?: false }> = {
-  "/paises": { descripcion: "Catálogo de países", enBarra: false },
-  "/facilitadores": { descripcion: "Ficha de cada facilitador", enBarra: false },
-  "/nacionalidades": { descripcion: "Catálogo de nacionalidades", enBarra: false },
-  "/barrios": { descripcion: "Los barrios de cada ciudad", enBarra: false },
-  "/ciudades": { descripcion: "Las ciudades de cada departamento", enBarra: false },
-  "/departamentos": { descripcion: "Los departamentos de cada país", enBarra: false },
-  "/sucursales": { descripcion: "Alta y modificación de sucursales", enBarra: false },
-  "/instituciones": { descripcion: "Datos, autoridades y horario de cada una", enBarra: false },
-  "/docentes": { descripcion: "Los docentes de los pre-horarios", enBarra: false },
-  "/materias": { descripcion: "Catálogo de materias", enBarra: false },
-  "/enfasis": { descripcion: "Catálogo de énfasis", enBarra: false },
-  "/indices": { descripcion: "Los índices de cada manual, en orden", enBarra: false },
+export const PANTALLAS: Record<string, { descripcion: string }> = {
+  "/paises": { descripcion: "Catálogo de países" },
+  "/facilitadores": { descripcion: "Ficha de cada facilitador" },
+  "/nacionalidades": { descripcion: "Catálogo de nacionalidades" },
+  "/barrios": { descripcion: "Los barrios de cada ciudad" },
+  "/ciudades": { descripcion: "Las ciudades de cada departamento" },
+  "/departamentos": { descripcion: "Los departamentos de cada país" },
+  "/sucursales": { descripcion: "Alta y modificación de sucursales" },
+  "/instituciones": { descripcion: "Datos, autoridades y horario de cada una" },
+  "/docentes": { descripcion: "Los docentes de los pre-horarios" },
+  "/materias": { descripcion: "Catálogo de materias" },
+  "/enfasis": { descripcion: "Catálogo de énfasis" },
+  "/indices": { descripcion: "Los índices de cada manual, en orden" },
   "/directores": {
     descripcion: "Los directores y qué institución dirige cada uno",
-    enBarra: false,
   },
   "/horarios-instituciones": {
     descripcion: "El horario de cada institución, y cuáles faltan",
-    enBarra: false,
+  },
+  "/instituciones-directores": {
+    descripcion: "Quién dirige cada institución, y cuáles no tienen",
+  },
+  "/instituciones-coordinadores": {
+    descripcion: "Quién coordina en cada institución, y cuáles no tienen",
+  },
+  "/anios-lectivos": { descripcion: "Los años lectivos y cuál es el vigente" },
+  "/feriados": { descripcion: "Los feriados nacionales de cada año" },
+  "/etapas": { descripcion: "Las etapas de cada año, con su inicio y su fin" },
+  "/coordinadores": {
+    descripcion: "Los coordinadores y en qué institución coordina cada uno",
   },
   "/evaluaciones": { descripcion: "Evaluación de facilitadores" },
   "/intervenciones": { descripcion: "Carga manual de intervenciones" },
@@ -268,7 +270,7 @@ export const PANTALLAS: Record<string, { descripcion: string; enBarra?: false }>
   "/consulta-inventarios": { descripcion: "Conteos pendientes y cerrados, con PDF" },
   "/consulta-transferencias": { descripcion: "Envíos entre sucursales por ruta y manual, con PDF" },
   "/auditoria": { descripcion: "Consultas de auditoría" },
-  "/usuarios": { descripcion: "Activar y bloquear cuentas", enBarra: false },
+  "/usuarios": { descripcion: "Activar y bloquear cuentas" },
 };
 
 /**
@@ -372,14 +374,12 @@ const PERMISOS: ItemNav = {
   label: "Roles de páginas",
   icon: ShieldCheck,
   descripcion: "Qué páginas puede usar cada usuario",
-  enBarra: false,
 };
 const PAGINAS: ItemNav = {
   to: RUTA_PAGINAS,
   label: "Crear páginas",
   icon: LayoutList,
   descripcion: "Alta de las páginas del menú",
-  enBarra: false,
 };
 
 /**
@@ -434,7 +434,6 @@ export function armarMenu({ paginas, admin }: MiMenu): GrupoNav[] {
       label: p.nombre,
       icon: iconoPagina.get(p.ruta) ?? ICONO_POR_DEFECTO,
       descripcion: pantalla?.descripcion,
-      enBarra: pantalla?.enBarra,
     });
     grupos.set(p.menuPrincipal, items);
   }
@@ -490,9 +489,9 @@ const ICONOS_CONOCIDOS: ReadonlySet<LucideIcon> = new Set([
  *   cerrar a mano.
  * - Se guarda en `localStorage`, como el tema: es preferencia de interfaz y
  *   sobrevive al logout.
- * - Es UN estado para la sidebar y la hoja "Menú" del celular, en un store de
- *   módulo y no en un `useState` de cada uno: abrir un grupo en uno lo abre en
- *   el otro.
+ * - Es solo de la sidebar de escritorio. La hoja "Menú" del celular tiene el
+ *   suyo y arranca siempre con todo plegado (09/10/2026, a pedido): ver
+ *   `bottom-nav.tsx`.
  *
  * `useSyncExternalStore` y no un efecto que lea el storage: en el prerender no
  * hay `localStorage`, y con `getServerSnapshot` React hidrata con todo cerrado
@@ -558,36 +557,16 @@ export function useGruposAbiertos(menu: GrupoNav[], pathname: string) {
 }
 
 /**
- * Cuántos módulos entran en la barra ADEMÁS de "Mi cuenta".
- *
- * Dos + "Mi cuenta" + el botón "Menú" = cuatro objetivos táctiles, que es el
- * máximo que deja un ancho cómodo en un teléfono. Los que sobran caen en la
- * hoja de "Menú".
+ * La barra del celular, fija y en este orden (09/10/2026, a pedido): Inicio,
+ * Menú, Perfil y Salir. Hasta entonces tomaba los primeros módulos del menú, y
+ * así terminaba ahí Auditoría (lo primero de Administrador). Los módulos están
+ * todos en la hoja "Menú". Ver `bottom-nav.tsx`.
  */
-const MAX_TABS = 2;
+export const BARRA = { inicio: INICIO, cuenta: CUENTA };
 
 /**
- * Los accesos directos de la tab bar del celular.
- *
- * **Se derivan del menú, no se listan a mano.** Son los primeros
- * {@link MAX_TABS} módulos en el orden del menú, más "Mi cuenta" al final, que
- * va fijo: es el acceso a sesión y preferencias y tiene que estar siempre a un
- * toque, aunque algún día haya diez módulos por delante.
- *
- * Recibe los ítems YA filtrados por permisos: un módulo que el usuario no puede
- * ver no le ocupa un lugar en la barra.
- *
- * Los ítems con `enBarra: false` se saltean: ver `ItemNav.enBarra`.
- */
-function tabsDe(items: ItemNav[]): ItemNav[] {
-  const cuenta = items.find((i) => i.to === CUENTA.to);
-  const resto = items.filter((i) => i.to !== CUENTA.to && i.enBarra !== false).slice(0, MAX_TABS);
-  return cuenta ? [...resto, cuenta] : resto;
-}
-
-/**
- * El menú del usuario en sesión. Es lo que leen la sidebar, la barra del
- * celular, la hoja "Menú" y la cabecera.
+ * El menú del usuario en sesión. Es lo que leen la sidebar, la hoja "Menú" del
+ * celular y la cabecera.
  *
  * Mientras carga son solo Inicio y Mi cuenta: los módulos aparecen un instante
  * después, en vez de mostrarse y desaparecer.
@@ -596,7 +575,7 @@ export function useMenu() {
   const { paginas, admin } = usePermisos();
   const menu = armarMenu({ paginas, admin });
   const items = menu.flatMap((g) => g.items);
-  return { menu, items, tabs: tabsDe(items) };
+  return { menu, items };
 }
 
 /** El ítem al que corresponde la ruta actual, o `undefined`. */

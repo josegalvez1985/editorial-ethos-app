@@ -6,7 +6,9 @@
  *
  * Es el IG "Coordinadores" de la región Autoridades del modal 21 de APEX; en
  * el sitio, la otra mitad de la pestaña Autoridades de `/instituciones/$id`.
- * La página 47 (Instituciones y Coordinadores) es de esta misma tabla.
+ * La página 47 (Instituciones y Coordinadores) es de esta misma tabla:
+ * `/instituciones-coordinadores`, con `<InstitucionesAutoridad>`, desde el
+ * 09/10/2026.
  *
  * Distinto de directores: el "cargo" acá es el TIPO de coordinador, y el
  * período y el estado pueden venir vacíos en filas viejas.
@@ -69,19 +71,29 @@ export async function quitarCoordinadorInstitucion(id: number): Promise<void> {
   await authFetch(`instituciones-coordinadores/${id}`, { method: "DELETE" });
 }
 
+/** Las filas de TODAS las instituciones (páginas 45 y 47). */
+export async function listarTodosCoordinadoresInstitucion(): Promise<Autoridad[]> {
+  const r = (await authFetch("instituciones-coordinadores")) as {
+    data?: Record<string, unknown>[];
+  };
+  return (r.data ?? []).map(aAutoridad);
+}
+
 export const keysCoordinadoresInstitucion = {
   todo: ["instituciones-coordinadores"] as const,
+  todas: ["instituciones-coordinadores", "todas"] as const,
   institucion: (id: number) => ["instituciones-coordinadores", id] as const,
   opciones: ["instituciones-coordinadores", "opciones"] as const,
 };
 
 /** Lo que necesita `<AutoridadesInstitucion>` para mostrar y editar coordinadores. */
 export const apiCoordinadoresInstitucion: ApiAutoridades = {
-  textos: { titulo: "Coordinadores", singular: "coordinador", rol: "Tipo" },
+  textos: { titulo: "Coordinadores", singular: "coordinador", rol: "Tipo", verbo: "Coordina" },
   ruta: "/instituciones-coordinadores",
   rutaPersonas: "/coordinadores",
   key: keysCoordinadoresInstitucion.institucion,
   listar: listarCoordinadoresDeInstitucion,
+  todas: { key: keysCoordinadoresInstitucion.todas, listar: listarTodosCoordinadoresInstitucion },
   keyOpciones: keysCoordinadoresInstitucion.opciones,
   opciones: opcionesCoordinadoresInstitucion,
   guardar: guardarCoordinadorInstitucion,

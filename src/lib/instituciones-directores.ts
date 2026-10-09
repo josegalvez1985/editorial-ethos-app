@@ -4,8 +4,9 @@
  *
  * Es el IG "Directores" de la región Autoridades del modal 21 de APEX; en el
  * sitio, la mitad de la pestaña Autoridades de `/instituciones/$id` (ver
- * `<AutoridadesInstitucion>`). La página 36 (Instituciones y Directores) es de
- * esta misma tabla: cuando se haga, usa esto.
+ * `<AutoridadesInstitucion>`). La página 36 (Instituciones y Directores) y su
+ * modal 37 son de esta misma tabla: `/instituciones-directores`, con
+ * `<InstitucionesAutoridad>`, desde el 09/10/2026.
  */
 
 import { authFetch } from "@/lib/api";
@@ -78,11 +79,12 @@ export const keysDirectoresInstitucion = {
 
 /** Lo que necesita `<AutoridadesInstitucion>` para mostrar y editar directores. */
 export const apiDirectoresInstitucion: ApiAutoridades = {
-  textos: { titulo: "Directores", singular: "director", rol: "Cargo" },
+  textos: { titulo: "Directores", singular: "director", rol: "Cargo", verbo: "Dirige" },
   ruta: "/instituciones-directores",
   rutaPersonas: "/directores",
   key: keysDirectoresInstitucion.institucion,
   listar: listarDirectoresDeInstitucion,
+  todas: { key: keysDirectoresInstitucion.todas, listar: listarTodosDirectoresInstitucion },
   keyOpciones: keysDirectoresInstitucion.opciones,
   opciones: opcionesDirectoresInstitucion,
   guardar: guardarDirectorInstitucion,

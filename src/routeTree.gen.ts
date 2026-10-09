@@ -13,22 +13,28 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as AgendasIndexRouteImport } from './routes/agendas.index'
+import { Route as AniosLectivosIndexRouteImport } from './routes/anios-lectivos.index'
 import { Route as AuditoriaIndexRouteImport } from './routes/auditoria.index'
 import { Route as BarriosIndexRouteImport } from './routes/barrios.index'
 import { Route as CiudadesIndexRouteImport } from './routes/ciudades.index'
 import { Route as ConsultaInventariosIndexRouteImport } from './routes/consulta-inventarios.index'
 import { Route as ConsultaTransferenciasIndexRouteImport } from './routes/consulta-transferencias.index'
+import { Route as CoordinadoresIndexRouteImport } from './routes/coordinadores.index'
 import { Route as DepartamentosIndexRouteImport } from './routes/departamentos.index'
 import { Route as DirectoresIndexRouteImport } from './routes/directores.index'
 import { Route as DocentesIndexRouteImport } from './routes/docentes.index'
 import { Route as EnfasisIndexRouteImport } from './routes/enfasis.index'
+import { Route as EtapasIndexRouteImport } from './routes/etapas.index'
 import { Route as EvaluacionesIndexRouteImport } from './routes/evaluaciones.index'
 import { Route as EvaluacionesIdRouteImport } from './routes/evaluaciones.$id'
 import { Route as EvaluacionesNuevaRouteImport } from './routes/evaluaciones.nueva'
 import { Route as FacilitadoresIndexRouteImport } from './routes/facilitadores.index'
 import { Route as FacilitadoresIdRouteImport } from './routes/facilitadores.$id'
+import { Route as FeriadosIndexRouteImport } from './routes/feriados.index'
 import { Route as HorariosInstitucionesIndexRouteImport } from './routes/horarios-instituciones.index'
 import { Route as IndicesIndexRouteImport } from './routes/indices.index'
+import { Route as InstitucionesCoordinadoresIndexRouteImport } from './routes/instituciones-coordinadores.index'
+import { Route as InstitucionesDirectoresIndexRouteImport } from './routes/instituciones-directores.index'
 import { Route as InstitucionesIndexRouteImport } from './routes/instituciones.index'
 import { Route as InstitucionesIdRouteImport } from './routes/instituciones.$id'
 import { Route as IntervencionesIndexRouteImport } from './routes/intervenciones.index'
@@ -67,6 +73,11 @@ const AgendasIndexRoute = AgendasIndexRouteImport.update({
   path: '/agendas/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AniosLectivosIndexRoute = AniosLectivosIndexRouteImport.update({
+  id: '/anios-lectivos/',
+  path: '/anios-lectivos/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuditoriaIndexRoute = AuditoriaIndexRouteImport.update({
   id: '/auditoria/',
   path: '/auditoria/',
@@ -94,6 +105,11 @@ const ConsultaTransferenciasIndexRoute =
     path: '/consulta-transferencias/',
     getParentRoute: () => rootRouteImport,
   } as any)
+const CoordinadoresIndexRoute = CoordinadoresIndexRouteImport.update({
+  id: '/coordinadores/',
+  path: '/coordinadores/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DepartamentosIndexRoute = DepartamentosIndexRouteImport.update({
   id: '/departamentos/',
   path: '/departamentos/',
@@ -112,6 +128,11 @@ const DocentesIndexRoute = DocentesIndexRouteImport.update({
 const EnfasisIndexRoute = EnfasisIndexRouteImport.update({
   id: '/enfasis/',
   path: '/enfasis/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EtapasIndexRoute = EtapasIndexRouteImport.update({
+  id: '/etapas/',
+  path: '/etapas/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EvaluacionesIndexRoute = EvaluacionesIndexRouteImport.update({
@@ -139,6 +160,11 @@ const FacilitadoresIdRoute = FacilitadoresIdRouteImport.update({
   path: '/facilitadores/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FeriadosIndexRoute = FeriadosIndexRouteImport.update({
+  id: '/feriados/',
+  path: '/feriados/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HorariosInstitucionesIndexRoute =
   HorariosInstitucionesIndexRouteImport.update({
     id: '/horarios-instituciones/',
@@ -150,6 +176,18 @@ const IndicesIndexRoute = IndicesIndexRouteImport.update({
   path: '/indices/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InstitucionesCoordinadoresIndexRoute =
+  InstitucionesCoordinadoresIndexRouteImport.update({
+    id: '/instituciones-coordinadores/',
+    path: '/instituciones-coordinadores/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const InstitucionesDirectoresIndexRoute =
+  InstitucionesDirectoresIndexRouteImport.update({
+    id: '/instituciones-directores/',
+    path: '/instituciones-directores/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const InstitucionesIndexRoute = InstitucionesIndexRouteImport.update({
   id: '/instituciones/',
   path: '/instituciones/',
@@ -249,19 +287,25 @@ export interface FileRoutesByFullPath {
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas/': typeof AgendasIndexRoute
+  '/anios-lectivos/': typeof AniosLectivosIndexRoute
   '/auditoria/': typeof AuditoriaIndexRoute
   '/barrios/': typeof BarriosIndexRoute
   '/ciudades/': typeof CiudadesIndexRoute
   '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
+  '/coordinadores/': typeof CoordinadoresIndexRoute
   '/departamentos/': typeof DepartamentosIndexRoute
   '/directores/': typeof DirectoresIndexRoute
   '/docentes/': typeof DocentesIndexRoute
   '/enfasis/': typeof EnfasisIndexRoute
+  '/etapas/': typeof EtapasIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/facilitadores/': typeof FacilitadoresIndexRoute
+  '/feriados/': typeof FeriadosIndexRoute
   '/horarios-instituciones/': typeof HorariosInstitucionesIndexRoute
   '/indices/': typeof IndicesIndexRoute
+  '/instituciones-coordinadores/': typeof InstitucionesCoordinadoresIndexRoute
+  '/instituciones-directores/': typeof InstitucionesDirectoresIndexRoute
   '/instituciones/': typeof InstitucionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
@@ -288,19 +332,25 @@ export interface FileRoutesByTo {
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas': typeof AgendasIndexRoute
+  '/anios-lectivos': typeof AniosLectivosIndexRoute
   '/auditoria': typeof AuditoriaIndexRoute
   '/barrios': typeof BarriosIndexRoute
   '/ciudades': typeof CiudadesIndexRoute
   '/consulta-inventarios': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias': typeof ConsultaTransferenciasIndexRoute
+  '/coordinadores': typeof CoordinadoresIndexRoute
   '/departamentos': typeof DepartamentosIndexRoute
   '/directores': typeof DirectoresIndexRoute
   '/docentes': typeof DocentesIndexRoute
   '/enfasis': typeof EnfasisIndexRoute
+  '/etapas': typeof EtapasIndexRoute
   '/evaluaciones': typeof EvaluacionesIndexRoute
   '/facilitadores': typeof FacilitadoresIndexRoute
+  '/feriados': typeof FeriadosIndexRoute
   '/horarios-instituciones': typeof HorariosInstitucionesIndexRoute
   '/indices': typeof IndicesIndexRoute
+  '/instituciones-coordinadores': typeof InstitucionesCoordinadoresIndexRoute
+  '/instituciones-directores': typeof InstitucionesDirectoresIndexRoute
   '/instituciones': typeof InstitucionesIndexRoute
   '/intervenciones': typeof IntervencionesIndexRoute
   '/inventario': typeof InventarioIndexRoute
@@ -328,19 +378,25 @@ export interface FileRoutesById {
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agendas/': typeof AgendasIndexRoute
+  '/anios-lectivos/': typeof AniosLectivosIndexRoute
   '/auditoria/': typeof AuditoriaIndexRoute
   '/barrios/': typeof BarriosIndexRoute
   '/ciudades/': typeof CiudadesIndexRoute
   '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
+  '/coordinadores/': typeof CoordinadoresIndexRoute
   '/departamentos/': typeof DepartamentosIndexRoute
   '/directores/': typeof DirectoresIndexRoute
   '/docentes/': typeof DocentesIndexRoute
   '/enfasis/': typeof EnfasisIndexRoute
+  '/etapas/': typeof EtapasIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/facilitadores/': typeof FacilitadoresIndexRoute
+  '/feriados/': typeof FeriadosIndexRoute
   '/horarios-instituciones/': typeof HorariosInstitucionesIndexRoute
   '/indices/': typeof IndicesIndexRoute
+  '/instituciones-coordinadores/': typeof InstitucionesCoordinadoresIndexRoute
+  '/instituciones-directores/': typeof InstitucionesDirectoresIndexRoute
   '/instituciones/': typeof InstitucionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
@@ -369,19 +425,25 @@ export interface FileRouteTypes {
     | '/transferencias/$id'
     | '/transferencias/nueva'
     | '/agendas/'
+    | '/anios-lectivos/'
     | '/auditoria/'
     | '/barrios/'
     | '/ciudades/'
     | '/consulta-inventarios/'
     | '/consulta-transferencias/'
+    | '/coordinadores/'
     | '/departamentos/'
     | '/directores/'
     | '/docentes/'
     | '/enfasis/'
+    | '/etapas/'
     | '/evaluaciones/'
     | '/facilitadores/'
+    | '/feriados/'
     | '/horarios-instituciones/'
     | '/indices/'
+    | '/instituciones-coordinadores/'
+    | '/instituciones-directores/'
     | '/instituciones/'
     | '/intervenciones/'
     | '/inventario/'
@@ -408,19 +470,25 @@ export interface FileRouteTypes {
     | '/transferencias/$id'
     | '/transferencias/nueva'
     | '/agendas'
+    | '/anios-lectivos'
     | '/auditoria'
     | '/barrios'
     | '/ciudades'
     | '/consulta-inventarios'
     | '/consulta-transferencias'
+    | '/coordinadores'
     | '/departamentos'
     | '/directores'
     | '/docentes'
     | '/enfasis'
+    | '/etapas'
     | '/evaluaciones'
     | '/facilitadores'
+    | '/feriados'
     | '/horarios-instituciones'
     | '/indices'
+    | '/instituciones-coordinadores'
+    | '/instituciones-directores'
     | '/instituciones'
     | '/intervenciones'
     | '/inventario'
@@ -447,19 +515,25 @@ export interface FileRouteTypes {
     | '/transferencias/$id'
     | '/transferencias/nueva'
     | '/agendas/'
+    | '/anios-lectivos/'
     | '/auditoria/'
     | '/barrios/'
     | '/ciudades/'
     | '/consulta-inventarios/'
     | '/consulta-transferencias/'
+    | '/coordinadores/'
     | '/departamentos/'
     | '/directores/'
     | '/docentes/'
     | '/enfasis/'
+    | '/etapas/'
     | '/evaluaciones/'
     | '/facilitadores/'
+    | '/feriados/'
     | '/horarios-instituciones/'
     | '/indices/'
+    | '/instituciones-coordinadores/'
+    | '/instituciones-directores/'
     | '/instituciones/'
     | '/intervenciones/'
     | '/inventario/'
@@ -487,19 +561,25 @@ export interface RootRouteChildren {
   TransferenciasIdRoute: typeof TransferenciasIdRoute
   TransferenciasNuevaRoute: typeof TransferenciasNuevaRoute
   AgendasIndexRoute: typeof AgendasIndexRoute
+  AniosLectivosIndexRoute: typeof AniosLectivosIndexRoute
   AuditoriaIndexRoute: typeof AuditoriaIndexRoute
   BarriosIndexRoute: typeof BarriosIndexRoute
   CiudadesIndexRoute: typeof CiudadesIndexRoute
   ConsultaInventariosIndexRoute: typeof ConsultaInventariosIndexRoute
   ConsultaTransferenciasIndexRoute: typeof ConsultaTransferenciasIndexRoute
+  CoordinadoresIndexRoute: typeof CoordinadoresIndexRoute
   DepartamentosIndexRoute: typeof DepartamentosIndexRoute
   DirectoresIndexRoute: typeof DirectoresIndexRoute
   DocentesIndexRoute: typeof DocentesIndexRoute
   EnfasisIndexRoute: typeof EnfasisIndexRoute
+  EtapasIndexRoute: typeof EtapasIndexRoute
   EvaluacionesIndexRoute: typeof EvaluacionesIndexRoute
   FacilitadoresIndexRoute: typeof FacilitadoresIndexRoute
+  FeriadosIndexRoute: typeof FeriadosIndexRoute
   HorariosInstitucionesIndexRoute: typeof HorariosInstitucionesIndexRoute
   IndicesIndexRoute: typeof IndicesIndexRoute
+  InstitucionesCoordinadoresIndexRoute: typeof InstitucionesCoordinadoresIndexRoute
+  InstitucionesDirectoresIndexRoute: typeof InstitucionesDirectoresIndexRoute
   InstitucionesIndexRoute: typeof InstitucionesIndexRoute
   IntervencionesIndexRoute: typeof IntervencionesIndexRoute
   InventarioIndexRoute: typeof InventarioIndexRoute
@@ -544,6 +624,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AgendasIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/anios-lectivos/': {
+      id: '/anios-lectivos/'
+      path: '/anios-lectivos'
+      fullPath: '/anios-lectivos/'
+      preLoaderRoute: typeof AniosLectivosIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auditoria/': {
       id: '/auditoria/'
       path: '/auditoria'
@@ -579,6 +666,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsultaTransferenciasIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/coordinadores/': {
+      id: '/coordinadores/'
+      path: '/coordinadores'
+      fullPath: '/coordinadores/'
+      preLoaderRoute: typeof CoordinadoresIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/departamentos/': {
       id: '/departamentos/'
       path: '/departamentos'
@@ -605,6 +699,13 @@ declare module '@tanstack/react-router' {
       path: '/enfasis'
       fullPath: '/enfasis/'
       preLoaderRoute: typeof EnfasisIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/etapas/': {
+      id: '/etapas/'
+      path: '/etapas'
+      fullPath: '/etapas/'
+      preLoaderRoute: typeof EtapasIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/evaluaciones/': {
@@ -642,6 +743,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FacilitadoresIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/feriados/': {
+      id: '/feriados/'
+      path: '/feriados'
+      fullPath: '/feriados/'
+      preLoaderRoute: typeof FeriadosIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/horarios-instituciones/': {
       id: '/horarios-instituciones/'
       path: '/horarios-instituciones'
@@ -654,6 +762,20 @@ declare module '@tanstack/react-router' {
       path: '/indices'
       fullPath: '/indices/'
       preLoaderRoute: typeof IndicesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/instituciones-coordinadores/': {
+      id: '/instituciones-coordinadores/'
+      path: '/instituciones-coordinadores'
+      fullPath: '/instituciones-coordinadores/'
+      preLoaderRoute: typeof InstitucionesCoordinadoresIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/instituciones-directores/': {
+      id: '/instituciones-directores/'
+      path: '/instituciones-directores'
+      fullPath: '/instituciones-directores/'
+      preLoaderRoute: typeof InstitucionesDirectoresIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/instituciones/': {
@@ -791,19 +913,25 @@ const rootRouteChildren: RootRouteChildren = {
   TransferenciasIdRoute: TransferenciasIdRoute,
   TransferenciasNuevaRoute: TransferenciasNuevaRoute,
   AgendasIndexRoute: AgendasIndexRoute,
+  AniosLectivosIndexRoute: AniosLectivosIndexRoute,
   AuditoriaIndexRoute: AuditoriaIndexRoute,
   BarriosIndexRoute: BarriosIndexRoute,
   CiudadesIndexRoute: CiudadesIndexRoute,
   ConsultaInventariosIndexRoute: ConsultaInventariosIndexRoute,
   ConsultaTransferenciasIndexRoute: ConsultaTransferenciasIndexRoute,
+  CoordinadoresIndexRoute: CoordinadoresIndexRoute,
   DepartamentosIndexRoute: DepartamentosIndexRoute,
   DirectoresIndexRoute: DirectoresIndexRoute,
   DocentesIndexRoute: DocentesIndexRoute,
   EnfasisIndexRoute: EnfasisIndexRoute,
+  EtapasIndexRoute: EtapasIndexRoute,
   EvaluacionesIndexRoute: EvaluacionesIndexRoute,
   FacilitadoresIndexRoute: FacilitadoresIndexRoute,
+  FeriadosIndexRoute: FeriadosIndexRoute,
   HorariosInstitucionesIndexRoute: HorariosInstitucionesIndexRoute,
   IndicesIndexRoute: IndicesIndexRoute,
+  InstitucionesCoordinadoresIndexRoute: InstitucionesCoordinadoresIndexRoute,
+  InstitucionesDirectoresIndexRoute: InstitucionesDirectoresIndexRoute,
   InstitucionesIndexRoute: InstitucionesIndexRoute,
   IntervencionesIndexRoute: IntervencionesIndexRoute,
   InventarioIndexRoute: InventarioIndexRoute,

@@ -1,10 +1,20 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { ChevronDown, LayoutGrid, LogOut, type LucideIcon } from "lucide-react";
+import { ChevronDown, LayoutGrid, LogOut, UserRound, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
-import { esRutaActiva, iniciales, itemActivo, useGruposAbiertos, useMenu } from "@/lib/navegacion";
+import { BARRA, esRutaActiva, iniciales, itemActivo, useMenu } from "@/lib/navegacion";
 import { useSession } from "@/lib/session";
 
 /**
@@ -14,19 +24,26 @@ import { useSession } from "@/lib/session";
  * En escritorio no se renderiza (`AppShell` la corta en `lg:`); ahí navega la
  * sidebar. Los dos leen el mismo `lib/navegacion.ts`.
  *
- * Tres accesos directos + **Menú**, que abre el resto de los módulos del ERP en
- * una hoja. En una barra de teléfono no entran siete ítems: cuatro es el máximo
- * que deja objetivos táctiles cómodos, así que el cuarto es la puerta a todo lo
- * demás. "Salir" se mudó adentro de esa hoja — se usa una vez por sesión y no
- * merecía un cuarto del ancho, además de que estaba pegado a "Cuenta", que es
- * justo donde uno no quiere errarle.
+ * **Fija, en este orden (09/10/2026, a pedido): Inicio, Menú, Perfil y
+ * Salir.** Ningún módulo va en la barra: todos están en la hoja de **Menú**
+ * (antes la barra tomaba los primeros del menú y así quedaba Auditoría).
+ * "Salir" pide confirmación: está pegado a Perfil y un toque errado cerraba la
+ * sesión.
  *
  * El hueco de abajo lo pone `AppShell` (`pb-28`).
  */
 export function BottomNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { logout } = useSession();
+  const navigate = useNavigate();
   const [abierto, setAbierto] = useState(false);
-  const { tabs } = useMenu();
+  const [saliendo, setSaliendo] = useState(false);
+  /**
+   * Los menús principales abiertos en la hoja. Propio y no el de la sidebar
+   * (`useGruposAbiertos`): en el celular la hoja **arranca siempre con todo
+   * plegado** y el usuario abre el que quiere (09/10/2026, a pedido).
+   */
+  const [grupos, setGrupos] = useState<ReadonlySet<string>>(new Set());
 
   // La hoja se cierra sola al navegar: sin esto queda abierta encima de la
   // pantalla nueva, porque el Link no desmonta este componente.
@@ -34,42 +51,97 @@ export function BottomNav() {
     setAbierto(false);
   }, [pathname]);
 
-  // "Menú" se marca activo cuando la ruta actual NO es ninguno de los accesos
-  // directos de la barra: un módulo que solo vive en la hoja. Sin esto el
-  // usuario no vería de dónde salió la pantalla.
-  const enMenu = !tabs.some((t) => esRutaActiva(pathname, t.to));
+  const abrirMenu = () => {
+    setGrupos(new Set());
+    setAbierto(true);
+  };
+
+  const onLogout = async () => {
+    await logout();
+    toast.success("Sesión cerrada");
+    navigate({ to: "/", replace: true });
+  };
+
+  const enInicio = esRutaActiva(pathname, BARRA.inicio.to);
+  const enCuenta = esRutaActiva(pathname, BARRA.cuenta.to);
+  // "Menú" se marca activo en cualquier módulo: todos salen de la hoja. Sin
+  // esto el usuario no vería de dónde salió la pantalla.
+  const enMenu = !enInicio && !enCuenta;
 
   return (
     <>
       <nav className="glass fixed inset-x-0 bottom-0 z-40 border-t border-border/60 pb-safe select-none-touch lg:hidden">
         <div className="mx-auto flex max-w-[480px] items-stretch px-2">
-          {tabs.map((item) => {
-            const active = esRutaActiva(pathname, item.to);
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                aria-current={active ? "page" : undefined}
-                className="flex-1"
-              >
-                <TabContent icon={item.icon} label={item.label} active={active} />
-              </Link>
-            );
-          })}
+          <Link
+            to={BARRA.inicio.to}
+            aria-current={enInicio ? "page" : undefined}
+            className="flex-1"
+          >
+            <TabContent icon={BARRA.inicio.icon} label={BARRA.inicio.label} active={enInicio} />
+          </Link>
 
           <button
             type="button"
-            onClick={() => setAbierto(true)}
+            onClick={abrirMenu}
             aria-haspopup="dialog"
             aria-expanded={abierto}
             className="flex-1"
           >
             <TabContent icon={LayoutGrid} label="Menú" active={enMenu} />
           </button>
+
+          <Link
+            to={BARRA.cuenta.to}
+            aria-current={enCuenta ? "page" : undefined}
+            className="flex-1"
+          >
+            <TabContent icon={UserRound} label="Perfil" active={enCuenta} />
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => setSaliendo(true)}
+            aria-haspopup="dialog"
+            className="flex-1"
+          >
+            <TabContent icon={LogOut} label="Salir" active={false} />
+          </button>
         </div>
       </nav>
 
-      <MenuDrawer abierto={abierto} onOpenChange={setAbierto} />
+      <MenuDrawer
+        abierto={abierto}
+        onOpenChange={setAbierto}
+        grupos={grupos}
+        onAlternar={(titulo) =>
+          setGrupos((g) => {
+            const n = new Set(g);
+            if (n.has(titulo)) n.delete(titulo);
+            else n.add(titulo);
+            return n;
+          })
+        }
+      />
+
+      <AlertDialog open={saliendo} onOpenChange={setSaliendo}>
+        <AlertDialogContent className="max-w-[calc(100vw-2.5rem)] rounded-2xl sm:max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">¿Cerrar la sesión?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Para volver a entrar vas a tener que poner tu usuario y contraseña.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="h-11 rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void onLogout()}
+              className="h-11 rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Salir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
@@ -84,23 +156,18 @@ export function BottomNav() {
 function MenuDrawer({
   abierto,
   onOpenChange,
+  grupos,
+  onAlternar,
 }: {
   abierto: boolean;
   onOpenChange: (v: boolean) => void;
+  grupos: ReadonlySet<string>;
+  onAlternar: (titulo: string) => void;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { user, logout } = useSession();
-  const navigate = useNavigate();
+  const { user } = useSession();
   const { menu, items } = useMenu();
   const actual = itemActivo(pathname, items);
-  const grupos = useGruposAbiertos(menu, pathname);
-
-  const onLogout = async () => {
-    onOpenChange(false);
-    await logout();
-    toast.success("Sesión cerrada");
-    navigate({ to: "/", replace: true });
-  };
 
   return (
     <Drawer open={abierto} onOpenChange={onOpenChange}>
@@ -124,7 +191,8 @@ function MenuDrawer({
           </div>
         </div>
 
-        <div className="no-scrollbar overflow-y-auto px-5 pb-2">
+        {/* Salir está en la barra, no acá. */}
+        <div className="no-scrollbar overflow-y-auto px-5 pb-safe">
           {menu.map((grupo, i) => {
             const tarjetas = (
               <div className="grid grid-cols-2 gap-2.5">
@@ -179,25 +247,15 @@ function MenuDrawer({
                 titulo={titulo}
                 icon={grupo.icon}
                 cantidad={grupo.items.length}
-                abierto={grupos.abierto(titulo)}
+                abierto={grupos.has(titulo)}
                 contieneActivo={grupo.items.some((it) => esRutaActiva(pathname, it.to))}
-                onAlternar={() => grupos.alternar(titulo)}
+                onAlternar={() => onAlternar(titulo)}
               >
                 {tarjetas}
               </GrupoDrawer>
             );
           })}
-        </div>
-
-        <div className="border-t border-border/60 px-5 pt-3 pb-safe">
-          <button
-            type="button"
-            onClick={onLogout}
-            className="tap mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-destructive/10 py-3 text-[14px] font-semibold text-destructive"
-          >
-            <LogOut className="size-[18px]" />
-            Cerrar sesión
-          </button>
+          <div aria-hidden className="h-3" />
         </div>
       </DrawerContent>
     </Drawer>

@@ -3,7 +3,7 @@
 | Archivo | Qué trae | Orden |
 | --- | --- | --- |
 | **[`auth.sql`](auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
-| **[`anios_lectivos.sql`](anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` | 2º |
+| **[`anios_lectivos.sql`](anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` + el ABM de `/anios-lectivos` (`PKG_ANIOS_LECTIVOS_ETHOS`, `anios-lectivos[/:id]`; el paquete necesita `roles_paginas.sql`: en una instalación nueva, correrlo de nuevo después) | 2º |
 | **[`evaluaciones_facilitadores.sql`](evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos y de la tarjeta de dirección (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
 | **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`) | independiente |
 | **[`intervenciones_crud.sql`](intervenciones_crud.sql)** | Carga manual de intervenciones (`PKG_INTERV_CRUD_ETHOS`) | independiente |
@@ -32,6 +32,8 @@
 | **[`materias.sql`](materias.sql)** | ABM de materias (`PKG_MATERIAS_ETHOS`) | después de `roles_paginas.sql` |
 | **[`enfasis.sql`](enfasis.sql)** | ABM de énfasis (`PKG_ENFASIS_ETHOS`) | después de `roles_paginas.sql` |
 | **[`indices.sql`](indices.sql)** | ABM de los índices de los manuales (`PKG_INDICES_ETHOS`) | después de `roles_paginas.sql` |
+| **[`feriados.sql`](feriados.sql)** | ABM de los feriados nacionales y "copiar de un año a otro" (`PKG_FERIADOS_ETHOS`) | después de `roles_paginas.sql` |
+| **[`etapas.sql`](etapas.sql)** | ABM de etapas, con en qué tablas se usa cada una (`PKG_ETAPAS_ETHOS`) | después de `roles_paginas.sql` |
 | **[`postulaciones.sql`](postulaciones.sql)** | Postulaciones de una institución: la grilla de la 38 y el formulario PDF / imagen (`PKG_POSTULACIONES_ETHOS`) | después de `anios_lectivos.sql` |
 
 Todos son idempotentes. Solo `auth.sql` define el módulo y habilita el esquema; los demás
@@ -550,7 +552,12 @@ pasen, usan estos mismos backends. **La 31 (Horarios de Instituciones, `/horario
 ya está** (09/10/2026): usa `GET horario-instituciones` sin `id_institucion` (todas) y el
 listado de `instituciones`, sin cambios en el backend. **La 34 (Directores, `/directores`)
 también**: usa `directores` y `GET instituciones-directores` sin `id_institucion` (dónde figura
-cada uno), sin cambios en el backend.
+cada uno), sin cambios en el backend. **La 36 (Instituciones y Directores,
+`/instituciones-directores`) y la 45 (Coordinadores, `/coordinadores`) también** (09/10/2026):
+la 36 usa `instituciones-directores` (todas las filas, y el alta/edición/baja de siempre) y el
+listado de `instituciones`; la 45 usa `coordinadores` y `GET instituciones-coordinadores` sin
+`id_institucion`. **La 47 (Instituciones y Coordinadores, `/instituciones-coordinadores`)**,
+igual que la 36 con `instituciones-coordinadores`. Sin cambios en el backend.
 
 | Script | Tabla | Paquete | Endpoints |
 | --- | --- | --- | --- |

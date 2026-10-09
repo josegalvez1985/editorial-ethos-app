@@ -75,6 +75,8 @@ export type ApiAutoridades = {
     singular: string;
     /** "Cargo" o "Tipo" */
     rol: string;
+    /** "Dirige" / "Coordina" */
+    verbo: string;
     femenino?: boolean;
   };
   /** La página de la propia tabla (36 o 47): sus permisos también valen. */
@@ -83,6 +85,8 @@ export type ApiAutoridades = {
   rutaPersonas: string;
   key: (idInstitucion: number) => readonly unknown[];
   listar: (idInstitucion: number) => Promise<Autoridad[]>;
+  /** Las filas de TODAS las instituciones: la página de la tabla (36 o 47). */
+  todas: { key: readonly unknown[]; listar: () => Promise<Autoridad[]> };
   keyOpciones: readonly unknown[];
   opciones: () => Promise<OpcionesAutoridad>;
   guardar: (id: number | null, d: DatosAutoridad) => Promise<number>;
@@ -96,7 +100,7 @@ export type ApiAutoridades = {
 
 /**
  * Lo que cada tabla de personas le pasa a `<PersonasAutoridad>`: la pantalla
- * de Directores (página 34) y, cuando se haga, la de Coordinadores (45).
+ * de Directores (página 34) y la de Coordinadores (45).
  */
 export type ApiPersonas = {
   textos: {

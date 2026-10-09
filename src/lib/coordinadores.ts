@@ -3,10 +3,10 @@
  * Contrato del backend: `backend/coordinadores.sql`. El gemelo de
  * `lib/directores.ts`.
  *
- * Hoy lo usa la pestaña Autoridades de la ficha de Instituciones para elegir
- * al coordinador y para darlo de alta ahí mismo (el modal 46 de APEX). La
- * página 45 (Coordinadores) todavía no está en el sitio; cuando se haga, usa
- * esto.
+ * Lo usan la pestaña Autoridades de la ficha de Instituciones, para elegir al
+ * coordinador y darlo de alta ahí mismo, y la pantalla `/coordinadores` (la
+ * página 45 de APEX y su modal 46, desde el 09/10/2026, con
+ * `<PersonasAutoridad>`).
  */
 
 import { authFetch } from "@/lib/api";

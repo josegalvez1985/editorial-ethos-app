@@ -37,7 +37,7 @@ const nombres = (filas: Autoridad[]) =>
 
 /**
  * La pantalla de las PERSONAS de una tabla de autoridades: Directores (página
- * 34 de APEX, con su modal 35) y, cuando se haga, Coordinadores (45 y 46). Las
+ * 34 de APEX, con su modal 35) y Coordinadores (45 y 46). Las
  * dos son un IG de nombre, teléfono y CI con un modal de alta: lo que cambia
  * viene en `api` (ver {@link ApiPersonas}), como en `<CatalogoNombre>`.
  *

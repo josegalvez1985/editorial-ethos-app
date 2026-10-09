@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import type { ApiAutoridades, Autoridad } from "@/lib/autoridades";
 import type { Opcion } from "@/lib/evaluaciones";
-import { keysInstituciones } from "@/lib/instituciones";
+import { keysInstituciones, listarInstituciones } from "@/lib/instituciones";
 import { iniciales } from "@/lib/navegacion";
 import { usePermisos } from "@/lib/permisos";
 import { normalizar } from "@/lib/utils";
@@ -259,14 +259,21 @@ function Tarjeta({ a, api, onAbrir }: { a: Autoridad; api: ApiAutoridades; onAbr
 /** El año del calendario: lo que proponía APEX (`to_char(sysdate,'yyyy')`). */
 const anioCalendario = () => String(new Date().getFullYear());
 
-function EditorAutoridad({
+/**
+ * Alta, edición y baja de una fila. En la ficha la institución es la de la
+ * ficha; en la página de la tabla (`<InstitucionesAutoridad>`, el modal 37 de
+ * APEX) se elige, y `idInstitucion` es solo la propuesta.
+ */
+export function EditorAutoridad({
   api,
   idInstitucion,
+  elegirInstitucion = false,
   fila,
   onCerrar,
 }: {
   api: ApiAutoridades;
-  idInstitucion: number;
+  idInstitucion: number | null;
+  elegirInstitucion?: boolean;
   fila: Autoridad | null;
   onCerrar: () => void;
 }) {
@@ -283,15 +290,23 @@ function EditorAutoridad({
     staleTime: 10 * 60 * 1000,
   });
   const personas = useQuery({ queryKey: api.personas.key, queryFn: api.personas.listar });
-  // Las filas de la institución, para proponer los períodos que ya usa.
+  const instituciones = useQuery({
+    queryKey: keysInstituciones.lista,
+    queryFn: listarInstituciones,
+    enabled: elegirInstitucion,
+  });
+  // Las filas de la institución (o de todas, si se elige), para proponer los
+  // períodos que ya se usan.
+  const deTodas = elegirInstitucion || idInstitucion == null;
   const filas = useQuery({
-    queryKey: api.key(idInstitucion),
-    queryFn: () => api.listar(idInstitucion),
+    queryKey: deTodas ? api.todas.key : api.key(idInstitucion!),
+    queryFn: () => (deTodas ? api.todas.listar() : api.listar(idInstitucion!)),
   });
 
   const estados = opciones.data?.estado ?? [];
   const estadoActivo = estados.find((e) => e.valor.toUpperCase() === "A")?.valor ?? "A";
 
+  const [inst, setInst] = useState<number | null>(fila?.idInstitucion ?? idInstitucion);
   const [idPersona, setIdPersona] = useState<number | null>(fila?.idPersona ?? null);
   const [personaNueva, setPersonaNueva] = useState(false);
   const [nombre, setNombre] = useState("");
@@ -323,6 +338,18 @@ function EditorAutoridad({
     ? lista.find((p) => normalizar(p.nombre.trim()) === normalizar(nombre.trim()))
     : undefined;
 
+  // Las activas, y la de la fila aunque ya no lo esté.
+  const opcInstituciones: Opcion[] = (instituciones.data?.items ?? [])
+    .filter((i) => i.activa || i.id === inst)
+    .map((i) => ({
+      id: i.id,
+      texto: i.nombre,
+      extra: [i.ciudad, !i.activa && "Inactiva"].filter(Boolean).join(" · ") || undefined,
+      busqueda: normalizar(`${i.nombre} ${i.ciudad}`),
+    }));
+  const institucionElegida =
+    instituciones.data?.items.find((i) => i.id === inst)?.nombre ?? fila?.institucion ?? null;
+
   const sugeridos = [
     ...new Set([anioCalendario(), ...(filas.data ?? []).map((f) => f.periodo).filter(Boolean)]),
   ]
@@ -331,6 +358,7 @@ function EditorAutoridad({
     .slice(0, 4);
 
   const faltan = [
+    ...(inst == null ? ["institución"] : []),
     ...(personaNueva
       ? nombre.trim()
         ? []
@@ -343,7 +371,12 @@ function EditorAutoridad({
   ];
 
   const invalidar = () => {
-    qc.invalidateQueries({ queryKey: api.key(idInstitucion) });
+    // La de antes y la de ahora, si se cambió de institución.
+    for (const i of new Set([inst, fila?.idInstitucion]))
+      if (i != null) qc.invalidateQueries({ queryKey: api.key(i) });
+    qc.invalidateQueries({ queryKey: api.todas.key });
+    // En cuántas instituciones figura cada persona.
+    qc.invalidateQueries({ queryKey: api.personas.key });
     // El listado muestra el director vigente y cuántas autoridades hay.
     qc.invalidateQueries({ queryKey: keysInstituciones.lista });
   };
@@ -364,7 +397,7 @@ function EditorAutoridad({
         qc.invalidateQueries({ queryKey: api.personas.key });
       }
       return api.guardar(fila?.id ?? null, {
-        idInstitucion,
+        idInstitucion: inst!,
         idPersona: id!,
         periodo: periodo.trim(),
         rol,
@@ -404,15 +437,17 @@ function EditorAutoridad({
           <DialogDescription className="text-xs">
             {nueva
               ? `Queda en la institución con el período, ${t.rol.toLowerCase()} y turno que elijas.`
-              : `Período ${fila?.periodo || "sin cargar"}.`}
+              : elegirInstitucion
+                ? `${fila?.institucion || "Sin institución"} · Período ${fila?.periodo || "sin cargar"}.`
+                : `Período ${fila?.periodo || "sin cargar"}.`}
           </DialogDescription>
         </DialogHeader>
 
-        {opciones.isLoading || personas.isLoading ? (
+        {opciones.isLoading || personas.isLoading || instituciones.isLoading ? (
           <Cargando />
-        ) : opciones.isError || personas.isError ? (
+        ) : opciones.isError || personas.isError || instituciones.isError ? (
           <Fallo
-            error={opciones.error ?? personas.error}
+            error={opciones.error ?? personas.error ?? instituciones.error}
             texto="No se pudieron cargar las listas"
           />
         ) : (
@@ -428,6 +463,17 @@ function EditorAutoridad({
             className="space-y-4"
           >
             <fieldset disabled={!puedeGuardar || ocupado} className="space-y-4">
+              {elegirInstitucion && (
+                <PickerModal
+                  label="Institución"
+                  opciones={opcInstituciones}
+                  value={inst}
+                  valueText={institucionElegida}
+                  onChange={(o) => setInst(o.id)}
+                  placeholder="Elegir institución"
+                  requerido
+                />
+              )}
               {personaNueva ? (
                 <div className="space-y-3 rounded-xl border border-primary/30 bg-primary-soft/40 p-3">
                   <p className="flex items-center gap-1.5 text-sm font-semibold text-primary">
