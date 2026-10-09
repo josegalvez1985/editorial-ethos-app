@@ -52,6 +52,8 @@ export type ApiCatalogo = {
   /** Alta (`id` null) o modificación. Devuelve el id. */
   guardar: (id: number | null, datos: { nombre: string; padreId?: number }) => Promise<number>;
   eliminar: (id: number) => Promise<void>;
+  /** Otras cachés que muestran esta tabla (las listas de Pre-horarios, por ejemplo). */
+  relacionadas?: readonly (readonly unknown[])[];
 };
 
 /**
@@ -417,7 +419,10 @@ function EditorCatalogo({
     !repetido &&
     !sinCambios;
 
-  const invalidar = () => qc.invalidateQueries({ queryKey: api.queryKey });
+  const invalidar = () => {
+    qc.invalidateQueries({ queryKey: api.queryKey });
+    for (const k of api.relacionadas ?? []) qc.invalidateQueries({ queryKey: k });
+  };
   const eliminado = t.femenino ? "eliminada" : "eliminado";
 
   const guardar = useMutation({

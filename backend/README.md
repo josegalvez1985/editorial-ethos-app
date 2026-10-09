@@ -28,6 +28,9 @@
 | **[`instituciones_coordinadores.sql`](instituciones_coordinadores.sql)** | Quién coordina en cada institución (`PKG_INST_COORDINADORES_ETHOS`) | después de `coordinadores.sql` |
 | **[`horario_instituciones.sql`](horario_instituciones.sql)** | El horario de cada institución, por año (`PKG_HORARIO_INST_ETHOS`) | después de `anios_lectivos.sql` |
 | **[`pre_horarios.sql`](pre_horarios.sql)** | Pre-horarios: la planificación del año; confirmarlos crea la postulación (`PKG_PRE_HORARIOS_ETHOS`) | después de `instituciones.sql` |
+| **[`docentes.sql`](docentes.sql)** | ABM de docentes (`PKG_DOCENTES_ETHOS`) | después de `roles_paginas.sql` |
+| **[`materias.sql`](materias.sql)** | ABM de materias (`PKG_MATERIAS_ETHOS`) | después de `roles_paginas.sql` |
+| **[`enfasis.sql`](enfasis.sql)** | ABM de énfasis (`PKG_ENFASIS_ETHOS`) | después de `roles_paginas.sql` |
 | **[`postulaciones.sql`](postulaciones.sql)** | Postulaciones de una institución: la grilla de la 38 y el formulario PDF / imagen (`PKG_POSTULACIONES_ETHOS`) | después de `anios_lectivos.sql` |
 
 Todos son idempotentes. Solo `auth.sql` define el módulo y habilita el esquema; los demás
@@ -303,7 +306,7 @@ esa pantalla. No tienen ruta, ni fila en `MENU_PAGINAS`, ni se controlan aparte.
 ### El menú no es la seguridad
 
 Ocultar un módulo del menú no impide llamar a su endpoint con el token. **Hoy solo los
-endpoints de este script, los de `usuarios.sql` y los de escritura de `paises.sql`, `nacionalidades.sql`, `facilitadores.sql`, `departamentos.sql`, `ciudades.sql` y `barrios.sql` controlan
+endpoints de este script, los de `usuarios.sql` y los de escritura de `paises.sql`, `nacionalidades.sql`, `facilitadores.sql`, `departamentos.sql`, `ciudades.sql`, `barrios.sql`, `docentes.sql`, `materias.sql` y `enfasis.sql` controlan
 permisos; los de los demás módulos solo piden sesión.** Para cerrar un módulo de verdad, su paquete tiene que preguntar antes de
 hacer nada (ver *Agregar un endpoint de negocio*; `usuarios.sql` es el ejemplo: busca su
 página con `pagina_de_ruta('/usuarios')` y pregunta `puede(...)`).
@@ -354,6 +357,42 @@ la 12. Paquete `PKG_NACIONALIDADES_ETHOS`. La tabla, según APEX: `ID_NACIONALID
 
 Todo lo demás, igual que `paises.sql`. La pantalla es `<CatalogoNombre>` sin padre, como
 Países.
+
+## Materias y Énfasis (`materias.sql`, `enfasis.sql`)
+
+Reemplazan a las páginas 17 (Materias) y 26 (Enfasis) de APEX y a sus modales 18 y 27, que en
+el sitio son el diálogo de `/materias` y `/enfasis`. Paquetes `PKG_MATERIAS_ETHOS` y
+`PKG_ENFASIS_ETHOS`. Son copias de `nacionalidades.sql` (mismos endpoints, `{descripcion}` →
+`{id_materia}` / `{id_enfasis}`), con dos diferencias:
+
+- **El largo**: `MATERIAS.DESCRIPCION` llega a 200 y `ENFASIS.DESCRIPCION` a 500.
+- **Los usos cuentan `PRE_HORARIOS` y `POSTULACIONES` aunque no tengan FK** (se sabe que
+  guardan `ID_MATERIA` e `ID_ENFASIS`), y el `DELETE` frena por ellos con **409**: sin FK,
+  borrar los dejaría apuntando a nada.
+
+La pantalla es `<CatalogoNombre>`; al guardar refresca también `pre-horarios/opciones` (la
+lista de Pre-horarios y Postulaciones), con `relacionadas` de `ApiCatalogo`.
+
+## Docentes (`docentes.sql`)
+
+Reemplaza a la página 41 de APEX (Docentes, IG sobre `DOCENTES`) y a su modal 42 (Crear
+Docente), que en el sitio es el diálogo de `/docentes`, con los permisos de la 41. Paquete
+`PKG_DOCENTES_ETHOS`. La tabla: `ID_DOCENTE` (identity), `NOMBRE_APELLIDO` (obligatorio, 500),
+`NRO_CI` y `NRO_TELEFONO` (100) y `ACTIVO` (obligatorio, SI / NO; la 42 proponía SI).
+
+| Método | Ruta | Exige | Qué hace |
+| --- | --- | --- | --- |
+| GET | `docentes` | sesión | Todos por nombre, con `es_activo` (S / N: `ACTIVO` empieza con S), `usos` y `tablas` |
+| POST | `docentes` | insertar en la página de `/docentes` | `{nombre_apellido, nro_ci, nro_telefono, activo}` → `{id_docente}` |
+| PUT | `docentes/:id` | actualizar | Lo mismo |
+| DELETE | `docentes/:id` | borrar | **409** si lo usa un pre-horario o una postulación (con o sin FK) |
+
+- **Un docente en uso no se borra: se marca inactivo.** Deja de ofrecerse en las listas, pero
+  lo cargado queda.
+- **La CI repetida no se rechaza** (APEX no lo hacía y puede haber datos viejos así): la
+  pantalla avisa antes de guardar, igual que con un nombre repetido.
+- El teléfono del docente es el que Pre-horarios propone al elegirlo (la acción dinámica de
+  la 43). Guardar refresca también `pre-horarios/opciones`.
 
 ## Facilitadores (`facilitadores.sql`)
 

@@ -19,6 +19,8 @@ import { Route as CiudadesIndexRouteImport } from './routes/ciudades.index'
 import { Route as ConsultaInventariosIndexRouteImport } from './routes/consulta-inventarios.index'
 import { Route as ConsultaTransferenciasIndexRouteImport } from './routes/consulta-transferencias.index'
 import { Route as DepartamentosIndexRouteImport } from './routes/departamentos.index'
+import { Route as DocentesIndexRouteImport } from './routes/docentes.index'
+import { Route as EnfasisIndexRouteImport } from './routes/enfasis.index'
 import { Route as EvaluacionesIndexRouteImport } from './routes/evaluaciones.index'
 import { Route as EvaluacionesIdRouteImport } from './routes/evaluaciones.$id'
 import { Route as EvaluacionesNuevaRouteImport } from './routes/evaluaciones.nueva'
@@ -30,6 +32,7 @@ import { Route as IntervencionesIndexRouteImport } from './routes/intervenciones
 import { Route as IntervencionesIdRouteImport } from './routes/intervenciones.$id'
 import { Route as IntervencionesNuevaRouteImport } from './routes/intervenciones.nueva'
 import { Route as InventarioIndexRouteImport } from './routes/inventario.index'
+import { Route as MateriasIndexRouteImport } from './routes/materias.index'
 import { Route as NacionalidadesIndexRouteImport } from './routes/nacionalidades.index'
 import { Route as PaginasIndexRouteImport } from './routes/paginas.index'
 import { Route as PaisesIndexRouteImport } from './routes/paises.index'
@@ -93,6 +96,16 @@ const DepartamentosIndexRoute = DepartamentosIndexRouteImport.update({
   path: '/departamentos/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DocentesIndexRoute = DocentesIndexRouteImport.update({
+  id: '/docentes/',
+  path: '/docentes/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EnfasisIndexRoute = EnfasisIndexRouteImport.update({
+  id: '/enfasis/',
+  path: '/enfasis/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EvaluacionesIndexRoute = EvaluacionesIndexRouteImport.update({
   id: '/evaluaciones/',
   path: '/evaluaciones/',
@@ -146,6 +159,11 @@ const IntervencionesNuevaRoute = IntervencionesNuevaRouteImport.update({
 const InventarioIndexRoute = InventarioIndexRouteImport.update({
   id: '/inventario/',
   path: '/inventario/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MateriasIndexRoute = MateriasIndexRouteImport.update({
+  id: '/materias/',
+  path: '/materias/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NacionalidadesIndexRoute = NacionalidadesIndexRouteImport.update({
@@ -218,11 +236,14 @@ export interface FileRoutesByFullPath {
   '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
   '/departamentos/': typeof DepartamentosIndexRoute
+  '/docentes/': typeof DocentesIndexRoute
+  '/enfasis/': typeof EnfasisIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/facilitadores/': typeof FacilitadoresIndexRoute
   '/instituciones/': typeof InstitucionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
+  '/materias/': typeof MateriasIndexRoute
   '/nacionalidades/': typeof NacionalidadesIndexRoute
   '/paginas/': typeof PaginasIndexRoute
   '/paises/': typeof PaisesIndexRoute
@@ -251,11 +272,14 @@ export interface FileRoutesByTo {
   '/consulta-inventarios': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias': typeof ConsultaTransferenciasIndexRoute
   '/departamentos': typeof DepartamentosIndexRoute
+  '/docentes': typeof DocentesIndexRoute
+  '/enfasis': typeof EnfasisIndexRoute
   '/evaluaciones': typeof EvaluacionesIndexRoute
   '/facilitadores': typeof FacilitadoresIndexRoute
   '/instituciones': typeof InstitucionesIndexRoute
   '/intervenciones': typeof IntervencionesIndexRoute
   '/inventario': typeof InventarioIndexRoute
+  '/materias': typeof MateriasIndexRoute
   '/nacionalidades': typeof NacionalidadesIndexRoute
   '/paginas': typeof PaginasIndexRoute
   '/paises': typeof PaisesIndexRoute
@@ -285,11 +309,14 @@ export interface FileRoutesById {
   '/consulta-inventarios/': typeof ConsultaInventariosIndexRoute
   '/consulta-transferencias/': typeof ConsultaTransferenciasIndexRoute
   '/departamentos/': typeof DepartamentosIndexRoute
+  '/docentes/': typeof DocentesIndexRoute
+  '/enfasis/': typeof EnfasisIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
   '/facilitadores/': typeof FacilitadoresIndexRoute
   '/instituciones/': typeof InstitucionesIndexRoute
   '/intervenciones/': typeof IntervencionesIndexRoute
   '/inventario/': typeof InventarioIndexRoute
+  '/materias/': typeof MateriasIndexRoute
   '/nacionalidades/': typeof NacionalidadesIndexRoute
   '/paginas/': typeof PaginasIndexRoute
   '/paises/': typeof PaisesIndexRoute
@@ -320,11 +347,14 @@ export interface FileRouteTypes {
     | '/consulta-inventarios/'
     | '/consulta-transferencias/'
     | '/departamentos/'
+    | '/docentes/'
+    | '/enfasis/'
     | '/evaluaciones/'
     | '/facilitadores/'
     | '/instituciones/'
     | '/intervenciones/'
     | '/inventario/'
+    | '/materias/'
     | '/nacionalidades/'
     | '/paginas/'
     | '/paises/'
@@ -353,11 +383,14 @@ export interface FileRouteTypes {
     | '/consulta-inventarios'
     | '/consulta-transferencias'
     | '/departamentos'
+    | '/docentes'
+    | '/enfasis'
     | '/evaluaciones'
     | '/facilitadores'
     | '/instituciones'
     | '/intervenciones'
     | '/inventario'
+    | '/materias'
     | '/nacionalidades'
     | '/paginas'
     | '/paises'
@@ -386,11 +419,14 @@ export interface FileRouteTypes {
     | '/consulta-inventarios/'
     | '/consulta-transferencias/'
     | '/departamentos/'
+    | '/docentes/'
+    | '/enfasis/'
     | '/evaluaciones/'
     | '/facilitadores/'
     | '/instituciones/'
     | '/intervenciones/'
     | '/inventario/'
+    | '/materias/'
     | '/nacionalidades/'
     | '/paginas/'
     | '/paises/'
@@ -420,11 +456,14 @@ export interface RootRouteChildren {
   ConsultaInventariosIndexRoute: typeof ConsultaInventariosIndexRoute
   ConsultaTransferenciasIndexRoute: typeof ConsultaTransferenciasIndexRoute
   DepartamentosIndexRoute: typeof DepartamentosIndexRoute
+  DocentesIndexRoute: typeof DocentesIndexRoute
+  EnfasisIndexRoute: typeof EnfasisIndexRoute
   EvaluacionesIndexRoute: typeof EvaluacionesIndexRoute
   FacilitadoresIndexRoute: typeof FacilitadoresIndexRoute
   InstitucionesIndexRoute: typeof InstitucionesIndexRoute
   IntervencionesIndexRoute: typeof IntervencionesIndexRoute
   InventarioIndexRoute: typeof InventarioIndexRoute
+  MateriasIndexRoute: typeof MateriasIndexRoute
   NacionalidadesIndexRoute: typeof NacionalidadesIndexRoute
   PaginasIndexRoute: typeof PaginasIndexRoute
   PaisesIndexRoute: typeof PaisesIndexRoute
@@ -507,6 +546,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DepartamentosIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/docentes/': {
+      id: '/docentes/'
+      path: '/docentes'
+      fullPath: '/docentes/'
+      preLoaderRoute: typeof DocentesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/enfasis/': {
+      id: '/enfasis/'
+      path: '/enfasis'
+      fullPath: '/enfasis/'
+      preLoaderRoute: typeof EnfasisIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/evaluaciones/': {
       id: '/evaluaciones/'
       path: '/evaluaciones'
@@ -582,6 +635,13 @@ declare module '@tanstack/react-router' {
       path: '/inventario'
       fullPath: '/inventario/'
       preLoaderRoute: typeof InventarioIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/materias/': {
+      id: '/materias/'
+      path: '/materias'
+      fullPath: '/materias/'
+      preLoaderRoute: typeof MateriasIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/nacionalidades/': {
@@ -676,11 +736,14 @@ const rootRouteChildren: RootRouteChildren = {
   ConsultaInventariosIndexRoute: ConsultaInventariosIndexRoute,
   ConsultaTransferenciasIndexRoute: ConsultaTransferenciasIndexRoute,
   DepartamentosIndexRoute: DepartamentosIndexRoute,
+  DocentesIndexRoute: DocentesIndexRoute,
+  EnfasisIndexRoute: EnfasisIndexRoute,
   EvaluacionesIndexRoute: EvaluacionesIndexRoute,
   FacilitadoresIndexRoute: FacilitadoresIndexRoute,
   InstitucionesIndexRoute: InstitucionesIndexRoute,
   IntervencionesIndexRoute: IntervencionesIndexRoute,
   InventarioIndexRoute: InventarioIndexRoute,
+  MateriasIndexRoute: MateriasIndexRoute,
   NacionalidadesIndexRoute: NacionalidadesIndexRoute,
   PaginasIndexRoute: PaginasIndexRoute,
   PaisesIndexRoute: PaisesIndexRoute,

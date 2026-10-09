@@ -138,7 +138,7 @@ Las reglas acordadas desde el 08/10/2026. Valen para cada página que se recrea:
    - listados en tarjetas, con buscador sin tildes ni mayúsculas;
    - filtros en pastillas que **bajan de línea** (`flex-wrap`), nunca una fila con scroll
      horizontal;
-   - tablas de un nombre (Países, Nacionalidades) o con un "padre" (Departamentos, Ciudades,
+   - tablas de un nombre (Países, Nacionalidades, Materias, Énfasis) o con un "padre" (Departamentos, Ciudades,
      Barrios): `<CatalogoNombre>`, alta y edición en un diálogo;
    - fichas grandes (Facilitadores): una pantalla con secciones, las listas hijas adentro y un
      solo **Guardar** fijo al pie;
@@ -196,6 +196,8 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Núcleo de Datos | **Ciudades**: las de cada departamento, filtradas y agrupadas por departamento; el país sale del departamento. Alta, modificación y baja (solo si nada la usa). Páginas 8 y 9 (modal) de APEX | `/ciudades` | `ciudades.sql` |
 | Núcleo de Datos | **Barrios**: los de cada ciudad, filtrados y agrupados por ciudad; departamento y país salen de la ciudad. Alta, modificación y baja (solo si nada lo usa). Páginas 10 y 11 (modal) de APEX | `/barrios` | `barrios.sql` |
 | Núcleo de Datos | **Instituciones**: listado con cómo va el año lectivo en cada una (horario, pre-horarios confirmados, postulaciones) y "Limpiar filtros", y la ficha con pestañas: **Datos** (con "asignar el facilitador a los pre-horarios"), **Autoridades** (directores y coordinadores, con alta de persona ahí mismo), **Horario** (por año, con "copiar el del año anterior"), **Pre-horarios** y **Postulaciones** (grillas editables iguales a los IG de la 43 y la 38, con "horarios de otro año", postulaciones por año y el Formulario N° 1 en **PDF e imagen**). Páginas 16, 21, 33, 35, 38, 43, 46 y 60 de APEX | `/instituciones` | `instituciones.sql`, `instituciones_directores.sql`, `instituciones_coordinadores.sql`, `horario_instituciones.sql`, `pre_horarios.sql`, `postulaciones.sql`, `directores.sql`, `coordinadores.sql` |
+| Núcleo de Datos | **Docentes**: activos e inactivos en pastillas, buscador por nombre, CI o teléfono, aviso de CI o nombre repetido; uno en uso no se borra, se marca inactivo. Páginas 41 y 42 (modal) de APEX | `/docentes` | `docentes.sql` |
+| Núcleo de Datos | **Materias** y **Énfasis**: alta, modificación y baja (solo si nada los usa, contando pre-horarios y postulaciones). Páginas 17/18 y 26/27 (modales) de APEX | `/materias`, `/enfasis` | `materias.sql`, `enfasis.sql` |
 | Núcleo de Datos | **Sucursales**: alta, modificación y baja (solo si nada la usa) | `/sucursales` | `sucursales.sql` |
 | Operaciones | **Evaluaciones** de facilitadores, con su calificación y su cierre | `/evaluaciones` | `evaluaciones_facilitadores.sql` |
 | Operaciones | **Intervenciones**: carga manual de las que quedaron sin registrar | `/intervenciones` | `intervenciones_crud.sql` |
