@@ -101,7 +101,7 @@ las dos fijas.
 | Pantalla | Ruta | Quién | Para qué |
 | --- | --- | --- | --- |
 | **Roles de páginas** | `/permisos` | quien tenga la página 2 en `ROLES_PAGINAS` | Dar y quitar permisos a cada usuario (`ROLES_PAGINAS`), y copiarle los de otro. Es la página 2 de APEX; sus modales 3 (Crear Rol) y 19 (Copiar Roles) son diálogos de esta misma pantalla, con los permisos de la 2 |
-| **Crear páginas** | `/paginas` | solo JOSEG | Alta, modificación y baja de las páginas del menú (`MENU_PAGINAS`) |
+| **Crear páginas** | `/paginas` | solo JOSEG | Alta, modificación y baja de las páginas del menú (`MENU_PAGINAS`), con un buscador por nombre, ruta, menú principal o número |
 
 **Si nadie tiene la página 2 habilitada, nadie puede dar permisos desde el sitio**: hay que
 cargarlo en APEX. `roles_paginas.sql` lista al final quién la tiene y avisa si no hay nadie.
@@ -194,7 +194,7 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | --- | --- | --- | --- |
 | — | **Inicio**: filtros Año → Mes → **Semana** (o todas) → Desarrollo del índice, y los gráficos en este orden: **Actividad** (por día, tres barras: todas, desarrollados y no desarrollados, con una franja de fondo por día y una alerta en ámbar cuando los no desarrollados superan a los desarrollados; tocar una barra abre el día con sus facilitadores e instituciones), **Ubicación** y **Puntualidad** | `/home` | `intervenciones.sql` |
 | Administrador | **Roles de páginas** (página 2 + modales 3 y 19) | `/permisos` | `roles_paginas.sql` |
-| Administrador (fija) | **Crear páginas** | `/paginas` | `menu_paginas.sql`, `roles_paginas.sql` |
+| Administrador (fija) | **Crear páginas**, con un buscador por nombre, ruta, menú o número (12/10/2026) | `/paginas` | `menu_paginas.sql`, `roles_paginas.sql` |
 | Núcleo de Datos | **Países**: alta, modificación y baja (solo si nada lo usa). Páginas 4 y 5 (modal) de APEX | `/paises` | `paises.sql` |
 | Núcleo de Datos | **Nacionalidades**: alta, modificación y baja (solo si nada la usa). Páginas 12 y 13 (modal) de APEX | `/nacionalidades` | `nacionalidades.sql` |
 | Núcleo de Datos | **Facilitadores**: listado con filtro activos/inactivos y la ficha completa (personales, ubicación, iglesia, herramientas, banco, nominado por, referencias, estudios y situación laboral) en una pantalla con un solo Guardar. Páginas 14, 15 y 63 a 66 (modales) de APEX | `/facilitadores` | `facilitadores.sql` |

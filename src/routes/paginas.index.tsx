@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import {
   BotonBorrar,
+  Buscador,
   BotonPrimario,
   Cargando,
   Fallo,
@@ -33,7 +34,7 @@ import {
   type Accion,
   type PaginaAdmin,
 } from "@/lib/permisos";
-import { campo } from "@/lib/utils";
+import { campo, normalizar } from "@/lib/utils";
 
 export const Route = createFileRoute("/paginas/")({
   head: () => ({
@@ -104,6 +105,7 @@ function PestanaPaginas() {
   const puede = useAcciones();
   /** `null` cerrado, `"nueva"` alta, o la página que se edita. */
   const [editando, setEditando] = useState<PaginaAdmin | "nueva" | null>(null);
+  const [texto, setTexto] = useState("");
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: keysPermisos.paginasMenu,
@@ -112,9 +114,18 @@ function PestanaPaginas() {
   });
 
   const paginas = data ?? [];
+  // El buscador (12/10/2026): por nombre, ruta, menú principal o número, sin
+  // tildes ni mayúsculas. "52" encuentra la página 52 y cualquier ruta con 52.
+  const q = normalizar(texto.trim());
+  const encontradas = q
+    ? paginas.filter((p) =>
+        normalizar(`${p.pagina} ${p.nombre} ${p.ruta} ${p.menuPrincipal}`).includes(q),
+      )
+    : paginas;
   // En el orden en que llegan: el backend ya ordena los menús principales.
   const grupos = new Map<string, PaginaAdmin[]>();
-  for (const p of paginas) grupos.set(p.menuPrincipal, [...(grupos.get(p.menuPrincipal) ?? []), p]);
+  for (const p of encontradas)
+    grupos.set(p.menuPrincipal, [...(grupos.get(p.menuPrincipal) ?? []), p]);
 
   return (
     <div>
@@ -137,41 +148,60 @@ function PestanaPaginas() {
           Todavía no hay páginas en el menú.
         </p>
       ) : (
-        <div className="space-y-5">
-          {[...grupos].map(([menu, items]) => (
-            <section key={menu}>
-              <p className="mb-2 text-[10.5px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-                {menu}
-              </p>
-              <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
-                {items.map((p) => (
-                  <li key={p.pagina}>
-                    <button
-                      type="button"
-                      onClick={() => setEditando(p)}
-                      className="flex h-full w-full items-center gap-3 rounded-2xl border border-border/60 bg-card p-3 text-left shadow-soft hover:border-primary/40"
-                    >
-                      <NumeroPagina pagina={p.pagina} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">{p.nombre}</p>
-                        <p className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] text-muted-foreground">
-                          <span className="font-mono">{p.ruta}</span>
-                          <span>
-                            {p.permisos} usuario{p.permisos === 1 ? "" : "s"}
-                          </span>
-                          {!conocida(p.ruta) && (
-                            <span className="text-destructive">ruta desconocida</span>
-                          )}
-                        </p>
-                      </div>
-                      <Pencil className="size-4 shrink-0 text-muted-foreground" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
+        <>
+          <Buscador
+            valor={texto}
+            onCambio={setTexto}
+            placeholder="Buscar página por nombre, ruta, menú o número…"
+          />
+          {q && (
+            <p className="mb-3 text-xs text-muted-foreground">
+              {encontradas.length === 1 ? "1 página" : `${encontradas.length} páginas`} de{" "}
+              {paginas.length}
+            </p>
+          )}
+          {!encontradas.length ? (
+            <p className="rounded-2xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
+              Ninguna página coincide con «{texto.trim()}».
+            </p>
+          ) : (
+            <div className="space-y-5">
+              {[...grupos].map(([menu, items]) => (
+                <section key={menu}>
+                  <p className="mb-2 text-[10.5px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+                    {menu}
+                  </p>
+                  <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
+                    {items.map((p) => (
+                      <li key={p.pagina}>
+                        <button
+                          type="button"
+                          onClick={() => setEditando(p)}
+                          className="flex h-full w-full items-center gap-3 rounded-2xl border border-border/60 bg-card p-3 text-left shadow-soft hover:border-primary/40"
+                        >
+                          <NumeroPagina pagina={p.pagina} />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold">{p.nombre}</p>
+                            <p className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] text-muted-foreground">
+                              <span className="font-mono">{p.ruta}</span>
+                              <span>
+                                {p.permisos} usuario{p.permisos === 1 ? "" : "s"}
+                              </span>
+                              {!conocida(p.ruta) && (
+                                <span className="text-destructive">ruta desconocida</span>
+                              )}
+                            </p>
+                          </div>
+                          <Pencil className="size-4 shrink-0 text-muted-foreground" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {editando != null && (

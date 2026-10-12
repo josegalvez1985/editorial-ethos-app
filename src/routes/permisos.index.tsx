@@ -207,6 +207,8 @@ function PestanaUsuarios() {
       <section className={actual ? "" : "hidden lg:block"}>
         {actual ? (
           <PaginasDeUsuario
+            // La key reinicia el buscador de páginas al cambiar de usuario.
+            key={actual.usuario}
             usuario={actual}
             onVolver={() => {
               setElegido(null);
@@ -238,6 +240,7 @@ function PaginasDeUsuario({
   /** `null` cerrado, `"nueva"` alta, o el permiso que se edita. */
   const [editando, setEditando] = useState<Permiso | "nueva" | null>(null);
   const [copiando, setCopiando] = useState(false);
+  const [buscar, setBuscar] = useState("");
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: keysPermisos.deUsuario(usuario.usuario),
@@ -246,6 +249,13 @@ function PaginasDeUsuario({
   });
 
   const filas = data ?? [];
+  // El buscador de páginas (12/10/2026): por número o nombre, sin tildes ni
+  // mayúsculas. Solo recorta lo que se ve: el alta y Copiar de… siguen viendo
+  // todas las asignadas, para no ofrecer una que ya tiene.
+  const q = normalizar(buscar.trim());
+  const vistas = q
+    ? filas.filter((p) => normalizar(`${p.pagina} ${nombre(p.pagina).nombre}`).includes(q))
+    : filas;
 
   return (
     <div>
@@ -298,29 +308,47 @@ function PaginasDeUsuario({
           )}
         </div>
       ) : (
-        <ul className="grid grid-cols-1 gap-2 2xl:grid-cols-2">
-          {filas.map((p) => {
-            const n = nombre(p.pagina);
-            return (
-              <li key={p.pagina}>
-                <button
-                  type="button"
-                  onClick={() => setEditando(p)}
-                  className="flex h-full w-full items-center gap-3 rounded-2xl border border-border/60 bg-card p-3 text-left shadow-soft hover:border-primary/40"
-                >
-                  <NumeroPagina pagina={p.pagina} />
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-1.5 text-sm font-semibold">
-                      <span className="truncate">{n.nombre}</span>
-                      {n.origen === "app" && <Etiqueta>app nueva</Etiqueta>}
-                    </p>
-                    <Banderas permiso={p} />
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          <Buscador
+            valor={buscar}
+            onCambio={setBuscar}
+            placeholder="Buscar página por nombre o número…"
+          />
+          {q && (
+            <p className="mb-3 text-xs text-muted-foreground">
+              {vistas.length === 1 ? "1 página" : `${vistas.length} páginas`} de {filas.length}
+            </p>
+          )}
+          {!vistas.length ? (
+            <p className="rounded-2xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
+              Ninguna de sus páginas coincide con «{buscar.trim()}».
+            </p>
+          ) : (
+            <ul className="grid grid-cols-1 gap-2 2xl:grid-cols-2">
+              {vistas.map((p) => {
+                const n = nombre(p.pagina);
+                return (
+                  <li key={p.pagina}>
+                    <button
+                      type="button"
+                      onClick={() => setEditando(p)}
+                      className="flex h-full w-full items-center gap-3 rounded-2xl border border-border/60 bg-card p-3 text-left shadow-soft hover:border-primary/40"
+                    >
+                      <NumeroPagina pagina={p.pagina} />
+                      <div className="min-w-0 flex-1">
+                        <p className="flex items-center gap-1.5 text-sm font-semibold">
+                          <span className="truncate">{n.nombre}</span>
+                          {n.origen === "app" && <Etiqueta>app nueva</Etiqueta>}
+                        </p>
+                        <Banderas permiso={p} />
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
 
       {editando != null && (
