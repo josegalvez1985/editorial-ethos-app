@@ -15,8 +15,10 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
+import { BotonExcel } from "@/components/boton-excel";
 import { SelectorModal } from "@/components/selector-modal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { descargarExcel, paraArchivo, type ColumnaExcel } from "@/lib/excel";
 import {
   DIAS,
   DIAS_CORTO,
@@ -29,6 +31,7 @@ import {
   opcionesAgenda,
   sinTilde,
   STALE_OPCIONES,
+  todasLasAgendas,
   type Agenda,
   type FiltrosAgenda,
   type FiltrosOpciones,
@@ -193,6 +196,47 @@ function AgendasPage() {
     setCiudad("");
   };
 
+  /**
+   * El Excel: todas las agendas de los filtros, con las columnas de la página 30
+   * (el día y su horario en dos columnas, como se leen en la tabla).
+   */
+  const descargar = async () => {
+    const todas = await todasLasAgendas(filtros);
+    descargarExcel(
+      `agendas-${paraArchivo(anio === "TODOS" ? "todos" : anio || (data?.anio ?? "anio"))}`,
+      [
+        ["Facilitador", (a) => a.nombre_facilitador],
+        ["Institución", (a) => a.nombre_institucion],
+        ["Departamento", (a) => a.departamento],
+        ["Ciudad", (a) => a.ciudad],
+        [
+          "Día",
+          (a) => {
+            const d = diaDeAgenda(a);
+            return d ? DIAS_LABEL[d.dia] : "";
+          },
+        ],
+        [
+          "Horario",
+          (a) => {
+            const d = diaDeAgenda(a);
+            return d ? formatearHorario(d.horario) : "";
+          },
+        ],
+        ["Turno", (a) => nombreTurno(a.turno)],
+        ["Grado", (a) => a.grado],
+        ["Sección", (a) => a.seccion],
+        ["Docente", (a) => a.nombre_profesor],
+        ["Énfasis", (a) => a.enfasis],
+        ["Materia", (a) => a.materia],
+        ["Manual", (a) => a.manual],
+        ["Estado", (a) => a.estado],
+        ["Año", (a) => a.anio],
+      ] satisfies ColumnaExcel<Agenda>[],
+      todas,
+    );
+  };
+
   /*
    * Los años salen de los datos, con "Todos" al final. El primero es `""` = "Año
    * lectivo", que NO manda el parámetro y deja decidir al backend: es el default
@@ -236,16 +280,21 @@ function AgendasPage() {
               título, y no metido entre los campos: es una ACCIÓN sobre el
               formulario, no un campo más, y mezclarlo con ellos era parte de lo
               que hacía ver la fila despareja. */}
-          {activos > 0 && (
-            <button
-              onClick={limpiar}
-              aria-label={`Limpiar ${activos} filtro${activos === 1 ? "" : "s"}`}
-              className="tap flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 text-xs font-medium text-muted-foreground hover:border-primary/40 hover:text-primary"
-            >
-              <RotateCcw className="size-3.5" />
-              Limpiar ({activos})
-            </button>
-          )}
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {activos > 0 && (
+              <button
+                onClick={limpiar}
+                aria-label={`Limpiar ${activos} filtro${activos === 1 ? "" : "s"}`}
+                className="tap flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 text-xs font-medium text-muted-foreground hover:border-primary/40 hover:text-primary"
+              >
+                <RotateCcw className="size-3.5" />
+                Limpiar ({activos})
+              </button>
+            )}
+            {/* Baja TODO lo filtrado, no solo las 100 que se ven: pide las
+                páginas que falten (`todasLasAgendas`). */}
+            <BotonExcel onDescargar={descargar} deshabilitado={!data?.total} />
+          </div>
         </div>
 
         {/*

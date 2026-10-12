@@ -28,6 +28,20 @@ export type FacilitadorFila = {
   departamento: string;
   barrio: string;
   nacionalidad: string;
+  /*
+   * Para la Consulta de Facilitadores (página 62). Vacíos hasta que se vuelva a
+   * correr `facilitadores.sql` (12/10/2026), que los suma al listado.
+   */
+  /** `DD/MM/YYYY`. */
+  fechaNacimiento: string;
+  edad: number | null;
+  /** El valor guardado: el texto lo pone la lista `estado_civil` de las opciones. */
+  estadoCivil: string;
+  conQuienVive: string;
+  hijos: string;
+  observacion: string;
+  direccion: string;
+  ubicacion: string;
   usos: Uso[];
 };
 
@@ -150,6 +164,14 @@ export async function listarFacilitadores(): Promise<FacilitadorFila[]> {
     departamento: s(x.departamento),
     barrio: s(x.barrio),
     nacionalidad: s(x.nacionalidad),
+    fechaNacimiento: s(x.fecha_nacimiento),
+    edad: x.edad == null || x.edad === "" ? null : Number(x.edad),
+    estadoCivil: s(x.estado_civil),
+    conQuienVive: s(x.con_quien_vive),
+    hijos: s(x.hijos),
+    observacion: s(x.observacion),
+    direccion: s(x.direccion),
+    ubicacion: s(x.ubicacion),
     usos: usos(x.usos),
   }));
 }

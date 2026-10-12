@@ -38,6 +38,11 @@ export type InstitucionFila = {
   zona: string;
   direccion: string;
   ubicacion: string;
+  /**
+   * Para la Consulta de Instituciones (página 61). Vacío hasta que se vuelva a
+   * correr `instituciones.sql` (12/10/2026), que lo suma al listado.
+   */
+  comentario: string;
   idFacilitador: number | null;
   facilitador: string;
   /** El director ACTIVO del período más reciente, si hay. */
@@ -123,6 +128,7 @@ export async function listarInstituciones(): Promise<ListaInstituciones> {
       zona: s(x.zona),
       direccion: s(x.direccion),
       ubicacion: s(x.ubicacion),
+      comentario: s(x.comentario),
       idFacilitador: n(x.id_facilitador),
       facilitador: s(x.facilitador),
       director: s(x.director),

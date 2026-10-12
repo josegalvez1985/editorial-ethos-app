@@ -360,7 +360,16 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
                      CASE WHEN UPPER(SUBSTR(TRIM(f.activo), 1, 1)) = 'S' THEN 'S' ELSE 'N' END
                        AS es_activo,
                      c.nombre AS ciudad, d.nombre AS departamento, b.nombre AS barrio,
-                     n.descripcion AS nacionalidad
+                     n.descripcion AS nacionalidad,
+                     -- Para la pagina 62, Consulta de Facilitadores (12/10/2026):
+                     -- las columnas visibles del reporte de APEX y las que mira
+                     -- su buscador.
+                     TO_CHAR(f.fecha_nacimiento, 'DD/MM/YYYY') AS fecha_nacimiento,
+                     CASE WHEN f.fecha_nacimiento IS NOT NULL
+                          THEN TRUNC(MONTHS_BETWEEN(TRUNC(SYSDATE), TRUNC(f.fecha_nacimiento)) / 12)
+                     END AS edad,
+                     f.estado_civil, f.con_quien_vive, f.hijos, f.observacion,
+                     f.direccion, f.ubicacion
                 FROM facilitadores f
                 LEFT JOIN ciudades c       ON c.id_ciudad = f.id_ciudad
                 LEFT JOIN departamentos d  ON d.id_departamento = c.id_departamento
@@ -380,6 +389,14 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
       APEX_JSON.WRITE('departamento',    r.departamento);
       APEX_JSON.WRITE('barrio',          r.barrio);
       APEX_JSON.WRITE('nacionalidad',    r.nacionalidad);
+      APEX_JSON.WRITE('fecha_nacimiento', r.fecha_nacimiento);
+      APEX_JSON.WRITE('edad',            r.edad);
+      APEX_JSON.WRITE('estado_civil',    r.estado_civil);
+      APEX_JSON.WRITE('con_quien_vive',  r.con_quien_vive);
+      APEX_JSON.WRITE('hijos',           r.hijos);
+      APEX_JSON.WRITE('observacion',     r.observacion);
+      APEX_JSON.WRITE('direccion',       r.direccion);
+      APEX_JSON.WRITE('ubicacion',       r.ubicacion);
       escribir_usos(l_hijas, r.id_facilitador);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;

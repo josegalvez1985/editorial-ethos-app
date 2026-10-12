@@ -614,6 +614,285 @@ export function linkMapaPunto(lat: string | number | null, lng: string | number 
 }
 
 /* -------------------------------------------------------------------------- */
+/* Intervenciones Realizadas (la página 52)                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Una fila del reporte de la página 52: una marcación, con los grados juntos
+ * ("Mañana-7-A-Bachillerato; …"), como la consulta de APEX. Contrato:
+ * `intervenciones/realizadas` en `backend/intervenciones.sql`.
+ *
+ * **`diferencia` está en MINUTOS y con el signo de APEX** (`HORA_DESDE − HORA`):
+ * positivo = llegó antes, negativo = llegó tarde. No es la
+ * `diferencia_minutos` de `listar`, que viene en horas.
+ */
+export type IntervencionRealizada = {
+  id_intervencion: number;
+  /** `DD/MM/YYYY`. */
+  fecha: string;
+  hora: string | null;
+  hora_desde: string | null;
+  hora_hasta: string | null;
+  diferencia: number | null;
+  manual: string | null;
+  id_indice: number | null;
+  nro_indice: number | null;
+  indice_titulo: string | null;
+  /** `'Si'` / `'No'`, como la guarda la tabla. */
+  si_no: string | null;
+  id_institucion: number;
+  institucion: string;
+  grado: string | null;
+  id_facilitador: number;
+  facilitador: string;
+  observacion: string | null;
+  motivo_desarrollo: string | null;
+  latitud: string | null;
+  longitud: string | null;
+  /** 1–12, sacado de `FECHA_HORA` (no de la columna `MES`). */
+  mes: number;
+  anio: string;
+};
+
+export type Realizadas = {
+  anio: string;
+  /** Los años con marcaciones, del más nuevo al más viejo. */
+  anios: string[];
+  /** Cuántas filas tiene cada mes del año: la faceta Mes de APEX. */
+  meses: { mes: number; cantidad: number }[];
+  data: IntervencionRealizada[];
+  /** Llegó al tope del backend: lo que se ve está incompleto. */
+  truncado: boolean;
+  limite: number;
+};
+
+/** Las marcaciones de un año y de los meses pedidos (vacío = el año entero). */
+export async function listarRealizadas(anio: string, meses: number[]): Promise<Realizadas> {
+  const r = (await authFetch(
+    `intervenciones/realizadas${qs({ anio, meses: meses.join(",") })}`,
+  )) as Record<string, unknown>;
+  return aRealizadas(r, anio);
+}
+
+/**
+ * Las mismas marcaciones, de un período (`YYYY-MM-DD`, hasta un año) en vez de
+ * un año y sus meses, desarrolladas (`"Si"`), no (`"No"`) o las dos (`""`). Es
+ * lo que lee Totales por Facilitador (la página 55): APEX contaba con esta
+ * misma consulta y este mismo agrupado. `meses` llega vacío.
+ */
+export async function listarRealizadasPeriodo(
+  desde: string,
+  hasta: string,
+  siNo: "" | "Si" | "No",
+): Promise<Realizadas> {
+  const r = (await authFetch(
+    `intervenciones/realizadas${qs({ desde, hasta, si_no: siNo })}`,
+  )) as Record<string, unknown>;
+  return aRealizadas(r, "");
+}
+
+function aRealizadas(r: Record<string, unknown>, anio: string): Realizadas {
+  const txt = (v: unknown) => (v == null || v === "" ? null : String(v));
+  const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
+  return {
+    anio: String(r.anio ?? anio),
+    anios: ((r.anios as unknown[] | undefined) ?? []).map(String),
+    meses: ((r.meses as Record<string, unknown>[] | undefined) ?? []).map((m) => ({
+      mes: Number(m.mes),
+      cantidad: Number(m.cantidad ?? 0),
+    })),
+    data: ((r.data as Record<string, unknown>[] | undefined) ?? []).map((x) => ({
+      id_intervencion: Number(x.id_intervencion),
+      fecha: String(x.fecha ?? ""),
+      hora: txt(x.hora),
+      hora_desde: txt(x.hora_desde),
+      hora_hasta: txt(x.hora_hasta),
+      diferencia: num(x.diferencia),
+      manual: txt(x.manual),
+      id_indice: num(x.id_indice),
+      nro_indice: num(x.nro_indice),
+      indice_titulo: txt(x.indice_titulo),
+      si_no: txt(x.si_no),
+      id_institucion: Number(x.id_institucion),
+      institucion: String(x.institucion ?? ""),
+      grado: txt(x.grado),
+      id_facilitador: Number(x.id_facilitador),
+      facilitador: String(x.facilitador ?? ""),
+      observacion: txt(x.observacion),
+      motivo_desarrollo: txt(x.motivo_desarrollo),
+      latitud: txt(x.latitud),
+      longitud: txt(x.longitud),
+      mes: Number(x.mes),
+      anio: String(x.anio ?? ""),
+    })),
+    truncado: r.truncado === true,
+    limite: Number(r.limite ?? 0),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Resumen de Intervenciones (la página 53)                                   */
+/* -------------------------------------------------------------------------- */
+
+/** El sueldo por intervención con que entran las páginas 53 y 55 (el default de APEX). */
+export const SUELDO_INICIAL = 30000;
+
+/**
+ * Una intervención que cuenta para el pago: una por clase y día (la última de
+ * la misma institución, facilitador, turno, manual e índice), como la contaba
+ * APEX. Contrato: `intervenciones/resumen-periodo` en
+ * `backend/intervenciones.sql`.
+ *
+ * `diferencia` en MINUTOS, positivo = llegó antes (la "Dif. Min." de APEX).
+ */
+export type IntervencionResumen = {
+  id_intervencion: number;
+  id_institucion: number;
+  institucion: string;
+  id_facilitador: number;
+  facilitador: string;
+  /** `DD/MM/YYYY`. */
+  fecha: string;
+  hora: string | null;
+  hora_desde: string | null;
+  hora_hasta: string | null;
+  diferencia: number | null;
+  manual: string | null;
+  id_indice: number | null;
+  nro_indice: number | null;
+  indice_titulo: string | null;
+  si_no: string | null;
+  /** El día en letras, como lo escribe Oracle en español ("LUNES"). */
+  dia: string;
+  /** Las postulaciones de la clase (FN_DETALLE_POSTULACIONES). */
+  postulaciones: string | null;
+  latitud: string | null;
+  longitud: string | null;
+};
+
+/**
+ * Las intervenciones de un período (`YYYY-MM-DD`, hasta un año), desarrolladas
+ * (`"Si"`), no desarrolladas (`"No"`) o las dos (`""`).
+ */
+export async function listarResumenPeriodo(
+  desde: string,
+  hasta: string,
+  siNo: "" | "Si" | "No",
+): Promise<{ data: IntervencionResumen[]; truncado: boolean; limite: number }> {
+  const r = (await authFetch(
+    `intervenciones/resumen-periodo${qs({ desde, hasta, si_no: siNo })}`,
+  )) as Record<string, unknown>;
+  const txt = (v: unknown) => (v == null || v === "" ? null : String(v));
+  const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
+  return {
+    data: ((r.data as Record<string, unknown>[] | undefined) ?? []).map((x) => ({
+      id_intervencion: Number(x.id_intervencion),
+      id_institucion: Number(x.id_institucion),
+      institucion: String(x.institucion ?? ""),
+      id_facilitador: Number(x.id_facilitador),
+      facilitador: String(x.facilitador ?? ""),
+      fecha: String(x.fecha ?? ""),
+      hora: txt(x.hora),
+      hora_desde: txt(x.hora_desde),
+      hora_hasta: txt(x.hora_hasta),
+      diferencia: num(x.diferencia),
+      manual: txt(x.manual),
+      id_indice: num(x.id_indice),
+      nro_indice: num(x.nro_indice),
+      indice_titulo: txt(x.indice_titulo),
+      si_no: txt(x.si_no),
+      dia: String(x.dia ?? ""),
+      postulaciones: txt(x.postulaciones),
+      latitud: txt(x.latitud),
+      longitud: txt(x.longitud),
+    })),
+    truncado: r.truncado === true,
+    limite: Number(r.limite ?? 0),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Intervenciones no realizadas (la página 69)                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Una intervención con el índice NO desarrollado, agrupada como la página 69
+ * de APEX: por marcación, turno, sección y énfasis, con los grados juntos
+ * ("7, 8"). Contrato: `intervenciones/no-realizadas` en
+ * `backend/intervenciones.sql`.
+ */
+export type IntervencionNoRealizada = {
+  id_intervencion: number;
+  /** `DD/MM/YYYY`. */
+  fecha: string;
+  hora: string | null;
+  hora_desde: string | null;
+  hora_hasta: string | null;
+  manual: string | null;
+  id_indice: number | null;
+  nro_indice: number | null;
+  indice_titulo: string | null;
+  observacion: string | null;
+  motivo_desarrollo: string | null;
+  id_institucion: number;
+  institucion: string;
+  turno: number | null;
+  grado: string | null;
+  seccion: string | null;
+  enfasis: string | null;
+  id_facilitador: number;
+  facilitador: string;
+  /** 1–12, de `FECHA_HORA`. */
+  mes: number;
+  anio: string;
+};
+
+/** Las no desarrolladas de un año (`"TODOS"`: de todos), y los años que tienen alguna. */
+export async function listarNoRealizadas(anio: string): Promise<{
+  anio: string | null;
+  anios: string[];
+  data: IntervencionNoRealizada[];
+  truncado: boolean;
+  limite: number;
+}> {
+  const r = (await authFetch(`intervenciones/no-realizadas${qs({ anio })}`)) as Record<
+    string,
+    unknown
+  >;
+  const txt = (v: unknown) => (v == null || v === "" ? null : String(v));
+  const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
+  return {
+    anio: txt(r.anio),
+    anios: ((r.anios as unknown[] | undefined) ?? []).map(String),
+    data: ((r.data as Record<string, unknown>[] | undefined) ?? []).map((x) => ({
+      id_intervencion: Number(x.id_intervencion),
+      fecha: String(x.fecha ?? ""),
+      hora: txt(x.hora),
+      hora_desde: txt(x.hora_desde),
+      hora_hasta: txt(x.hora_hasta),
+      manual: txt(x.manual),
+      id_indice: num(x.id_indice),
+      nro_indice: num(x.nro_indice),
+      indice_titulo: txt(x.indice_titulo),
+      observacion: txt(x.observacion),
+      motivo_desarrollo: txt(x.motivo_desarrollo),
+      id_institucion: Number(x.id_institucion),
+      institucion: String(x.institucion ?? ""),
+      turno: num(x.turno),
+      grado: txt(x.grado),
+      seccion: txt(x.seccion),
+      enfasis: txt(x.enfasis),
+      id_facilitador: Number(x.id_facilitador),
+      facilitador: String(x.facilitador ?? ""),
+      mes: Number(x.mes),
+      anio: String(x.anio ?? ""),
+    })),
+    truncado: r.truncado === true,
+    limite: Number(r.limite ?? 0),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Utilidades                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -703,4 +982,15 @@ export const keysIntervenciones = {
   /** Las tres series juntas (total, desarrolladas, no desarrolladas). */
   porDiaDesglose: (anio: string, mes: number) =>
     ["intervenciones-por-dia", anio, mes, "desglose"] as const,
+  /** La página 52: los meses van ordenados, así "8,9" y "9,8" son la misma. */
+  realizadas: (anio: string, meses: number[]) =>
+    ["intervenciones-realizadas", anio, [...meses].sort((a, b) => a - b).join(",")] as const,
+  /** La página 53. */
+  resumenPeriodo: (desde: string, hasta: string, siNo: string) =>
+    ["intervenciones-resumen-periodo", desde, hasta, siNo] as const,
+  /** La página 69. */
+  noRealizadas: (anio: string) => ["intervenciones-no-realizadas", anio] as const,
+  /** La página 55: las marcaciones de la 52, por período. */
+  realizadasPeriodo: (desde: string, hasta: string, siNo: string) =>
+    ["intervenciones-realizadas-periodo", desde, hasta, siNo] as const,
 };

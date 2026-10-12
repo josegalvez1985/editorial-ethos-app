@@ -15,8 +15,10 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
+import { BotonExcel } from "@/components/boton-excel";
 import { ChipsSeleccion, MultiSelectorModal } from "@/components/multi-selector-modal";
 import { SelectorModal } from "@/components/selector-modal";
+import { descargarExcel, paraArchivo, type ColumnaExcel } from "@/lib/excel";
 import { keysInventario, listarSucursales } from "@/lib/inventarios";
 import { abrirPdfEnPestana, generarPdfTransferencias } from "@/lib/pdf-transferencias";
 import { useSession } from "@/lib/session";
@@ -27,6 +29,7 @@ import {
   resumirManuales,
   resumirRutas,
   type FiltrosHistorialTransf,
+  type LineaHistorial,
   type TransferenciaAgrupada,
 } from "@/lib/transferencias";
 
@@ -156,6 +159,23 @@ function ConsultaTransferenciasPage() {
       .finally(() => setGenerando(false));
   }
 
+  /** El Excel: el detalle tal como llega, una fila por manual de cada transferencia. */
+  const descargar = () =>
+    descargarExcel(
+      `transferencias-${paraArchivo(nombreSucursal)}-${iso(new Date())}`,
+      [
+        ["N° transferencia", (l) => l.id_transferencia],
+        ["Fecha", (l) => l.fecha],
+        ["Origen", (l) => l.origen],
+        ["Destino", (l) => l.destino],
+        ["Estado", (l) => (l.recibida ? "Recibida" : "En camino")],
+        ["Recibida el", (l) => l.recibida_el],
+        ["Manual", (l) => l.manual],
+        ["Cantidad", (l) => l.cantidad],
+      ] satisfies ColumnaExcel<LineaHistorial>[],
+      lineas,
+    );
+
   return (
     <AppShell>
       <div className="px-5 pt-5 pb-24">
@@ -166,24 +186,27 @@ function ConsultaTransferenciasPage() {
               Qué manuales se movieron entre sucursales, y hacia dónde
             </p>
           </div>
-          <button
-            type="button"
-            onClick={generarPdf}
-            disabled={generando || !transf.length}
-            title={
-              !transf.length
-                ? "No hay transferencias para imprimir"
-                : "Abre el PDF en una pestaña nueva"
-            }
-            className="flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2.5 text-sm font-semibold text-primary-foreground shadow-soft disabled:opacity-50"
-          >
-            {generando ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <FileDown className="size-4" />
-            )}
-            PDF
-          </button>
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            <BotonExcel onDescargar={descargar} deshabilitado={!lineas.length} />
+            <button
+              type="button"
+              onClick={generarPdf}
+              disabled={generando || !transf.length}
+              title={
+                !transf.length
+                  ? "No hay transferencias para imprimir"
+                  : "Abre el PDF en una pestaña nueva"
+              }
+              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2.5 text-sm font-semibold text-primary-foreground shadow-soft disabled:opacity-50"
+            >
+              {generando ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <FileDown className="size-4" />
+              )}
+              PDF
+            </button>
+          </div>
         </div>
 
         {/* ── Filtros ──────────────────────────────────────────────────── */}

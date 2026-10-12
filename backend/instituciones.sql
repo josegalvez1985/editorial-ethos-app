@@ -448,6 +448,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_INSTITUCIONES_ETHOS AS
                i.id_departamento, dp.nombre AS departamento,
                i.id_ciudad, c.nombre AS ciudad, i.id_barrio, b.nombre AS barrio,
                i.zona, i.direccion, i.ubicacion,
+               -- La columna Comentario de la pagina 61 (Consulta de Instituciones),
+               -- 12/10/2026.
+               i.comentario,
                i.id_facilitador, f.nombre_apellido AS facilitador,
                di.nombre AS director, di.telefono AS director_telefono,
                NVL(au.n, 0)          AS autoridades,
@@ -483,6 +486,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INSTITUCIONES_ETHOS AS
       APEX_JSON.WRITE('zona',              r.zona);
       APEX_JSON.WRITE('direccion',         r.direccion);
       APEX_JSON.WRITE('ubicacion',         r.ubicacion);
+      APEX_JSON.WRITE('comentario',        r.comentario);
       APEX_JSON.WRITE('id_facilitador',    r.id_facilitador);
       APEX_JSON.WRITE('facilitador',       r.facilitador);
       APEX_JSON.WRITE('director',          r.director);

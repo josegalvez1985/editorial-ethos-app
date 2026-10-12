@@ -14,6 +14,20 @@
 --   Los dos de mapa son la pagina 25 de APEX (/mapa-intervenciones): ver
 --   "EL MAPA" en el cuerpo del paquete. Fechas como YYYY-MM-DD.
 --
+--   GET  intervenciones/realizadas  ?anio=&meses=  o  ?desde=&hasta=&si_no=
+--        (12/10/2026: la pagina 52,
+--        Intervenciones Realizadas, /consulta-intervenciones). TODAS las
+--        marcaciones, no solo las desviadas: ver "REALIZADAS" en el cuerpo.
+--
+--   GET  intervenciones/resumen-periodo  ?desde=&hasta=&si_no=   (12/10/2026:
+--        la pagina 53, Resumen de Intervenciones, /resumen-intervenciones).
+--        Lo que se le paga a cada facilitador: ver "RESUMEN_PERIODO".
+--        (No confundir con el viejo 'intervenciones/resumen', que se borra.)
+--
+--   GET  intervenciones/no-realizadas  ?anio=   (12/10/2026: la pagina 69,
+--        Intervenciones no realizadas, /intervenciones-no-realizadas). Las
+--        NO desarrolladas de un anio o de todos: ver "NO_REALIZADAS".
+--
 -- UN SOLO ENDPOINT. Devuelve las filas de V_HISTORIAL_INTERVENCIONES tal como
 -- las da la consulta de referencia: una fila por marcacion, con los grados
 -- agrupados y la diferencia de minutos ya calculada.
@@ -121,6 +135,19 @@ BEGIN
   ELSE
     DBMS_OUTPUT.PUT_LINE('[OK]   V_HISTORIAL_INTERVENCIONES encontrada.');
   END IF;
+
+  -- La usa resumen_periodo (la pagina 53), llamada dinamico: si falta, el
+  -- paquete compila igual y la columna Postulaciones sale vacia.
+  SELECT COUNT(*) INTO l_n
+    FROM all_objects
+   WHERE object_name = 'FN_DETALLE_POSTULACIONES'
+     AND object_type IN ('FUNCTION', 'SYNONYM');
+  IF l_n = 0 THEN
+    DBMS_OUTPUT.PUT_LINE('[WARN] No existe FN_DETALLE_POSTULACIONES: en el Resumen de');
+    DBMS_OUTPUT.PUT_LINE('       Intervenciones la columna Postulaciones va a salir vacia.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[OK]   FN_DETALLE_POSTULACIONES encontrada.');
+  END IF;
 END;
 /
 
@@ -221,6 +248,31 @@ CREATE OR REPLACE PACKAGE PKG_INTERVENCIONES_ETHOS AS
       p_token IN VARCHAR2,
       p_desde IN VARCHAR2,
       p_hasta IN VARCHAR2);
+
+  -- La pagina 52 (Intervenciones Realizadas): todas las marcaciones de un anio,
+  -- de los meses pedidos ('8,9'; sin meses, el anio entero). Con p_desde y
+  -- p_hasta, las de ese periodo (la pagina 55). Ver el cuerpo.
+  PROCEDURE realizadas(
+      p_token IN VARCHAR2,
+      p_anio  IN VARCHAR2 DEFAULT NULL,
+      p_meses IN VARCHAR2 DEFAULT NULL,
+      p_desde IN VARCHAR2 DEFAULT NULL,
+      p_hasta IN VARCHAR2 DEFAULT NULL,
+      p_si_no IN VARCHAR2 DEFAULT NULL);
+
+  -- La pagina 53 (Resumen de Intervenciones): las intervenciones de un periodo
+  -- que cuentan para el pago, una por clase y dia. Ver el cuerpo.
+  PROCEDURE resumen_periodo(
+      p_token IN VARCHAR2,
+      p_desde IN VARCHAR2,
+      p_hasta IN VARCHAR2,
+      p_si_no IN VARCHAR2 DEFAULT NULL);
+
+  -- La pagina 69 (Intervenciones no realizadas): las NO desarrolladas de un
+  -- anio ('TODOS': de todos). Ver el cuerpo.
+  PROCEDURE no_realizadas(
+      p_token IN VARCHAR2,
+      p_anio  IN VARCHAR2 DEFAULT NULL);
 
 END PKG_INTERVENCIONES_ETHOS;
 /
@@ -1182,6 +1234,484 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
       p_error_tardio('Error: ' || SQLERRM);
   END mapa_facilitadores;
 
+  ------------------------------------------------------------------------------
+  -- REALIZADAS: la pagina 52 de APEX (Intervenciones Realizadas), 12/10/2026.
+  --
+  -- TODAS las marcaciones, no solo las desviadas como `listar`: es el reporte
+  -- de lo que se hizo. Es la consulta de APEX tal cual:
+  --
+  --   * El mismo GROUP BY: una fila por marcacion (fecha, hora, facilitador,
+  --     institucion, indice...), con MAX(id_intervencion).
+  --   * Los grados juntos, como APEX: "Ma\00f1ana-7-A-Enfasis; Tarde-8-B-...".
+  --     Con ON OVERFLOW TRUNCATE, por lo mismo que en `listar` (ORA-01489).
+  --   * DIFERENCIA en MINUTOS y con el signo de APEX: HORA_DESDE - HORA, o sea
+  --     POSITIVO = llego antes y NEGATIVO = llego tarde. Sin el /60 de
+  --     `listar`: es la columna "Dif. Min." de APEX. Protegida con el mismo
+  --     CASE + REGEXP_LIKE contra horas vacias o con basura.
+  --   * El indice resuelto (numero y titulo), que APEX mostraba con una LOV.
+  --   * ORDER BY id_intervencion DESC.
+  --
+  -- p_anio:  'YYYY'. Sin el, el anio en curso.
+  -- p_meses: numeros de mes separados por coma ('8,9'). Sin ellos, todo el
+  --          anio. Por FECHA_HORA, NUNCA por la columna MES (ver el encabezado).
+  --
+  -- Ademas devuelve los anios con datos y cuantas filas tiene cada mes del anio,
+  -- para los filtros de la pantalla. Tope c_limite_maximo filas: `truncado`
+  -- avisa si se corto, para que la pantalla lo diga en vez de mentir.
+  --
+  -- POR PERIODO (12/10/2026, la pagina 55, Totales por Facilitador): con
+  -- p_desde y p_hasta (YYYY-MM-DD, hasta c_mapa_dias dias) se ignoran el anio
+  -- y los meses y vienen las marcaciones de ese periodo; `meses` sale vacio.
+  -- p_si_no ('Si' / 'No') deja solo las desarrolladas o las no; sin el, las
+  -- dos. Es la misma consulta y el mismo GROUP BY que la 55 de APEX usaba para
+  -- contar, asi que la cuenta por facilitador sale de estas filas.
+  ------------------------------------------------------------------------------
+  PROCEDURE realizadas(
+      p_token IN VARCHAR2,
+      p_anio  IN VARCHAR2 DEFAULT NULL,
+      p_meses IN VARCHAR2 DEFAULT NULL,
+      p_desde IN VARCHAR2 DEFAULT NULL,
+      p_hasta IN VARCHAR2 DEFAULT NULL,
+      p_si_no IN VARCHAR2 DEFAULT NULL
+  ) IS
+    l_anio  VARCHAR2(10) := NVL(TRIM(p_anio), TO_CHAR(SYSDATE, 'YYYY'));
+    -- Solo digitos y comas: se compara con INSTR, y una basura no tiene que
+    -- poder matchear un mes de casualidad.
+    l_meses VARCHAR2(100) := REGEXP_REPLACE(p_meses, '[^0-9,]', '');
+    l_desde DATE;
+    l_hasta DATE;
+    l_si_no VARCHAR2(5) := CASE UPPER(TRIM(p_si_no)) WHEN 'SI' THEN 'SI' WHEN 'NO' THEN 'NO' END;
+    l_tope  PLS_INTEGER := c_limite_maximo;
+    l_tope1 PLS_INTEGER := c_limite_maximo + 1;
+    l_n     PLS_INTEGER := 0;
+  BEGIN
+    IF f_usuario(p_token) IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+    IF TRIM(p_desde) IS NOT NULL OR TRIM(p_hasta) IS NOT NULL THEN
+      -- Por periodo: el anio y los meses no cuentan.
+      BEGIN
+        l_desde := TO_DATE(SUBSTR(TRIM(p_desde), 1, 10), 'YYYY-MM-DD');
+        l_hasta := TO_DATE(SUBSTR(TRIM(p_hasta), 1, 10), 'YYYY-MM-DD');
+      EXCEPTION
+        WHEN OTHERS THEN
+          p_error(400, 'Bad Request', 'Las fechas van como YYYY-MM-DD');
+          RETURN;
+      END;
+      IF l_desde IS NULL OR l_hasta IS NULL OR l_hasta < l_desde
+         OR l_hasta - l_desde > c_mapa_dias THEN
+        p_error(400, 'Bad Request', 'El periodo no es valido (hasta ' || c_mapa_dias || ' dias)');
+        RETURN;
+      END IF;
+      l_anio  := NULL;
+      l_meses := NULL;
+    ELSIF NOT REGEXP_LIKE(l_anio, '^\d{4}$') THEN
+      p_error(400, 'Bad Request', 'El anio va como YYYY');
+      RETURN;
+    END IF;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('anio',    l_anio);
+    APEX_JSON.WRITE('limite',  l_tope);
+
+    -- Los anios con marcaciones, para elegir.
+    APEX_JSON.OPEN_ARRAY('anios');
+    FOR a IN (SELECT DISTINCT anio FROM v_historial_intervenciones
+               WHERE anio IS NOT NULL ORDER BY anio DESC) LOOP
+      APEX_JSON.WRITE(a.anio);
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+
+    -- Cuantas filas del reporte tiene cada mes del anio (la faceta MES de APEX).
+    -- Mismo GROUP BY que el reporte, para que la cuenta coincida con las filas.
+    APEX_JSON.OPEN_ARRAY('meses');
+    FOR m IN (
+        SELECT mes, COUNT(*) AS cantidad
+          FROM (SELECT EXTRACT(MONTH FROM MAX(fecha_hora)) AS mes
+                  FROM v_historial_intervenciones
+                 WHERE anio = l_anio
+                 GROUP BY fecha, manual, observacion, motivo_desarrollo, id_indice,
+                          si_no, id_institucion, nombre, id_facilitador, hora,
+                          nombre_facilitador, hora_desde, hora_hasta, anio)
+         GROUP BY mes
+         ORDER BY mes
+    ) LOOP
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('mes',      m.mes);
+      APEX_JSON.WRITE('cantidad', m.cantidad);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT v.fecha, v.manual, v.observacion, v.motivo_desarrollo, v.id_indice,
+               MAX(im.nro_indice) AS nro_indice,
+               MAX(im.titulo)     AS indice_titulo,
+               v.si_no, v.id_institucion, v.nombre,
+               LISTAGG(DECODE(TO_CHAR(v.turno), '1', TO_CHAR(UNISTR('Ma\00f1ana')),
+                                                '2', 'Tarde', 'Noche')
+                       || '-' || v.grado || '-' || v.seccion || '-' || v.descripcion,
+                       '; ' ON OVERFLOW TRUNCATE '...' WITHOUT COUNT)
+                 WITHIN GROUP (ORDER BY v.turno, v.grado, v.seccion) AS grado,
+               v.id_facilitador, v.nombre_facilitador,
+               MAX(v.id_intervencion) AS max_id_intervencion,
+               v.hora, v.hora_desde, v.hora_hasta,
+               REPLACE(MAX(v.latitud),  ',', '.') AS latitud,
+               REPLACE(MAX(v.longitud), ',', '.') AS longitud,
+               CASE
+                 WHEN REGEXP_LIKE(TRIM(v.hora),       '^\d{1,2}:\d{2}$')
+                  AND REGEXP_LIKE(TRIM(v.hora_desde), '^\d{1,2}:\d{2}$')
+                 THEN ROUND((TO_DATE(TRIM(v.hora_desde), 'HH24:MI')
+                           - TO_DATE(TRIM(v.hora),       'HH24:MI')) * 24 * 60, 0)
+               END AS diferencia,
+               EXTRACT(MONTH FROM MAX(v.fecha_hora)) AS mes,
+               v.anio
+          FROM v_historial_intervenciones v
+          LEFT JOIN indices_manuales im ON im.id_indice = v.id_indice
+         WHERE (l_anio IS NULL OR v.anio = l_anio)
+           -- Por periodo (la 55): por FECHA_HORA, que es DATE.
+           AND (l_desde IS NULL
+                OR (v.fecha_hora >= l_desde AND v.fecha_hora < l_hasta + 1))
+           AND (l_si_no IS NULL OR UPPER(v.si_no) = l_si_no)
+           AND (l_meses IS NULL
+                OR INSTR(',' || l_meses || ',',
+                         ',' || EXTRACT(MONTH FROM v.fecha_hora) || ',') > 0)
+         GROUP BY v.fecha, v.manual, v.observacion, v.motivo_desarrollo, v.id_indice,
+                  v.si_no, v.id_institucion, v.nombre, v.id_facilitador, v.hora,
+                  v.nombre_facilitador, v.hora_desde, v.hora_hasta, v.anio
+         ORDER BY max_id_intervencion DESC
+         FETCH FIRST l_tope1 ROWS ONLY
+    ) LOOP
+      -- Se pide uno de mas para saber si hubo corte, y ese no se escribe.
+      l_n := l_n + 1;
+      EXIT WHEN l_n > l_tope;
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id_intervencion',   r.max_id_intervencion);
+      APEX_JSON.WRITE('fecha',             r.fecha);
+      APEX_JSON.WRITE('hora',              r.hora);
+      APEX_JSON.WRITE('hora_desde',        r.hora_desde);
+      APEX_JSON.WRITE('hora_hasta',        r.hora_hasta);
+      APEX_JSON.WRITE('diferencia',        r.diferencia);
+      APEX_JSON.WRITE('manual',            r.manual);
+      APEX_JSON.WRITE('id_indice',         r.id_indice);
+      APEX_JSON.WRITE('nro_indice',        r.nro_indice);
+      APEX_JSON.WRITE('indice_titulo',     r.indice_titulo);
+      APEX_JSON.WRITE('si_no',             r.si_no);
+      APEX_JSON.WRITE('id_institucion',    r.id_institucion);
+      APEX_JSON.WRITE('institucion',       r.nombre);
+      APEX_JSON.WRITE('grado',             r.grado);
+      APEX_JSON.WRITE('id_facilitador',    r.id_facilitador);
+      APEX_JSON.WRITE('facilitador',       r.nombre_facilitador);
+      APEX_JSON.WRITE('observacion',       r.observacion);
+      APEX_JSON.WRITE('motivo_desarrollo', r.motivo_desarrollo);
+      APEX_JSON.WRITE('latitud',           r.latitud);
+      APEX_JSON.WRITE('longitud',          r.longitud);
+      APEX_JSON.WRITE('mes',               r.mes);
+      APEX_JSON.WRITE('anio',              r.anio);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.WRITE('truncado', l_n > l_tope);
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error_tardio('Error: ' || SQLERRM);
+  END realizadas;
+
+  ------------------------------------------------------------------------------
+  -- El texto de las postulaciones de esa clase, con FN_DETALLE_POSTULACIONES
+  -- (la funcion que ya usaba APEX en la pagina 53).
+  --
+  -- SE LLAMA DINAMICO A PROPOSITO: la funcion no esta en ningun script del
+  -- repo. Llamada directa, si algun dia no existiera o quedara invalida, el
+  -- paquete ENTERO no compilaria y se caerian tambien los graficos del Inicio.
+  -- Asi, si falla, la columna sale vacia y lo demas anda.
+  ------------------------------------------------------------------------------
+  FUNCTION f_detalle_postulacion(
+      p_id_facilitador IN NUMBER,
+      p_id_institucion IN NUMBER,
+      p_dia_hora       IN VARCHAR2) RETURN VARCHAR2
+  IS
+    l_r VARCHAR2(32767);
+  BEGIN
+    IF p_dia_hora IS NULL THEN RETURN NULL; END IF;
+    EXECUTE IMMEDIATE 'BEGIN :r := FN_DETALLE_POSTULACIONES(:f, :i, :d); END;'
+      USING OUT l_r, IN p_id_facilitador, IN p_id_institucion, IN p_dia_hora;
+    RETURN SUBSTR(l_r, 1, 4000);
+  EXCEPTION
+    WHEN OTHERS THEN RETURN NULL;
+  END f_detalle_postulacion;
+
+  ------------------------------------------------------------------------------
+  -- RESUMEN_PERIODO: la pagina 53 de APEX (Resumen de Intervenciones),
+  -- 12/10/2026. Lo que se le paga a cada facilitador: las intervenciones del
+  -- periodo, desarrolladas o no, contadas como las contaba APEX.
+  --
+  -- La consulta de APEX tal cual, con dos cambios que no cambian el resultado:
+  --
+  --   * UNA POR CLASE Y DIA: de las intervenciones de la misma institucion,
+  --     facilitador, turno, dia, manual e indice, cuenta solo la ultima
+  --     (MAX(id_intervencion)). Es la regla de APEX, y la cuenta del pago.
+  --   * El horario de la clase sale de la POSTULACION, el del dia de la semana
+  --     de la marcacion. El dia se saca con TRUNC(fecha) - TRUNC(fecha,'IW')
+  --     (0 = lunes) y NO con TO_CHAR(...,'DY'), que depende del idioma y en
+  --     espanol devuelve 'MIE' con tilde.
+  --   * DIFERENCIA en MINUTOS: (fecha + hora de inicio) - marcacion, o sea
+  --     POSITIVO = llego antes, como la "Dif. Min." de APEX.
+  --   * Las postulaciones de la clase con FN_DETALLE_POSTULACIONES (ver
+  --     f_detalle_postulacion) y el dia en letras, como la columna Historial.
+  --
+  -- p_desde / p_hasta: YYYY-MM-DD, inclusive; hasta c_mapa_dias dias.
+  -- p_si_no: 'Si' o 'No' (el radio Desarrollo de APEX). Sin el, los dos.
+  --
+  -- La institucion y el facilitador NO se filtran aca: la pantalla los elige
+  -- sobre lo que llega, con cuantas tiene cada uno. Tope c_limite_maximo filas;
+  -- `truncado` avisa si se corto.
+  ------------------------------------------------------------------------------
+  PROCEDURE resumen_periodo(
+      p_token IN VARCHAR2,
+      p_desde IN VARCHAR2,
+      p_hasta IN VARCHAR2,
+      p_si_no IN VARCHAR2 DEFAULT NULL
+  ) IS
+    l_desde DATE;
+    l_hasta DATE;
+    l_si_no VARCHAR2(5) := CASE UPPER(TRIM(p_si_no)) WHEN 'SI' THEN 'SI' WHEN 'NO' THEN 'NO' END;
+    l_tope  PLS_INTEGER := c_limite_maximo;
+    l_tope1 PLS_INTEGER := c_limite_maximo + 1;
+    l_n     PLS_INTEGER := 0;
+  BEGIN
+    IF f_usuario(p_token) IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+    BEGIN
+      l_desde := TO_DATE(SUBSTR(TRIM(p_desde), 1, 10), 'YYYY-MM-DD');
+      l_hasta := TO_DATE(SUBSTR(TRIM(p_hasta), 1, 10), 'YYYY-MM-DD');
+    EXCEPTION
+      WHEN OTHERS THEN
+        p_error(400, 'Bad Request', 'Las fechas van como YYYY-MM-DD');
+        RETURN;
+    END;
+    IF l_desde IS NULL OR l_hasta IS NULL OR l_hasta < l_desde
+       OR l_hasta - l_desde > c_mapa_dias THEN
+      p_error(400, 'Bad Request', 'El periodo no es valido (hasta ' || c_mapa_dias || ' dias)');
+      RETURN;
+    END IF;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('limite',  l_tope);
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        WITH base AS (
+            SELECT i.id_intervencion, i.id_institucion, i.id_facilitador, i.fecha_hora,
+                   i.manual, i.id_indice, i.si_no, i.latitud, i.longitud,
+                   -- La hora de inicio y de fin de la clase, del dia de la marcacion.
+                   CASE TRUNC(i.fecha_hora) - TRUNC(i.fecha_hora, 'IW')
+                     WHEN 0 THEN p.lunes_desde     WHEN 1 THEN p.martes_desde
+                     WHEN 2 THEN p.miercoles_desde WHEN 3 THEN p.jueves_desde
+                     WHEN 4 THEN p.viernes_desde
+                   END AS desde,
+                   CASE TRUNC(i.fecha_hora) - TRUNC(i.fecha_hora, 'IW')
+                     WHEN 0 THEN p.lunes_hasta     WHEN 1 THEN p.martes_hasta
+                     WHEN 2 THEN p.miercoles_hasta WHEN 3 THEN p.jueves_hasta
+                     WHEN 4 THEN p.viernes_hasta
+                   END AS hasta
+              FROM intervenciones i
+              LEFT JOIN postulaciones p ON p.id_postulacion = i.id_postulacion
+             WHERE i.fecha_hora >= l_desde
+               AND i.fecha_hora <  l_hasta + 1
+               AND (l_si_no IS NULL OR UPPER(i.si_no) = l_si_no)
+               -- Una por clase y dia: la regla de APEX.
+               AND i.id_intervencion = (
+                     SELECT MAX(a.id_intervencion)
+                       FROM intervenciones a
+                      WHERE a.id_institucion  = i.id_institucion
+                        AND a.id_facilitador  = i.id_facilitador
+                        AND a.turno           = i.turno
+                        AND TRUNC(a.fecha_hora) = TRUNC(i.fecha_hora)
+                        AND a.manual          = i.manual
+                        AND a.id_indice       = i.id_indice)
+        )
+        SELECT b.id_intervencion, b.id_institucion, ins.nombre AS institucion,
+               b.id_facilitador, f.nombre_apellido AS facilitador,
+               TO_CHAR(b.fecha_hora, 'DD/MM/YYYY') AS fecha,
+               TO_CHAR(b.fecha_hora, 'HH24:MI')    AS hora,
+               TO_CHAR(b.desde, 'HH24:MI')         AS hora_desde,
+               TO_CHAR(b.hasta, 'HH24:MI')         AS hora_hasta,
+               ROUND(((TRUNC(b.fecha_hora) + (b.desde - TRUNC(b.desde)))
+                      - b.fecha_hora) * 24 * 60, 0) AS diferencia,
+               b.manual, b.id_indice, im.nro_indice, im.titulo AS indice_titulo,
+               b.si_no,
+               -- El dia como lo escribe APEX ('LUNES'): va a FN_DETALLE_POSTULACIONES
+               -- pegado a la hora de inicio, y es el texto de la columna Historial.
+               TRIM(TO_CHAR(b.fecha_hora, 'DAY', 'NLS_DATE_LANGUAGE=SPANISH')) AS dia,
+               REPLACE(b.latitud,  ',', '.') AS latitud,
+               REPLACE(b.longitud, ',', '.') AS longitud
+          FROM base b
+          LEFT JOIN instituciones ins   ON ins.id_institucion = b.id_institucion
+          LEFT JOIN facilitadores f     ON f.id_facilitador   = b.id_facilitador
+          LEFT JOIN indices_manuales im ON im.id_indice       = b.id_indice
+         ORDER BY b.fecha_hora DESC
+         FETCH FIRST l_tope1 ROWS ONLY
+    ) LOOP
+      -- Se pide uno de mas para saber si hubo corte, y ese no se escribe.
+      l_n := l_n + 1;
+      EXIT WHEN l_n > l_tope;
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id_intervencion', r.id_intervencion);
+      APEX_JSON.WRITE('id_institucion',  r.id_institucion);
+      APEX_JSON.WRITE('institucion',     r.institucion);
+      APEX_JSON.WRITE('id_facilitador',  r.id_facilitador);
+      APEX_JSON.WRITE('facilitador',     r.facilitador);
+      APEX_JSON.WRITE('fecha',           r.fecha);
+      APEX_JSON.WRITE('hora',            r.hora);
+      APEX_JSON.WRITE('hora_desde',      r.hora_desde);
+      APEX_JSON.WRITE('hora_hasta',      r.hora_hasta);
+      APEX_JSON.WRITE('diferencia',      r.diferencia);
+      APEX_JSON.WRITE('manual',          r.manual);
+      APEX_JSON.WRITE('id_indice',       r.id_indice);
+      APEX_JSON.WRITE('nro_indice',      r.nro_indice);
+      APEX_JSON.WRITE('indice_titulo',   r.indice_titulo);
+      APEX_JSON.WRITE('si_no',           r.si_no);
+      APEX_JSON.WRITE('dia',             r.dia);
+      APEX_JSON.WRITE('postulaciones',
+          f_detalle_postulacion(r.id_facilitador, r.id_institucion,
+                                CASE WHEN r.hora_desde IS NOT NULL
+                                     THEN r.dia || r.hora_desde END));
+      APEX_JSON.WRITE('latitud',         r.latitud);
+      APEX_JSON.WRITE('longitud',        r.longitud);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.WRITE('truncado', l_n > l_tope);
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error_tardio('Error: ' || SQLERRM);
+  END resumen_periodo;
+
+  ------------------------------------------------------------------------------
+  -- NO_REALIZADAS: la pagina 69 de APEX (Intervenciones no realizadas),
+  -- 12/10/2026. Las marcaciones con el indice NO desarrollado.
+  --
+  -- La consulta de APEX tal cual:
+  --
+  --   * NVL(si_no, 'Si') = 'No': sin dato cuenta como desarrollada.
+  --   * Su GROUP BY, que es MAS FINO que el de `realizadas`: separa por turno,
+  --     seccion y enfasis (y por las coordenadas), y junta solo los grados de
+  --     cada uno ("7, 8"). Por eso no se reusa `realizadas`, que junta todo en
+  --     un texto: aca turno, grado y seccion son columnas.
+  --   * El indice resuelto (numero y titulo) y el mes de FECHA_HORA.
+  --   * ORDER BY id_intervencion DESC.
+  --
+  -- p_anio: 'YYYY' (sin el, el anio en curso) o 'TODOS'. APEX traia todo;
+  -- aca se pide por anio. Devuelve tambien los anios que tienen alguna.
+  -- Tope c_limite_maximo filas, con `truncado`.
+  ------------------------------------------------------------------------------
+  PROCEDURE no_realizadas(
+      p_token IN VARCHAR2,
+      p_anio  IN VARCHAR2 DEFAULT NULL
+  ) IS
+    l_anio  VARCHAR2(10);
+    l_tope  PLS_INTEGER := c_limite_maximo;
+    l_tope1 PLS_INTEGER := c_limite_maximo + 1;
+    l_n     PLS_INTEGER := 0;
+  BEGIN
+    IF f_usuario(p_token) IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN;
+    END IF;
+    IF UPPER(TRIM(p_anio)) = 'TODOS' THEN
+      l_anio := NULL;
+    ELSE
+      l_anio := NVL(TRIM(p_anio), TO_CHAR(SYSDATE, 'YYYY'));
+      IF NOT REGEXP_LIKE(l_anio, '^\d{4}$') THEN
+        p_error(400, 'Bad Request', 'El anio va como YYYY o TODOS');
+        RETURN;
+      END IF;
+    END IF;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('anio',    l_anio);
+    APEX_JSON.WRITE('limite',  l_tope);
+    APEX_JSON.OPEN_ARRAY('anios');
+    FOR a IN (SELECT DISTINCT anio FROM v_historial_intervenciones
+               WHERE anio IS NOT NULL AND NVL(si_no, 'Si') = 'No'
+               ORDER BY anio DESC) LOOP
+      APEX_JSON.WRITE(a.anio);
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT v.fecha, v.manual, v.observacion, v.motivo_desarrollo, v.id_indice,
+               MAX(im.nro_indice) AS nro_indice,
+               MAX(im.titulo)     AS indice_titulo,
+               v.id_institucion, v.nombre, v.turno,
+               LISTAGG(v.grado, ', ' ON OVERFLOW TRUNCATE '...' WITHOUT COUNT)
+                 WITHIN GROUP (ORDER BY v.grado) AS grado,
+               v.seccion, v.id_enfasis, v.descripcion,
+               v.id_facilitador, v.nombre_facilitador,
+               MAX(v.id_intervencion) AS max_id_intervencion,
+               v.hora, v.hora_desde, v.hora_hasta,
+               EXTRACT(MONTH FROM MAX(v.fecha_hora)) AS mes,
+               v.anio
+          FROM v_historial_intervenciones v
+          LEFT JOIN indices_manuales im ON im.id_indice = v.id_indice
+         WHERE NVL(v.si_no, 'Si') = 'No'
+           AND (l_anio IS NULL OR v.anio = l_anio)
+         GROUP BY v.fecha, v.manual, v.observacion, v.motivo_desarrollo, v.id_indice,
+                  v.si_no, v.id_institucion, v.nombre, v.seccion, v.id_enfasis,
+                  v.descripcion, v.id_facilitador, v.hora, v.nombre_facilitador,
+                  v.latitud, v.longitud, v.hora_desde, v.hora_hasta, v.anio, v.turno
+         ORDER BY max_id_intervencion DESC
+         FETCH FIRST l_tope1 ROWS ONLY
+    ) LOOP
+      -- Se pide una de mas para saber si hubo corte, y esa no se escribe.
+      l_n := l_n + 1;
+      EXIT WHEN l_n > l_tope;
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id_intervencion',   r.max_id_intervencion);
+      APEX_JSON.WRITE('fecha',             r.fecha);
+      APEX_JSON.WRITE('hora',              r.hora);
+      APEX_JSON.WRITE('hora_desde',        r.hora_desde);
+      APEX_JSON.WRITE('hora_hasta',        r.hora_hasta);
+      APEX_JSON.WRITE('manual',            r.manual);
+      APEX_JSON.WRITE('id_indice',         r.id_indice);
+      APEX_JSON.WRITE('nro_indice',        r.nro_indice);
+      APEX_JSON.WRITE('indice_titulo',     r.indice_titulo);
+      APEX_JSON.WRITE('observacion',       r.observacion);
+      APEX_JSON.WRITE('motivo_desarrollo', r.motivo_desarrollo);
+      APEX_JSON.WRITE('id_institucion',    r.id_institucion);
+      APEX_JSON.WRITE('institucion',       r.nombre);
+      APEX_JSON.WRITE('turno',             r.turno);
+      APEX_JSON.WRITE('grado',             r.grado);
+      APEX_JSON.WRITE('seccion',           r.seccion);
+      APEX_JSON.WRITE('id_enfasis',        r.id_enfasis);
+      APEX_JSON.WRITE('enfasis',           r.descripcion);
+      APEX_JSON.WRITE('id_facilitador',    r.id_facilitador);
+      APEX_JSON.WRITE('facilitador',       r.nombre_facilitador);
+      APEX_JSON.WRITE('mes',               r.mes);
+      APEX_JSON.WRITE('anio',              r.anio);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.WRITE('truncado', l_n > l_tope);
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error_tardio('Error: ' || SQLERRM);
+  END no_realizadas;
+
 END PKG_INTERVENCIONES_ETHOS;
 /
 
@@ -1210,6 +1740,12 @@ BEGIN
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/mapa', 'OPTIONS');    EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/mapa/facilitadores', 'GET');     EXCEPTION WHEN OTHERS THEN NULL; END;
   BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/mapa/facilitadores', 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/realizadas', 'GET');     EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/realizadas', 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/resumen-periodo', 'GET');     EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/resumen-periodo', 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/no-realizadas', 'GET');     EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('ethos', 'intervenciones/no-realizadas', 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
 
   BEGIN
     ORDS.DEFINE_TEMPLATE(
@@ -1444,6 +1980,149 @@ END;
       p_param_type         => 'STRING',
       p_access_method      => 'IN');
 
+  ----------------------------------------------------------------------------
+  -- intervenciones/realizadas  ?anio=&meses=  o  ?desde=&hasta=&si_no=  (52 y 55)
+  -- Prioridad 1, mas alta que 'intervenciones' (0), por lo mismo que por-dia.
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'ethos',
+        p_pattern     => 'intervenciones/realizadas',
+        p_priority    => 1,
+        p_etag_type   => 'NONE');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'ethos',
+      p_pattern     => 'intervenciones/realizadas',
+      p_method      => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token VARCHAR2(256);
+    l_pos   PLS_INTEGER;
+BEGIN
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN
+            l_token := TRIM(SUBSTR(l_token, l_pos + 7));
+        END IF;
+    END IF;
+    PKG_INTERVENCIONES_ETHOS.REALIZADAS(
+        p_token => l_token,
+        p_anio  => :anio,
+        -- Numeros de mes separados por coma ('8,9'). Sin ellos, todo el anio.
+        p_meses => :meses,
+        -- Por periodo (la pagina 55): YYYY-MM-DD. Con ellos no cuentan anio ni meses.
+        p_desde => :desde,
+        p_hasta => :hasta,
+        p_si_no => :si_no);
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'ethos',
+      p_pattern            => 'intervenciones/realizadas',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  ----------------------------------------------------------------------------
+  -- intervenciones/resumen-periodo  ?desde=&hasta=&si_no=   (la pagina 53)
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'ethos',
+        p_pattern     => 'intervenciones/resumen-periodo',
+        p_priority    => 1,
+        p_etag_type   => 'NONE');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'ethos',
+      p_pattern     => 'intervenciones/resumen-periodo',
+      p_method      => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token VARCHAR2(256);
+    l_pos   PLS_INTEGER;
+BEGIN
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN
+            l_token := TRIM(SUBSTR(l_token, l_pos + 7));
+        END IF;
+    END IF;
+    PKG_INTERVENCIONES_ETHOS.RESUMEN_PERIODO(
+        p_token => l_token,
+        p_desde => :desde,
+        p_hasta => :hasta,
+        -- 'Si' / 'No'. Sin el, los dos.
+        p_si_no => :si_no);
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'ethos',
+      p_pattern            => 'intervenciones/resumen-periodo',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  ----------------------------------------------------------------------------
+  -- intervenciones/no-realizadas  ?anio=   (la pagina 69)
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'ethos',
+        p_pattern     => 'intervenciones/no-realizadas',
+        p_priority    => 1,
+        p_etag_type   => 'NONE');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'ethos',
+      p_pattern     => 'intervenciones/no-realizadas',
+      p_method      => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token VARCHAR2(256);
+    l_pos   PLS_INTEGER;
+BEGIN
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN
+            l_token := TRIM(SUBSTR(l_token, l_pos + 7));
+        END IF;
+    END IF;
+    PKG_INTERVENCIONES_ETHOS.NO_REALIZADAS(
+        p_token => l_token,
+        -- 'YYYY' o 'TODOS'. Sin el, el anio en curso.
+        p_anio  => :anio);
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'ethos',
+      p_pattern            => 'intervenciones/no-realizadas',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Handlers de intervenciones publicados.');
 EXCEPTION
@@ -1482,6 +2161,9 @@ BEGIN
   preflight('intervenciones/por-dia/detalle');
   preflight('intervenciones/mapa');
   preflight('intervenciones/mapa/facilitadores');
+  preflight('intervenciones/realizadas');
+  preflight('intervenciones/resumen-periodo');
+  preflight('intervenciones/no-realizadas');
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado.');
 EXCEPTION
@@ -1511,6 +2193,9 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('       GET intervenciones/por-dia/detalle ?anio=&mes=&dia=');
     DBMS_OUTPUT.PUT_LINE('       GET intervenciones/mapa ?desde=&hasta=&id_facilitador=');
     DBMS_OUTPUT.PUT_LINE('       GET intervenciones/mapa/facilitadores ?desde=&hasta=');
+    DBMS_OUTPUT.PUT_LINE('       GET intervenciones/realizadas ?anio=&meses= o ?desde=&hasta=&si_no=');
+    DBMS_OUTPUT.PUT_LINE('       GET intervenciones/resumen-periodo ?desde=&hasta=&si_no=');
+    DBMS_OUTPUT.PUT_LINE('       GET intervenciones/no-realizadas ?anio=');
   ELSE
     DBMS_OUTPUT.PUT_LINE('[ERROR] PKG_INTERVENCIONES_ETHOS quedo INVALID.');
     DBMS_OUTPUT.PUT_LINE('        SELECT * FROM user_errors WHERE name = ''PKG_INTERVENCIONES_ETHOS'';');

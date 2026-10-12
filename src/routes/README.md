@@ -39,3 +39,21 @@ archivo acá hace que la pantalla exista, pero **no la pone en el menú de nadie
 Una ruta que ninguna página de `MENU_PAGINAS` controla se puede abrir escribiendo la URL
 (la guarda de `AppShell` no la cierra). Inicio, Mi cuenta y las dos de administración no van en
 la base: son fijas. Ver el [`README`](../../README.md) → *Módulos y menú*.
+
+## Un reporte nuevo lleva Excel
+
+Desde el 12/10/2026, **toda pantalla de reporte con detalle lleva el botón Excel**:
+`<BotonExcel>` ([`boton-excel.tsx`](../components/boton-excel.tsx)) con `descargarExcel`
+([`lib/excel.ts`](../lib/excel.ts)). Baja todo lo filtrado (si el backend pagina, se juntan
+las páginas antes) con las columnas del reporte en su orden. Ver el [`README`](../../README.md)
+→ *Reportes: siempre con Excel*.
+
+Y **su tabla de detalle se ordena y se filtra por columna** (desde el 12/10/2026), como el menú
+de columna de APEX: `useTablaReporte` ([`lib/tabla-reporte.ts`](../lib/tabla-reporte.ts)) con
+`<EncabezadoReporte>` en cada `<th>` y `<FiltrosColumnas>` sobre la tabla
+([`columna-reporte.tsx`](../components/columna-reporte.tsx)). Paginación, resumen y Excel salen
+de `tabla.visibles`. Ver el [`README`](../../README.md) → *Reportes: orden y filtro por columna*.
+
+Y **con marcos verticales entre columnas** (desde el 12/10/2026): `border-r` en cada `<th>` y
+`<td>` de la tabla de detalle, `last:border-r-0` en la última. Ver el [`README`](../../README.md)
+→ *Reportes: marcos verticales en el detalle*.

@@ -1,22 +1,19 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  ChevronRight,
-  FileSpreadsheet,
-  RotateCcw,
-  School,
-  UserCheck,
-  UserX,
-  X,
-} from "lucide-react";
-import { useMemo, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { ChevronLeft, ChevronRight, RotateCcw, X } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { Buscador, Cargando, Fallo } from "@/components/admin-ui";
 import { AppShell } from "@/components/app-shell";
+import { BotonExcel } from "@/components/boton-excel";
+import { EncabezadoReporte, FiltrosColumnas } from "@/components/columna-reporte";
 import { EditorPostulacion } from "@/components/editor-postulacion";
+import { LupaPlanilla } from "@/components/lupa-planilla";
 import { MultiSelectorModal } from "@/components/multi-selector-modal";
 import { SelectorModal } from "@/components/selector-modal";
+import { descargarExcel, type ColumnaExcel } from "@/lib/excel";
 import { keysInstituciones, listarInstituciones } from "@/lib/instituciones";
+import { usePlanilla } from "@/lib/lupa";
 import {
   DIAS,
   franjas,
@@ -24,11 +21,11 @@ import {
   keysPostulaciones,
   listarTodasPostulaciones,
   MANUALES,
-  sumaGrados,
   type FiltrosPostulaciones,
   type PostulacionFila,
 } from "@/lib/postulaciones";
 import { keysPreHorarios, opcionesPreHorario } from "@/lib/pre-horarios";
+import { useTablaReporte, type ColumnaReporte } from "@/lib/tabla-reporte";
 import { normalizar } from "@/lib/utils";
 
 export const Route = createFileRoute("/consulta-postulaciones/")({
@@ -48,8 +45,51 @@ const numero = new Intl.NumberFormat("es-PY");
 const plural = (n: number, uno: string, varios: string) =>
   `${numero.format(n)} ${n === 1 ? uno : varios}`;
 
-/** Cuántas instituciones se dibujan de entrada; "Mostrar más" suma de a tanto. */
-const PASO = 15;
+/** Las filas por página del reporte, como el "Number of Rows" de APEX. */
+const POR_PAGINA = 50;
+
+const cant = (n: number) => (n ? String(n) : "");
+const franja = (f: { desde: string; hasta: string }) =>
+  f.desde || f.hasta ? `${f.desde}-${f.hasta}` : "";
+
+/**
+ * El ancho de cada columna del reporte, en el orden de APEX. Lo más compacto
+ * que se puede sin achicar la letra (12 px), como las planillas de la 20 y de
+ * la ficha; el total es el ancho natural que usa la lupa.
+ */
+const COLUMNAS = [
+  180, // nombre institución
+  64, // turno
+  140, // facilitador
+  50, // sección
+  ...GRADOS.map(() => 32),
+  100, // énfasis
+  ...MANUALES.map(() => 40),
+  ...DIAS.map(() => 78), // "07:00-07:40"
+  110, // materia
+  150, // profesor
+  84, // teléfono
+  44, // año
+];
+const ANCHO_TABLA = COLUMNAS.reduce((n, c) => n + c, 0);
+
+/** El encabezado de un grado como en APEX: "2º" … "9º", "1M", "2M", "3M". */
+const tituloGrado = (corto: string) => corto.replace("°M", "M").replace("°", "º");
+
+/**
+ * El orden del reporte de APEX: `order by turno, lunes, martes, miercoles,
+ * jueves, viernes`, con los vacíos al final como hace Oracle en un ASC.
+ */
+function comparar(a: PostulacionFila, b: PostulacionFila) {
+  const t = (a.turno ?? Infinity) - (b.turno ?? Infinity);
+  if (t) return t;
+  for (const d of DIAS) {
+    const x = a.dias[d.clave].desde || "~";
+    const y = b.dias[d.clave].desde || "~";
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return a.id - b.id;
+}
 
 /** "¿Tiene facilitador?" de APEX: vacío = todas. */
 type Tiene = "" | "S" | "N";
@@ -120,15 +160,21 @@ function contar(filas: Fila[], f: Filtros, faceta: Faceta, clave: (p: Fila) => s
  * - **Cada opción dice cuántas hay con el resto de los filtros puestos**,
  *   como las facetas de APEX, pero en una lista con buscador.
  * - **Un resumen arriba** (postulaciones, instituciones y cuántas tienen y no
- *   tienen facilitador) y la lista **agrupada por institución**, en tarjetas:
- *   la tabla de 40 columnas de APEX no se leía en el celular.
+ *   tienen facilitador).
+ *
+ * **El detalle es el reporte de APEX** (a pedido, 12/10/2026; los filtros
+ * quedan como estaban): las mismas columnas en el mismo orden, los manuales en
+ * sus colores, el orden por turno y días, 50 filas por página y el nombre de
+ * la institución como link al modal 22. Lleva la lupa de las otras planillas
+ * de postulaciones; en el celular se desplaza de costado dentro de su caja.
  */
 function ConsultaPostulacionesPage() {
   const qc = useQueryClient();
   const [anio, setAnio] = useState("");
   const [f, setF] = useState<Filtros>(SIN_FILTROS);
-  const [mostrar, setMostrar] = useState(PASO);
+  const [pagina, setPagina] = useState(0);
   const [editando, setEditando] = useState<PostulacionFila | null>(null);
+  const { marco, zoom, setZoom, cabe, ajustar, topEncabezado } = usePlanilla(ANCHO_TABLA);
 
   const filtrosApi: FiltrosPostulaciones = {
     anio,
@@ -186,7 +232,55 @@ function ConsultaPostulacionesPage() {
       });
   }, [lista.data, insts.data]);
 
-  const visibles = filas.filter((p) => pasa(p, f));
+  const filtradas = useMemo(() => filas.filter((p) => pasa(p, f)).sort(comparar), [filas, f]);
+
+  /**
+   * Las columnas del reporte, en el orden de APEX: se ordenan y se filtran desde
+   * su encabezado (`lib/tabla-reporte.ts`) y son también las del Excel.
+   * Dependen de los nombres de los turnos, que llegan con las opciones.
+   */
+  const columnas = useMemo<ColumnaReporte<Fila>[]>(() => {
+    const turnoDe = (t: number | null) =>
+      t == null
+        ? ""
+        : ((opciones.data?.turno ?? []).find((o) => o.valor === String(t))?.mostrar ?? String(t));
+    return [
+      { clave: "institucion", titulo: "Nombre Institución", valor: (p) => p.institucion },
+      { clave: "turno", titulo: "Turno", valor: (p) => turnoDe(p.turno), orden: (p) => p.turno },
+      { clave: "facilitador", titulo: "Facilitador", valor: (p) => p.facilitador },
+      { clave: "seccion", titulo: "Sección", valor: (p) => p.seccion },
+      ...GRADOS.map((g): ColumnaReporte<Fila> => ({
+        clave: g.clave,
+        titulo: tituloGrado(g.corto),
+        valor: (p) => cant(p.grados[g.clave]),
+        orden: (p) => p.grados[g.clave] || null,
+      })),
+      { clave: "enfasis", titulo: "Énfasis", valor: (p) => p.enfasis },
+      ...MANUALES.map((m): ColumnaReporte<Fila> => ({
+        clave: m.clave,
+        titulo: m.nombre,
+        valor: (p) => cant(p.manuales[m.clave]),
+        orden: (p) => p.manuales[m.clave] || null,
+      })),
+      ...DIAS.map((d): ColumnaReporte<Fila> => ({
+        clave: d.clave,
+        titulo: d.nombre,
+        valor: (p) => franja(p.dias[d.clave]),
+      })),
+      { clave: "materia", titulo: "Materia", valor: (p) => p.materia },
+      { clave: "profesor", titulo: "Profesor", valor: (p) => p.docente },
+      { clave: "telefono", titulo: "Teléfono", valor: (p) => p.telefono },
+      { clave: "anio", titulo: "Año", valor: (p) => p.anio },
+    ];
+  }, [opciones.data]);
+  const tabla = useTablaReporte(filtradas, columnas);
+  const visibles = tabla.visibles;
+  const nInstituciones = new Set(visibles.map((p) => p.idInstitucion)).size;
+
+  const paginas = Math.max(1, Math.ceil(visibles.length / POR_PAGINA));
+  const pag = Math.min(pagina, paginas - 1);
+  const desde = pag * POR_PAGINA;
+  const enPagina = visibles.slice(desde, desde + POR_PAGINA);
 
   // Las opciones de cada filtro: las del año, con cuántas quedan con el resto
   // de los filtros. Las que quedan en cero se esconden, salvo si están elegidas.
@@ -236,32 +330,9 @@ function ConsultaPostulacionesPage() {
   const sin = facetas.tiene.get("N") ?? 0;
   const cobertura = con + sin ? Math.round((con / (con + sin)) * 100) : 0;
 
-  // Agrupadas por institución; adentro, por turno y por el primer día con horario.
-  const grupos = useMemo(() => {
-    const m = new Map<number, Fila[]>();
-    for (const p of visibles) {
-      const g = m.get(p.idInstitucion);
-      if (g) g.push(p);
-      else m.set(p.idInstitucion, [p]);
-    }
-    const orden = (p: Fila) => {
-      const i = DIAS.findIndex((d) => p.dias[d.clave].desde);
-      return `${p.turno ?? 9}-${i < 0 ? 9 : i}-${i < 0 ? "" : p.dias[DIAS[i].clave].desde}`;
-    };
-    return [...m.values()]
-      .map((xs) => ({
-        id: xs[0].idInstitucion,
-        nombre: xs[0].institucion,
-        ciudad: xs[0].ciudad,
-        sinFacilitador: xs.filter((p) => p.idFacilitador == null).length,
-        filas: [...xs].sort((a, b) => orden(a).localeCompare(orden(b))),
-      }))
-      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
-  }, [visibles]);
-
   const cambiar = (cambios: Partial<Filtros>) => {
     setF((x) => ({ ...x, ...cambios }));
-    setMostrar(PASO);
+    setPagina(0);
   };
 
   // Los filtros puestos, como chips que se quitan de a uno.
@@ -295,8 +366,6 @@ function ConsultaPostulacionesPage() {
   ];
   const hayFiltros = chips.length > 0 || f.texto.trim() !== "";
 
-  const descargar = () => descargarCsv(visibles, nombreTurno, anioElegido);
-
   return (
     <AppShell>
       <div className="px-5 pt-5 pb-24">
@@ -307,20 +376,10 @@ function ConsultaPostulacionesPage() {
               Quién cubre cada postulación del año, por ciudad, institución y facilitador
             </p>
           </div>
-          <button
-            type="button"
-            onClick={descargar}
-            disabled={!visibles.length}
-            title={
-              visibles.length
-                ? "Descarga lo que se ve, para abrir en Excel"
-                : "No hay postulaciones para descargar"
-            }
-            className="flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2.5 text-sm font-semibold text-primary-foreground shadow-soft disabled:opacity-50"
-          >
-            <FileSpreadsheet className="size-4" />
-            Excel
-          </button>
+          <BotonExcel
+            onDescargar={() => descargarCsv(visibles, columnas, anioElegido)}
+            deshabilitado={!visibles.length}
+          />
         </div>
 
         {/* ── Filtros ──────────────────────────────────────────────────── */}
@@ -332,7 +391,7 @@ function ConsultaPostulacionesPage() {
             onChange={(a) => {
               setAnio(a);
               setF(SIN_FILTROS);
-              setMostrar(PASO);
+              setPagina(0);
             }}
             opciones={anios.map((a) => ({
               valor: a,
@@ -431,7 +490,10 @@ function ConsultaPostulacionesPage() {
             ))}
             <button
               type="button"
-              onClick={() => cambiar(SIN_FILTROS)}
+              onClick={() => {
+                cambiar(SIN_FILTROS);
+                tabla.limpiar();
+              }}
               className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted"
             >
               <RotateCcw className="size-3" />
@@ -451,7 +513,7 @@ function ConsultaPostulacionesPage() {
           <>
             <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-4">
               <Resumen etiqueta="Postulaciones" valor={numero.format(visibles.length)} />
-              <Resumen etiqueta="Instituciones" valor={numero.format(grupos.length)} />
+              <Resumen etiqueta="Instituciones" valor={numero.format(nInstituciones)} />
               <Resumen
                 etiqueta="Con facilitador"
                 valor={numero.format(con)}
@@ -466,61 +528,121 @@ function ConsultaPostulacionesPage() {
               />
             </div>
 
-            {!visibles.length ? (
-              <Vacio texto="Nada coincide con estos filtros." />
-            ) : (
-              <>
-                <div className="space-y-5">
-                  {grupos.slice(0, mostrar).map((g) => (
-                    <section key={g.id}>
-                      <header className="mb-2 flex items-end justify-between gap-3">
-                        <div className="min-w-0">
-                          <h2 className="font-display truncate text-base font-bold">{g.nombre}</h2>
-                          <p className="text-xs text-muted-foreground">
-                            {g.ciudad} · {plural(g.filas.length, "postulación", "postulaciones")}
-                            {g.sinFacilitador ? (
-                              <span className="font-medium text-amber-700 dark:text-amber-400">
-                                {" "}
-                                · {numero.format(g.sinFacilitador)} sin facilitador
-                              </span>
-                            ) : null}
-                          </p>
-                        </div>
-                        <Link
-                          to="/instituciones/$id"
-                          params={{ id: String(g.id) }}
-                          className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-primary hover:bg-primary-soft"
-                        >
-                          <School className="size-3.5" />
-                          Ficha
-                          <ChevronRight className="size-3.5" />
-                        </Link>
-                      </header>
-                      <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
-                        {g.filas.map((p) => (
-                          <li key={p.id}>
-                            <TarjetaPostulacion
-                              p={p}
-                              turno={nombreTurno(p.turno)}
-                              onAbrir={() => setEditando(p)}
-                            />
-                          </li>
+            {/* "Resultados de la Búsqueda": el reporte de APEX. */}
+            <section className="rounded-lg border border-border bg-card shadow-soft">
+              <FiltrosColumnas tabla={tabla} />
+              {!visibles.length ? (
+                <Vacio texto="No se ha encontrado ningún dato" />
+              ) : (
+                <>
+                  <div className="border-b border-border px-4 py-2">
+                    <LupaPlanilla zoom={zoom} setZoom={setZoom} ajustar={ajustar} />
+                  </div>
+                  <div ref={marco} className={cabe ? "" : "overflow-x-auto"}>
+                    <table
+                      style={{ zoom, width: ANCHO_TABLA }}
+                      className={`table-fixed border-separate border-spacing-0 text-[12px] ${zoom >= 1 ? "min-w-full" : ""}`}
+                    >
+                      <colgroup>
+                        {COLUMNAS.map((c, i) => (
+                          <col key={i} style={{ width: c }} />
                         ))}
-                      </ul>
-                    </section>
-                  ))}
-                </div>
-                {grupos.length > mostrar && (
-                  <button
-                    type="button"
-                    onClick={() => setMostrar((n) => n + PASO)}
-                    className="mt-5 h-11 w-full rounded-xl border border-border/80 bg-card text-sm font-semibold text-primary hover:border-primary/40"
-                  >
-                    Mostrar más instituciones ({numero.format(grupos.length - mostrar)})
-                  </button>
-                )}
-              </>
-            )}
+                      </colgroup>
+                      <thead
+                        className={cabe ? "sticky z-10" : ""}
+                        style={cabe ? { top: topEncabezado } : undefined}
+                      >
+                        <tr>
+                          {columnas.map((c) => {
+                            // Grados, manuales y días van centrados; los
+                            // manuales, con su sigla ("SER") por el ancho.
+                            const manual = MANUALES.find((m) => m.clave === c.clave);
+                            const centro =
+                              !!manual ||
+                              GRADOS.some((g) => g.clave === c.clave) ||
+                              DIAS.some((d) => d.clave === c.clave);
+                            return (
+                              <Th key={c.clave} centro={centro}>
+                                <EncabezadoReporte
+                                  columna={c}
+                                  tabla={tabla}
+                                  centro={centro}
+                                  etiqueta={manual?.corto}
+                                />
+                              </Th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {enPagina.map((p) => (
+                          <tr key={p.id} className="hover:bg-muted/40">
+                            <td className="truncate border-r border-b border-border/40 px-1 py-1">
+                              <button
+                                type="button"
+                                onClick={() => setEditando(p)}
+                                title={p.institucion}
+                                className="max-w-full truncate text-left font-medium text-primary hover:underline"
+                              >
+                                {p.institucion}
+                              </button>
+                            </td>
+                            <Td texto={nombreTurno(p.turno)} />
+                            <Td texto={p.facilitador} />
+                            <Td texto={p.seccion} />
+                            {GRADOS.map((g) => (
+                              <Td key={g.clave} texto={cant(p.grados[g.clave])} num />
+                            ))}
+                            <Td texto={p.enfasis} />
+                            {MANUALES.map((m) => (
+                              <td
+                                key={m.clave}
+                                className="border-r border-b border-border/40 px-1 py-1 text-center font-semibold tabular-nums"
+                                style={{ backgroundColor: m.color, color: m.tinta }}
+                              >
+                                {cant(p.manuales[m.clave])}
+                              </td>
+                            ))}
+                            {DIAS.map((d) => (
+                              <Td key={d.clave} texto={franja(p.dias[d.clave])} num />
+                            ))}
+                            <Td texto={p.materia} />
+                            <Td texto={p.docente} />
+                            <Td texto={p.telefono} />
+                            <Td texto={p.anio} num />
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* La paginación de APEX: "1 - 50" con anterior y siguiente, abajo a la derecha. */}
+                  <div className="flex items-center justify-end gap-1 border-t border-border px-4 py-2 text-[12.5px]">
+                    <button
+                      type="button"
+                      onClick={() => setPagina(pag - 1)}
+                      disabled={pag === 0}
+                      aria-label="Anterior"
+                      className="grid size-8 place-items-center rounded-md hover:bg-muted disabled:opacity-30"
+                    >
+                      <ChevronLeft className="size-4" />
+                    </button>
+                    <span className="px-1 text-muted-foreground tabular-nums">
+                      {numero.format(desde + 1)} - {numero.format(desde + enPagina.length)} de{" "}
+                      {numero.format(visibles.length)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPagina(pag + 1)}
+                      disabled={pag >= paginas - 1}
+                      aria-label="Siguiente"
+                      className="grid size-8 place-items-center rounded-md hover:bg-muted disabled:opacity-30"
+                    >
+                      <ChevronRight className="size-4" />
+                    </button>
+                  </div>
+                </>
+              )}
+            </section>
           </>
         )}
       </div>
@@ -582,93 +704,39 @@ function Resumen({
   );
 }
 
-/**
- * Una postulación: qué clase es, cuándo, qué manuales lleva y quién la cubre.
- * Tocarla abre el modal 22.
- */
-function TarjetaPostulacion({
-  p,
-  turno,
-  onAbrir,
+/** El encabezado compacto; el título completo queda en el `title` si se abrevia. */
+function Th({
+  children,
+  titulo,
+  centro,
 }: {
-  p: PostulacionFila;
-  turno: string;
-  onAbrir: () => void;
+  children?: ReactNode;
+  titulo?: string;
+  centro?: boolean;
 }) {
-  const alumnos = sumaGrados(p);
-  const grados = GRADOS.filter((g) => p.grados[g.clave])
-    .map((g) => `${g.corto.replace("°", "º")}: ${p.grados[g.clave]}`)
-    .join(" · ");
-  const manuales = MANUALES.filter((m) => p.manuales[m.clave]);
-  const dias = franjas(p);
-
   return (
-    <button
-      type="button"
-      onClick={onAbrir}
-      className="tap flex h-full w-full flex-col gap-2 rounded-2xl border border-border/60 bg-card p-3.5 text-left shadow-soft hover:border-primary/40"
+    <th
+      title={titulo ?? (typeof children === "string" ? children : undefined)}
+      className={`truncate border-r border-b border-border/60 bg-muted px-1 py-1.5 text-[11px] font-semibold ${
+        centro ? "text-center" : "text-left"
+      }`}
     >
-      <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-        {turno && <span className="rounded-full bg-muted px-2 py-0.5">{turno}</span>}
-        {p.seccion && <span className="rounded-full bg-muted px-2 py-0.5">Secc. {p.seccion}</span>}
-        {p.enfasis && <span className="truncate">{p.enfasis}</span>}
-      </div>
+      {children}
+    </th>
+  );
+}
 
-      <div className="min-w-0">
-        <p className="truncate text-[15px] font-semibold">{p.materia || "Sin materia"}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {p.docente || "Sin profesor"}
-          {p.telefono ? ` · ${p.telefono}` : ""}
-        </p>
-      </div>
-
-      {dias.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {dias.map((x) => (
-            <span
-              key={x.dia.clave}
-              className="rounded-md bg-primary-soft px-1.5 py-0.5 text-[11px] font-medium tabular-nums"
-            >
-              {x.dia.corto} {x.desde}–{x.hasta}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {(manuales.length > 0 || alumnos > 0) && (
-        <div className="flex flex-wrap items-center gap-1">
-          {manuales.map((m) => (
-            <span
-              key={m.clave}
-              title={m.nombre}
-              className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
-              style={{ backgroundColor: m.color, color: m.tinta }}
-            >
-              {m.corto} {p.manuales[m.clave]}
-            </span>
-          ))}
-          {alumnos > 0 && (
-            <span title={grados} className="ml-1 text-[11px] text-muted-foreground">
-              {plural(alumnos, "alumno", "alumnos")}
-            </span>
-          )}
-        </div>
-      )}
-
-      <div className="mt-auto flex items-center gap-1.5 border-t border-border/60 pt-2 text-xs">
-        {p.idFacilitador != null ? (
-          <>
-            <UserCheck className="size-3.5 shrink-0 text-primary" />
-            <span className="truncate font-medium">{p.facilitador}</span>
-          </>
-        ) : (
-          <>
-            <UserX className="size-3.5 shrink-0 text-amber-700 dark:text-amber-400" />
-            <span className="font-medium text-amber-700 dark:text-amber-400">Sin facilitador</span>
-          </>
-        )}
-      </div>
-    </button>
+/** La celda compacta: lo que no entra se corta con "…" y se lee entero al pasar el mouse. */
+function Td({ texto, num }: { texto: string; num?: boolean }) {
+  return (
+    <td
+      title={texto || undefined}
+      className={`truncate border-r border-b border-border/40 px-1 py-1 ${
+        num ? "text-center tabular-nums" : ""
+      }`}
+    >
+      {texto}
+    </td>
   );
 }
 
@@ -677,50 +745,13 @@ function TarjetaPostulacion({
 /* -------------------------------------------------------------------------- */
 
 /**
- * La descarga "Excel" de APEX: lo que se ve, con las columnas del reporte. Es
- * un CSV con `;` y BOM, que es lo que Excel en español abre directo en
- * columnas y con tildes.
+ * La descarga "Excel" de APEX: todo lo filtrado (no solo la página), en el
+ * orden en que se ve y con las columnas del reporte. Ver `lib/excel.ts`.
  */
-function descargarCsv(filas: Fila[], turno: (t: number | null) => string, anio: string) {
-  const cols: [string, (p: Fila) => string | number][] = [
-    ["Turno", (p) => turno(p.turno)],
-    ["Facilitador", (p) => p.facilitador],
-    ["Institución", (p) => p.institucion],
-    ["Sección", (p) => p.seccion],
-    ...GRADOS.map((g): [string, (p: Fila) => number | string] => [
-      g.corto.replace("°", "º"),
-      (p) => p.grados[g.clave] || "",
-    ]),
-    ["Énfasis", (p) => p.enfasis],
-    ...MANUALES.map((m): [string, (p: Fila) => number | string] => [
-      m.nombre,
-      (p) => p.manuales[m.clave] || "",
-    ]),
-    ...DIAS.map((d): [string, (p: Fila) => string] => [
-      d.nombre,
-      (p) => {
-        const x = p.dias[d.clave];
-        return x.desde || x.hasta ? `${x.desde}-${x.hasta}` : "";
-      },
-    ]),
-    ["Materia", (p) => p.materia],
-    ["Profesor", (p) => p.docente],
-    ["Teléfono", (p) => p.telefono],
-    ["Ciudad", (p) => p.ciudad],
-    ["Año", (p) => p.anio],
-  ];
-  const celda = (v: string | number) => {
-    const t = String(v);
-    return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
-  };
-  const texto = [
-    cols.map(([c]) => celda(c)).join(";"),
-    ...filas.map((p) => cols.map(([, v]) => celda(v(p))).join(";")),
-  ].join("\r\n");
-  const url = URL.createObjectURL(new Blob(["\uFEFF" + texto], { type: "text/csv;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `postulaciones-${anio || "anio"}.csv`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+function descargarCsv(filas: Fila[], columnas: ColumnaReporte<Fila>[], anio: string) {
+  descargarExcel(
+    `postulaciones-${anio || "anio"}`,
+    columnas.map((c): ColumnaExcel<Fila> => [c.titulo, c.valor]),
+    filas,
+  );
 }

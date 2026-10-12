@@ -14,7 +14,8 @@
  * (`pre_horarios.sql`).
  */
 
-import type { CSSProperties } from "react";
+import { useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useMemo, type CSSProperties } from "react";
 
 import { authFetch } from "@/lib/api";
 import type { ValorLista } from "@/lib/utils";
@@ -440,6 +441,103 @@ export const keysPostulaciones = {
   todas: (f: FiltrosPostulaciones) => ["postulaciones", "todas", f] as const,
   opciones: ["postulaciones", "opciones"] as const,
 };
+
+/* -------------------------------------------------------------------------- */
+/* Los reportes por año (las páginas 44, 49 y 50)                             */
+/* -------------------------------------------------------------------------- */
+
+/** El valor del filtro de año que trae todos los años (APEX entraba así). */
+export const TODOS_LOS_ANIOS = "*";
+
+/** `postulaciones/todas` de un año, sin los otros filtros de la página 20. */
+const soloAnio = (anio: string): FiltrosPostulaciones => ({
+  anio,
+  idDepartamento: null,
+  idCiudad: null,
+  idBarrio: null,
+  idInstitucion: null,
+  turno: null,
+});
+
+type TodasPostulaciones = Awaited<ReturnType<typeof listarTodasPostulaciones>>;
+
+/**
+ * Junta las consultas de los otros años. Va afuera del hook para que sea
+ * siempre la misma función: así React Query no rearma el resultado en cada
+ * render y los `useMemo` de las pantallas no se recalculan de gusto.
+ */
+function juntarAnios(rs: UseQueryResult<TodasPostulaciones>[]) {
+  return {
+    items: rs.flatMap((r) => r.data?.items ?? []),
+    cargando: rs.some((r) => r.isLoading),
+    error: rs.find((r) => r.error)?.error ?? null,
+  };
+}
+
+/**
+ * Las postulaciones de todas las instituciones de un año, o de todos: lo que
+ * leen los reportes armados en el navegador sobre `V_POSTULACIONES`
+ * (Instituciones y Facilitadores, Alumnos por Grado, Cantidad de Manuales).
+ *
+ * `anio` `null` = el año lectivo actual (la primera consulta, que además trae
+ * la lista de años); `TODOS_LOS_ANIOS` pide uno por cada año que tiene la
+ * tabla, porque el endpoint trae un año por llamada. Comparte la caché con la
+ * página 20 y la 24: es la misma clave de `postulaciones/todas`.
+ */
+export function usePostulacionesPorAnio(anio: string | null) {
+  const base = useQuery({
+    queryKey: keysPostulaciones.todas(soloAnio("")),
+    queryFn: () => listarTodasPostulaciones(soloAnio("")),
+  });
+  const anioBase = base.data?.anio ?? "";
+  const elegido = anio ?? anioBase;
+  const todos = elegido === TODOS_LOS_ANIOS;
+  const aPedir = todos
+    ? (base.data?.anios ?? []).filter((a) => a !== anioBase)
+    : elegido && elegido !== anioBase
+      ? [elegido]
+      : [];
+  const otros = useQueries({
+    queries: aPedir.map((a) => ({
+      queryKey: keysPostulaciones.todas(soloAnio(a)),
+      queryFn: () => listarTodasPostulaciones(soloAnio(a)),
+    })),
+    combine: juntarAnios,
+  });
+  const conBase = todos || elegido === anioBase;
+  const items = useMemo(
+    () => [...(conBase ? (base.data?.items ?? []) : []), ...otros.items],
+    [conBase, base.data, otros.items],
+  );
+  const anioActual = base.data?.anioActual ?? "";
+  const anios = useMemo(
+    () =>
+      [...new Set([anioBase, ...(base.data?.anios ?? [])].filter(Boolean))].sort((a, b) =>
+        b.localeCompare(a),
+      ),
+    [anioBase, base.data],
+  );
+  /** Las opciones del filtro Año, con "Todos los años" al final. */
+  const opcionesAnio = [
+    ...anios.map((a) => ({
+      valor: a,
+      texto: a,
+      extra: a === anioActual ? "Año lectivo actual" : undefined,
+    })),
+    ...(anios.length > 1 ? [{ valor: TODOS_LOS_ANIOS, texto: "Todos los años" }] : []),
+  ];
+  return {
+    items,
+    /** El año que se está viendo (`TODOS_LOS_ANIOS` si son todos). */
+    elegido,
+    todos,
+    /** El año de la primera consulta: elegirlo es volver a `null`. */
+    anioBase,
+    opcionesAnio,
+    cargando: base.isLoading || otros.cargando,
+    error: base.error ?? otros.error,
+  };
+}
 
 /**
  * Los colores de APEX (el CSS en línea de las páginas 20 y 22), con la letra

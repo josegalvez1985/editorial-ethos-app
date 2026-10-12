@@ -289,6 +289,24 @@ export async function listarEvaluaciones(f: Filtros = {}): Promise<Pagina> {
   };
 }
 
+/**
+ * Todas las filas de los filtros, sin paginar: lo que lee Monitoreo de
+ * Facilitadores (la página 87), que es un reporte de todo lo filtrado. El
+ * backend corta en 200 por página (`c_limite_maximo` en
+ * `evaluaciones_facilitadores.sql`): se piden de a 200 hasta completar el total.
+ */
+export async function todasLasEvaluaciones(
+  f: Omit<Filtros, "pagina" | "limite"> = {},
+): Promise<Evaluacion[]> {
+  const LIMITE_MAXIMO = 200;
+  const filas: Evaluacion[] = [];
+  for (let pagina = 1; ; pagina++) {
+    const r = await listarEvaluaciones({ ...f, limite: LIMITE_MAXIMO, pagina });
+    filas.push(...r.data);
+    if (!r.data.length || filas.length >= r.total) return filas;
+  }
+}
+
 export async function obtenerEvaluacion(id: number): Promise<Evaluacion> {
   const r = (await authFetch(`evaluaciones-facilitadores/${id}`)) as { data: Evaluacion };
   return r.data;
@@ -367,12 +385,7 @@ function indexar(row: Record<string, unknown>) {
 }
 
 type LovNombre =
-  | "facilitadores"
-  | "instituciones"
-  | "areas"
-  | "evaluaciones"
-  | "ciudades"
-  | "indices";
+  "facilitadores" | "instituciones" | "areas" | "evaluaciones" | "ciudades" | "indices";
 
 type LovParams = {
   buscar?: string;

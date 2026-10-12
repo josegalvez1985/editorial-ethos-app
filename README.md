@@ -147,7 +147,13 @@ Las reglas acordadas desde el 08/10/2026. Valen para cada página que se recrea:
      lista guardada fila por fila en un diálogo. Las piezas de las fichas están en
      `components/ficha-ui.tsx`;
    - las listas de valores cortas como pastillas de un toque; campos y botones `rounded-xl`;
-   - botones según los permisos de la página: sin insertar no hay "Nuevo", y así.
+   - botones según los permisos de la página: sin insertar no hay "Nuevo", y así;
+   - **todo reporte con detalle lleva el botón Excel** (desde el 12/10/2026): ver *Reportes:
+     siempre con Excel*;
+   - **y su tabla de detalle se ordena y se filtra por columna**, como el menú de columna de
+     APEX (desde el 12/10/2026): ver *Reportes: orden y filtro por columna*;
+   - **con marcos verticales entre columnas** (desde el 12/10/2026): ver *Reportes: marcos
+     verticales en el detalle*.
 6. **Ubicación en cascada:** se elige el nivel más bajo (ciudad, barrio) y el resto se deriva en
    el backend, para que país, departamento y ciudad no se contradigan.
 7. **Documentar al terminar:** una fila en *Los módulos de hoy*, una en la tabla de scripts de
@@ -211,16 +217,28 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Núcleo de Datos | **Evaluaciones** (los ítems): agrupados por área con pastillas y buscador; cada uno dice en cuántas evaluaciones se usó (en uso no se borra ni cambia de área). "Agregar y seguir" para cargar varios de corrido. Páginas 83 y 84 (modal) de APEX | `/items-evaluacion` | `evaluaciones.sql` |
 | Núcleo de Datos | **Escalas de Evaluaciones**: la escala por **tramos** (Deficiente, Aceptable…) sobre una barra de 0 al máximo; "Editar tramos" cambia topes y textos de todos a la vez; avisa si faltan números. Las filas sueltas, a mano como en APEX (una usada no se borra ni cambia de número). Páginas 85 y 86 (modal) de APEX | `/escalas-evaluacion` | `escalas_evaluaciones.sql` |
 | Operaciones | **Postulaciones** (con el formato de APEX, a pedido): filtros Año / Departamento / Ciudades / Barrios / Institución / Turno encadenados, botones **Generar** (8 filas), **Eliminar** (solo el año elegido; saltea las que tienen intervenciones o evaluaciones), **Imprimir** (el PDF oficio apaisado de la 20) y Limpiar Filtros; la grilla con las columnas y colores del IG y el lápiz que abre el modal 22 con sus campos y colores. La grilla **carga recién con una institución elegida** (antes de eso solo se piden los años) y tiene la lupa y todas las filas a la vista, como las de la ficha. Páginas 20 y 22 (modal) de APEX | `/postulaciones` | `postulaciones.sql` |
+| Reportes y Consultas | **Cantidad de Alumnos por Grado**: la suma de alumnos de cada grado (2° a 3M) de las postulaciones activas, por institución + facilitador + año. Filtros Año (el actual de entrada, o "Todos los años") / Facilitador (con "Sin facilitador") / Departamento / Ciudad / Barrio / Institución, cada opción con cuántas filas y alumnos quedan, buscador y Restablecer. Arriba el total de alumnos; abajo **el reporte de APEX** con sus columnas en orden, el total de cada grado al pie, la paginación arriba, orden y filtro por columna y **Excel**. Página 49 de APEX | `/consulta-alumnos-grado` | `postulaciones.sql` (sin SQL propio: usa `postulaciones/todas`) |
+| Reportes y Consultas | **Cantidad de Manuales**: la suma de cada manual (Ser a Liderazgo) de las postulaciones activas, por institución + facilitador + año. Filtros Año (el actual de entrada, o "Todos los años"; APEX lo tenía fijo en 2026) / Institución / Facilitador (con "Sin facilitador"), con cuántas filas y manuales quedan, buscador y Restablecer. Arriba el total de manuales; abajo **el reporte de APEX** con el total de cada manual al pie, la paginación arriba, orden y filtro por columna y **Excel**. Página 50 de APEX | `/consulta-cantidad-manuales` | `postulaciones.sql` (sin SQL propio: usa `postulaciones/todas`) |
+| Reportes y Consultas | **Intervenciones no realizadas**: las marcaciones con el índice no desarrollado. Facetas Año (el actual de entrada, o "Todos los años"), Mes, Fecha, Motivo Desarrollo, Institución y Facilitador, con cuántas quedan; buscador y Restablecer; un resumen (no realizadas, facilitadores, instituciones, motivo más frecuente); el reporte de APEX con sus 10 columnas (Facilitador, Institución, Fecha, Motivo, Observación, Manual, Índice, Turno, Grado, Sección), la última primero, 50 por página, orden y filtro por columna y **Excel**. Página 69 de APEX | `/intervenciones-no-realizadas` | `intervenciones.sql` (`intervenciones/no-realizadas`) |
+| Reportes y Consultas | **Consulta de Facilitadores**: de solo lectura (para editar está Facilitadores). La faceta Activo (Sí/No con cuántos; sin dato cuenta como No, como en APEX), el buscador sobre sus datos y Restablecer; un resumen (facilitadores, activos, inactivos, edad promedio); el reporte de APEX con sus 10 columnas visibles (Nombre Completo, que abre la ficha, Nro CI, Nacionalidad, Fecha Nacimiento, Edad, Estado Civil, Con Quién Vive, Hijos, Teléfono, Observación), por nombre, orden y filtro por columna y **Excel**. Página 62 de APEX | `/consulta-facilitadores` | `facilitadores.sql` (sin SQL propio: usa `GET facilitadores`, que desde el 12/10/2026 trae esas columnas) |
+| Reportes y Consultas | **Consulta de Instituciones**: de solo lectura (para editar está Instituciones). La faceta Estado (con cuántas; **sin estado cuenta como Inactiva**, como en APEX), el buscador y Restablecer; un resumen (instituciones, activas, inactivas, sin facilitador); el reporte de APEX con sus 8 columnas visibles (Institución, que abre la ficha, Departamento, Ciudad, Barrio, Dirección, Zona, Facilitador, Comentario), por nombre, orden y filtro por columna y **Excel**. Página 61 de APEX | `/consulta-instituciones` | `instituciones.sql` (sin SQL propio: usa `GET instituciones`, que desde el 12/10/2026 trae el comentario) |
+| Reportes y Consultas | **Auditoría de Intervenciones**: la bitácora `INTERVENCIONES_JN`, quién insertó, modificó o borró cada intervención. Período con atajos (este mes de entrada), Usuario (con el nombre del facilitador) y Operación (Todos / Insertó / Actualizó / Borró, con cuántos), Limpiar Filtros, sin Consultar. El reporte con las 22 columnas de APEX en su orden, la operación en pastilla verde/azul/roja, los ids con su nombre, la **fecha de auditoría en hora de Paraguay** (APEX mostraba UTC), el mapa, la lupa, orden y filtro por columna y **Excel**. Página 58 de APEX | `/auditoria-intervenciones` | `auditoria_intervenciones.sql` |
+| Reportes y Consultas | **Totales por Facilitador**: cuántas intervenciones hizo cada facilitador en cada institución en un período, y su total a razón del sueldo por intervención. Período con atajos, Facilitadores (con "Todos", que en APEX no andaba), Desarrollo Sí/No, Sueldo y Limpiar, sin Consultar; los tres totales con los colores de APEX; el reporte Facilitador / Institución / Cantidad / Total / Detalle (la 78, un diálogo con las marcaciones) con la suma al pie, orden y filtro por columna y **Excel**. Página 55 de APEX | `/totales-facilitador` | `intervenciones.sql` (`intervenciones/realizadas` por período) |
+| Reportes y Consultas | **Resumen de Intervenciones**: lo que se le paga a cada facilitador. Período con atajos (Este mes, Mes anterior, semanas, otro), Institución, Facilitadores (recortados por la institución), Desarrollo Sí/No, **Sueldo por intervención** (30.000 de entrada) y Limpiar, sin botón Consultar. **Total Intervenciones** y **Total Salario** con los colores de APEX. El reporte: una intervención por clase y día (la regla de APEX), las horas en sus colores, Dif. Min. azul/rojo, las postulaciones de la clase, la lupa que las abre (la 54) y el Historial del día (la 56) como diálogos, el mapa, orden y filtro por columna y **Excel**. Página 53 de APEX | `/resumen-intervenciones` | `intervenciones.sql` (`intervenciones/resumen-periodo`) |
+| Reportes y Consultas | **Intervenciones Realizadas**: lo más parecida a APEX. Filtros Año, Mes (pastillas con su cuenta; entra con el mes en curso), Fecha, Facilitador, Institución y ¿Desarrollo?, cada uno con cuántas quedan, buscador, los botones verdes **"Todos los meses"** y **"Todas las fechas"** y Restablecer. El reporte con las columnas de APEX en su orden: el lápiz que abre la intervención (`/intervenciones/$id`, la 51 de APEX), Hora en amarillo, Hora Desde en verde, Hora Hasta en naranja, **Dif. Min.** en rojo (llegó tarde), azul (antes) o gris, con su total al pie, el link al mapa, 50 filas por página con la paginación arriba, la lupa, orden y filtro por columna y **Excel**. Página 52 de APEX | `/consulta-intervenciones` | `intervenciones.sql` (`intervenciones/realizadas`) |
 | Operaciones | **Intervenciones en el Mapa**: período con atajos (Hoy, Esta semana…), facilitador (con cuántas marcaciones tiene) e institución, sin botón "Ver"; resumen con las marcaciones **lejos** de la institución (más de 1 km del punto que se deduce de sus marcaciones); mapa grande (Leaflet + OpenStreetMap) con pines numerados por hora, el recorrido de cada día y cada institución; línea de tiempo por día que vuela el mapa a cada marcación. Página 25 de APEX | `/mapa-intervenciones` | `intervenciones.sql` |
 | Núcleo de Datos | **Sucursales**: alta, modificación y baja (solo si nada la usa) | `/sucursales` | `sucursales.sql` |
 | Operaciones | **Evaluaciones** de facilitadores, con su calificación y su cierre | `/evaluaciones` | `evaluaciones_facilitadores.sql` |
 | Operaciones | **Intervenciones**: carga manual de las que quedaron sin registrar | `/intervenciones` | `intervenciones_crud.sql` |
 | Operaciones | **Inventario de manuales**: conteo físico por manual y sucursal; al cerrar, actualiza las existencias. El conteo en curso se descarta y el último cierre se revierte | `/inventario` | `inventarios.sql` |
 | Operaciones | **Transferencias de manuales**: envío entre sucursales (cabecera y detalle); al recibir, mueve las existencias. Una recibida se revierte (vuelve a pendiente) o se elimina, devolviendo las existencias | `/transferencias` | `transferencias.sql` |
-| Reportes y Consultas | **Agendas**: el horario semanal | `/agendas` | `agendas.sql` |
-| Reportes y Consultas | **Consulta de inventarios**: conteos pendientes y cerrados por sucursal, gráfico comparativo entre inventarios y PDF con el logo | `/consulta-inventarios` | `inventarios.sql` |
-| Reportes y Consultas | **Consulta de transferencias**: envíos entre sucursales por ruta y por manual, con el detalle de cada una y PDF | `/consulta-transferencias` | `transferencias.sql` |
-| Reportes y Consultas | **Consulta de postulaciones**: las activas de un año, combinables por ciudad, institución, facilitador y "¿tiene facilitador?" (cada opción dice cuántas quedan con los otros filtros), con buscador, Restablecer y la descarga para **Excel** (CSV con `;`). Arriba el resumen (postulaciones, instituciones, con y sin facilitador, con el % cubierto); abajo las tarjetas agrupadas por institución, con link a su ficha. Tocar una abre el modal 22 (el mismo de `/postulaciones`, en [`editor-postulacion.tsx`](src/components/editor-postulacion.tsx)). Página 24 de APEX | `/consulta-postulaciones` | `postulaciones.sql` (sin SQL propio: usa `postulaciones/todas`) |
+| Reportes y Consultas | **Agendas**: el horario semanal, con **Excel** de todo lo filtrado (junta las páginas del backend) | `/agendas` | `agendas.sql` |
+| Reportes y Consultas | **Consulta de inventarios**: dos vistas en pastillas (12/10/2026). **Último conteo** (la que abre, la página 76 de APEX): el último conteo de cada manual en cada sucursal, con las facetas Sucursal y Manual, buscador, Sucursal / Manual / Fecha / Cantidad Física con el total al pie, orden y filtro por columna y **Excel**; sin la columna Título de APEX, que repetía cada conteo una vez por índice del manual. **Historial**: los conteos pendientes y cerrados de un período por sucursal, gráfico comparativo entre inventarios, PDF con el logo y **Excel** | `/consulta-inventarios` | `inventarios.sql` (sin cambios: las dos vistas leen `inventarios/historial`) |
+| Reportes y Consultas | **Monitoreo de Facilitadores**: las evaluaciones de los facilitadores ítem por ítem (una fila de `EVALUACIONES_FACILITADORES` por ítem). Año (el en curso de entrada, o "Todos los años"), las facetas Facilitador e Institución con cuántas filas, buscador y Restablecer; un resumen (filas, facilitadores, instituciones, sin cerrar); el reporte de APEX con sus 14 columnas (Nombre Apellido, que abre la evaluación, Institución, Ciudad, fechas, Evaluado Por, Área, Evaluación, Calificación y Escala Descripción de `ESCALAS_EVALUACIONES`, aspectos, Observación Admin, Cerrado), por fecha, 50 por página, orden y filtro por columna y **Excel**. Página 87 de APEX | `/monitoreo-facilitadores` | `evaluaciones_facilitadores.sql` y `escalas_evaluaciones.sql` (sin SQL propio) |
+| Reportes y Consultas | **Historial de Inventarios de Manuales**: todos los conteos de cada sucursal (la página 77 de APEX), con las facetas Sucursal y Manual, buscador, Sucursal / Manual / Fecha / Cantidad Física con el total al pie, 50 por página, orden y filtro por columna y **Excel**; sin la columna Título de APEX (el mismo error que la 76). Es el mismo componente que el Último conteo de la 76 (`reporte-conteos.tsx`), en modo `todos`; un aviso lleva al Historial con gráfico y PDF de Consulta de inventarios | `/historial-inventarios` | `inventarios.sql` (sin cambios: `inventarios/historial`) |
+| Reportes y Consultas | **Consulta de transferencias**: envíos entre sucursales por ruta y por manual, con el detalle de cada una, PDF y **Excel** (una fila por manual de cada transferencia) | `/consulta-transferencias` | `transferencias.sql` |
+| Reportes y Consultas | **Consulta de postulaciones**: las activas de un año, combinables por ciudad, institución, facilitador y "¿tiene facilitador?" (cada opción dice cuántas quedan con los otros filtros), con buscador, Restablecer y la descarga para **Excel** (CSV con `;`). Arriba el resumen (postulaciones, instituciones, con y sin facilitador, con el % cubierto); abajo **el reporte de APEX** (a pedido, 12/10/2026): sus columnas en su orden, los manuales en sus colores, ordenado por turno y días, orden y filtro por columna, 50 filas por página y con la lupa. El nombre de la institución abre el modal 22 (el mismo de `/postulaciones`, en [`editor-postulacion.tsx`](src/components/editor-postulacion.tsx)). Página 24 de APEX | `/consulta-postulaciones` | `postulaciones.sql` (sin SQL propio: usa `postulaciones/todas`) |
+| Reportes y Consultas | **Instituciones y Facilitadores**: qué facilitadores van a cada institución. Filtros Año (el actual de entrada, o "Todos los años") / Departamento / Ciudad / Barrio / Institución / Facilitador (con "Sin facilitador"), cada opción con cuántas instituciones quedan con los otros, buscador y Restablecer. Arriba un resumen; abajo **el reporte de APEX** (a pedido, 12/10/2026): los pares sin repetir institución + facilitador + año con sus seis columnas en el mismo orden, ordenado por institución y facilitador, orden y filtro por columna, 50 filas por página y **Excel**. Página 44 de APEX | `/consulta-instituciones-facilitadores` | `postulaciones.sql` (sin SQL propio: usa `postulaciones/todas`) |
 | Administrador | **Usuarios**: las cuentas del workspace, con su estado y cuántas páginas tienen; activar y bloquear. Páginas 67 y 68 (modal) de APEX | `/usuarios` | `usuarios.sql`, `auth.sql` |
 | Administrador | **Auditoría**: qué tablas tienen bitácora y quién cambió qué | `/auditoria` | `auditoria.sql` |
 | Sistema | **Mi cuenta**: tema, color y cierre de sesión | `/account` | — |
@@ -238,6 +256,132 @@ Los dos PDF comparten encabezado con logo, pie, tarjetas y estilo de tabla en
 [`src/lib/pdf-base.ts`](src/lib/pdf-base.ts): un reporte nuevo arma solo su cuerpo. jsPDF se
 descarga recién al tocar el botón, y el PDF se abre en una pestaña nueva (en el APK puede no
 abrirse: la WebView no abre pestañas).
+
+### Reportes: siempre con Excel
+
+**Desde el 12/10/2026, todo reporte que tenga un detalle lleva un botón Excel**, como el link
+"Excel" de los reportes de APEX. Vale para los de hoy y para cada página nueva:
+
+| Reporte | Dónde va el botón | Qué baja |
+| --- | --- | --- |
+| Consulta de postulaciones | cabecera | el reporte de la 24, con sus columnas |
+| Instituciones y Facilitadores | cabecera | los pares institución + facilitador + año |
+| Agendas | cabecera | todas las agendas de los filtros (junta las páginas del backend) |
+| Consulta de inventarios | cabecera (en Historial, al lado del PDF) | Último conteo: una fila por sucursal y manual; Historial: un conteo por fila |
+| Historial de Inventarios de Manuales | cabecera | todos los conteos filtrados, con la cantidad del sistema y el estado |
+| Monitoreo de Facilitadores | cabecera | los ítems evaluados filtrados, con las 14 columnas del reporte |
+| Consulta de transferencias | cabecera, al lado del PDF | un manual de cada transferencia por fila |
+| Intervenciones Realizadas | cabecera | las marcaciones del período, con el link al mapa |
+| Cantidad de Alumnos por Grado | cabecera | la suma por grado de cada institución + facilitador + año |
+| Cantidad de Manuales | cabecera | la suma de cada manual por institución + facilitador + año |
+| Resumen de Intervenciones | cabecera | las intervenciones que cuentan para el pago, con el link al mapa |
+| Totales por Facilitador | cabecera | facilitador + institución con su cantidad y su total |
+| Auditoría de Intervenciones | cabecera | los movimientos de la bitácora, con el link al mapa |
+| Consulta de Instituciones | cabecera | las columnas del reporte y el estado |
+| Consulta de Facilitadores | cabecera | las columnas del reporte y si está activo |
+| Intervenciones no realizadas | cabecera | las no desarrolladas filtradas, con el motivo |
+
+Las reglas, para no repetir lo que ya se resolvió:
+
+- **Una sola pieza:** el botón es `<BotonExcel>`
+  ([`boton-excel.tsx`](src/components/boton-excel.tsx)) y el archivo lo arma `descargarExcel`
+  ([`src/lib/excel.ts`](src/lib/excel.ts)). La pantalla solo dice qué columnas lleva y qué filas.
+  Ninguna pantalla arma su propio CSV.
+- **Baja todo lo filtrado**, no solo la página ni lo que entra en pantalla. Si el reporte pagina
+  en el backend, la pantalla junta las páginas antes, como `todasLasAgendas`
+  ([`agendas.ts`](src/lib/agendas.ts)).
+- **Las columnas del reporte, en su orden**, y con los títulos que se ven en pantalla. Si la
+  pantalla agrupa (tarjetas por sucursal, por institución), el Excel va igual una fila por
+  registro: es para filtrar y sumar en Excel.
+- **Dónde va:** siempre en la cabecera, al lado del título, con borde y al lado del PDF si hay
+  (el PDF sigue siendo el botón lleno). También en los reportes con el formato de APEX, aunque
+  APEX lo ponía como link al pie (pedido el 12/10/2026).
+- **Es un CSV con `;` y BOM**, no un `.xlsx`: Excel en español lo abre directo en columnas y con
+  tildes, y no suma ninguna librería. Como los PDF, en el APK la descarga puede no andar.
+- **Baja lo que se ve, en el orden en que se ve:** con el orden y los filtros por columna puestos
+  (ver abajo). Las columnas del Excel salen de las mismas `ColumnaReporte` de la tabla.
+
+### Reportes: orden y filtro por columna
+
+**Desde el 12/10/2026, toda tabla de detalle de un reporte se ordena y se filtra por columna**,
+como el menú de columna de los reportes de APEX. Tocar un encabezado abre su menú:
+
+- **Ascendente / Descendente.** Tocar el orden que ya está lo saca y vuelve al orden del
+  reporte. Los vacíos van al final en los dos sentidos (el `sort_null` L de APEX).
+- **Los valores de la columna**, cada uno con cuántas filas tiene contando los otros filtros de
+  columna (como las facetas), con buscador: se marcan los que se quieren ver y "Aplicar".
+
+El encabezado ordenado lleva su flecha y el filtrado su embudo; sobre la tabla, chips con lo
+puesto ("Orden: Fecha ↓", "Institución: X +2") que se quitan de a uno o con "Quitar todo".
+Restablecer de la pantalla también los limpia.
+
+| Reporte | Columnas |
+| --- | --- |
+| Consulta de postulaciones | las 34 del reporte de la 24 |
+| Instituciones y Facilitadores | las 6 del reporte de la 44 |
+| Intervenciones Realizadas | todas menos el lápiz y el mapa (el id ordena pero no filtra) |
+| Cantidad de Alumnos por Grado | las 17 del reporte de la 49 (los grados ordenan como número) |
+| Cantidad de Manuales | las 10 del reporte de la 50 (los manuales ordenan como número) |
+| Resumen de Intervenciones | todas menos la lupa de postulaciones y el mapa; los totales y el salario cuentan lo que queda |
+| Totales por Facilitador | las 4 del reporte (Detalle es un botón); los totales cuentan lo que queda |
+| Auditoría de Intervenciones | las 21 de datos (ids y coordenadas ordenan pero no filtran) |
+| Consulta de Instituciones | las 8 del reporte de la 61 |
+| Consulta de Facilitadores | las 10 del reporte de la 62 (la edad ordena como número, la fecha como fecha) |
+| Intervenciones no realizadas | las 10 del reporte de la 69 |
+| Consulta de inventarios (Último conteo) | las 4 del reporte de la 76 |
+| Historial de Inventarios de Manuales | las 4 del reporte de la 77 |
+| Monitoreo de Facilitadores | las 14 del reporte de la 87 (las fechas ordenan como fecha) |
+
+Las reglas:
+
+- **Una sola pieza:** la lógica es `useTablaReporte` ([`tabla-reporte.ts`](src/lib/tabla-reporte.ts))
+  y lo visual `<EncabezadoReporte>` y `<FiltrosColumnas>`
+  ([`columna-reporte.tsx`](src/components/columna-reporte.tsx)). La pantalla describe sus
+  columnas como `ColumnaReporte` —título, valor, y `orden` si el texto no ordena bien (una fecha
+  `DD/MM/YYYY` va con `ordenFecha`, un número formateado con el número)— y pinta las celdas.
+- **Va después de los filtros de la pantalla:** la pantalla decide qué filas llegan (año,
+  facetas, buscador) y la tabla las ordena y las recorta por columna. La paginación, el resumen
+  y el Excel salen de `tabla.visibles`.
+- **El orden de entrada es el del reporte de APEX** (su `ORDER BY` o su
+  `default_sort_column_sequence`): la pantalla ordena antes de pasar las filas.
+- **`columnas` estable:** una constante del módulo, o un `useMemo` si dependen de algo que llega
+  después (los nombres de los turnos en la 24).
+- **Los links y los íconos** (el lápiz, el mapa) no son columnas de la tabla. Un id o un link se
+  ordena pero no se filtra (`filtrable: false`).
+- **Es un diálogo y no un desplegable**: la tabla se desplaza de costado dentro de su caja y un
+  desplegable quedaría cortado; en el celular un diálogo se toca mejor.
+- **Las tablas en tarjetas** (Agendas en el celular, Inventarios y Transferencias agrupados por
+  sucursal o ruta) todavía no lo tienen: se suma a pedido.
+
+### Reportes: marcos verticales en el detalle
+
+**Desde el 12/10/2026, toda tabla de detalle de un reporte lleva marcos verticales entre
+columnas**, además de las líneas entre filas: `border-r` en cada `<th>` y `<td>`, con
+`last:border-r-0` en la última columna (la caja ya pone el borde de afuera), y también en la fila
+de totales. Así se lee qué número es de qué columna en tablas anchas de números (grados,
+manuales). Las planillas con lupa (24, 52 y las grillas de la ficha) ya los tenían.
+
+### Reportes de pago: Resumen de Intervenciones (53) y Totales por Facilitador (55)
+
+Comparten dos piezas: el período con atajos ([`selector-periodo.tsx`](src/components/selector-periodo.tsx),
+con la lógica en [`periodos.ts`](src/lib/periodos.ts); también lo usa Auditoría de Intervenciones,
+y cualquier reporte nuevo por fechas) y los tres totales con los colores de APEX
+y el sueldo editable ([`totales-pago.tsx`](src/components/totales-pago.tsx), 30.000 de entrada).
+Los dos consultan solos al cambiar un parámetro, sin el botón Consultar de APEX.
+
+> **Cuentan distinto, como en APEX.** La 53 cuenta **una intervención por clase y día** sobre la
+> tabla `INTERVENCIONES` (la última de la misma institución, facilitador, turno, manual e
+> índice). La 55 cuenta **las marcaciones agrupadas** de `V_HISTORIAL_INTERVENCIONES`, como la 52.
+> Para el mismo facilitador y período los totales pueden no coincidir: se copió la regla de cada
+> página tal cual. Si se decide unificarla, es un cambio en `intervenciones.sql`.
+
+### Reportes armados sobre `V_POSTULACIONES`
+
+Instituciones y Facilitadores (44), Alumnos por Grado (49) y Cantidad de Manuales (50) agrupan
+en el navegador lo que trae `postulaciones/todas`, con **`usePostulacionesPorAnio`**
+([`postulaciones.ts`](src/lib/postulaciones.ts)): el año lectivo actual de entrada, uno elegido,
+o "Todos los años" (pide uno por año), y las opciones del filtro Año ya armadas. Un reporte nuevo
+sobre la misma vista usa ese hook en lugar de repetir las consultas.
 
 **El Formulario N° 1 de postulaciones es la excepción** (pestaña Postulaciones de una
 institución): no usa ese encabezado, copia el formulario oficial que generaba APEX —bandas,

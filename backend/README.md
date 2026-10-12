@@ -5,13 +5,14 @@
 | **[`auth.sql`](auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
 | **[`anios_lectivos.sql`](anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` + el ABM de `/anios-lectivos` (`PKG_ANIOS_LECTIVOS_ETHOS`, `anios-lectivos[/:id]`; el paquete necesita `roles_paginas.sql`: en una instalación nueva, correrlo de nuevo después) | 2º |
 | **[`evaluaciones_facilitadores.sql`](evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos y de la tarjeta de dirección (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
-| **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`); desde el 09/10/2026 también el mapa de la página 25 (`intervenciones/mapa`, `intervenciones/mapa/facilitadores`) y el detalle de un día del gráfico de Actividad (`intervenciones/por-dia/detalle`) | independiente |
+| **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`); desde el 09/10/2026 también el mapa de la página 25 (`intervenciones/mapa`, `intervenciones/mapa/facilitadores`), el detalle de un día del gráfico de Actividad (`intervenciones/por-dia/detalle`) y desde el 12/10/2026 las páginas 52, Intervenciones Realizadas (`intervenciones/realizadas`), 53, Resumen de Intervenciones (`intervenciones/resumen-periodo`), 55, Totales por Facilitador (`intervenciones/realizadas` por período), y 69, Intervenciones no realizadas (`intervenciones/no-realizadas`) | independiente |
 | **[`intervenciones_crud.sql`](intervenciones_crud.sql)** | Carga manual de intervenciones (`PKG_INTERV_CRUD_ETHOS`) | independiente |
 | **[`agendas.sql`](agendas.sql)** | Horario semanal sobre `V_AGENDA` (`PKG_AGENDAS_ETHOS`) | independiente |
 | **[`inventarios.sql`](inventarios.sql)** | Inventario de manuales por sucursal (`PKG_INVENTARIOS_ETHOS`) + corrige `INVENTARIOS_ACTUALIZAR_EXISTENCIAS` | independiente |
 | **[`transferencias.sql`](transferencias.sql)** | Transferencias de manuales entre sucursales (`PKG_TRANSFERENCIAS_ETHOS`) | después de `inventarios.sql` |
 | **[`sucursales.sql`](sucursales.sql)** | ABM de sucursales (`PKG_SUCURSALES_ETHOS`) + corrige `SUCURSALES_JNTRG` | independiente |
 | **[`auditoria.sql`](auditoria.sql)** | Consulta de las bitácoras `_JN` (`PKG_AUDITORIA_ETHOS`) + `pr_crear_trigger_auditoria` | independiente |
+| **[`auditoria_intervenciones.sql`](auditoria_intervenciones.sql)** | La bitácora `INTERVENCIONES_JN` con todas sus columnas, para la página 58, Auditoría de Intervenciones (`PKG_AUDITORIA_INTERV_ETHOS`, `auditoria-intervenciones`) | independiente |
 | **[`menu_paginas.sql`](menu_paginas.sql)** | Tabla `MENU_PAGINAS`: el menú del sitio, con las páginas del menú de APEX (mismo número, ruta del sitio) y las pantallas nuevas | independiente |
 | **[`roles_paginas.sql`](roles_paginas.sql)** | Menú del usuario, ABM de páginas y de permisos sobre `ROLES_PAGINAS` (`PKG_ROLES_PAGINAS_ETHOS`) | después de `menu_paginas.sql` |
 | **[`usuarios.sql`](usuarios.sql)** | Usuarios del workspace: listado y activar / bloquear (`PKG_USUARIOS_ETHOS`, usa `PRC_TOGGLE_USUARIO`) | después de `roles_paginas.sql` |
@@ -429,6 +430,12 @@ Paquete `PKG_INDICES_ETHOS`. La tabla: `ID_INDICE` (identity), `MANUAL` (obligat
 
 ## Facilitadores (`facilitadores.sql`)
 
+> **12/10/2026: `GET facilitadores` trae también** `fecha_nacimiento` (`DD/MM/YYYY`), `edad` (la
+> misma cuenta de APEX: `TRUNC(MONTHS_BETWEEN(hoy, nacimiento) / 12)`), `estado_civil`,
+> `con_quien_vive`, `hijos`, `observacion`, `direccion` y `ubicacion`, para la Consulta de
+> Facilitadores (página 62, `/consulta-facilitadores`), que no tiene SQL propio. Hay que volver a
+> correr `facilitadores.sql`; hasta entonces esas columnas salen vacías y nada más se rompe.
+
 Reemplaza a la página 14 de APEX (el listado), a su modal 15 (la ficha) y a los modales 63 a 66
 (Nominado por, Referencias personales, Niveles académicos, Situación laboral). En el sitio: el
 listado es `/facilitadores`, la ficha es la pantalla `/facilitadores/$id` (`nuevo` para el
@@ -541,6 +548,12 @@ debajo de cada una va su departamento (hay más de uno), lo que separa las ciuda
 
 ## Instituciones (`instituciones.sql` y siete más)
 
+> **12/10/2026: `GET instituciones` trae también `comentario`**, para la Consulta de Instituciones
+> (página 61, `/consulta-instituciones`), que no tiene SQL propio. Hay que volver a correr
+> `instituciones.sql`; hasta entonces esa columna sale vacía y nada más se rompe. Ojo: la 61 de
+> APEX cuenta una institución **sin estado como Inactiva** (`nvl(estado,'I')`), al revés que
+> `es_activa` del listado; la pantalla sigue a APEX y lo calcula con el `estado` crudo.
+
 Reemplaza a la página 16 de APEX (el listado) y a todo lo que colgaba de su modal 21 (Crear
 Institución): los IG de Directores y Coordinadores, los modales 35 (Crear Director) y 46 (Crear
 Coordinador), el 33 (Horarios, botón "Horario IE"), el 43 (Pre Horarios, botón "Pre
@@ -576,6 +589,22 @@ el navegador (la ciudad sale de la institución). Leer no pide permiso de págin
 'C'), y el modal 22 guarda con los permisos de la 20. Sin cambios en el backend. Desde el
 09/10/2026 la 20 pide `id_institucion=-1` mientras no se elige una institución: así solo trae
 los años del filtro, sin filas.
+
+**La 44 (Instituciones y Facilitadores, `/consulta-instituciones-facilitadores`)** tampoco
+tiene SQL propio (12/10/2026): el `select distinct` institución + facilitador + año de APEX se
+arma en el navegador con el mismo `GET postulaciones/todas`, uno por año ("Todos los años" pide
+cada uno), y la ubicación sale de `GET instituciones`. Como la consulta de APEX no filtraba el
+estado, cuenta también las postulaciones inactivas (la 24 no).
+
+**La 49 (Cantidad de Alumnos por Grado, `/consulta-alumnos-grado`)** tampoco (12/10/2026): el
+`SUM` por grado agrupado por institución + facilitador + año de APEX se arma en el navegador con
+el mismo `GET postulaciones/todas`, que ya trae los grados de cada postulación (`g2` … `g3m`).
+Solo las activas, como la consulta de APEX.
+
+**La 50 (Cantidad de Manuales, `/consulta-cantidad-manuales`)** igual (12/10/2026): el `SUM` de
+cada manual (`ser` … `liderazgo`). La consulta de APEX tenía `AND ANIO = '2026'` fijo; en el
+sitio el año se elige. Las tres (44, 49 y 50) leen con `usePostulacionesPorAnio`
+(`src/lib/postulaciones.ts`).
 
 | Script | Tabla | Paquete | Endpoints |
 | --- | --- | --- | --- |
@@ -712,6 +741,24 @@ crean ni se borran, igual que en APEX.
 - **No se puede bloquear la cuenta propia ni la dueña del workspace**
   (`FUNDACIONCARACTER2024@GMAIL.COM`).
 
+## Auditoría de Intervenciones (`auditoria_intervenciones.sql`, la página 58)
+
+Desde el 12/10/2026. **Hay que correrlo en APEX** antes de publicar `/auditoria-intervenciones`.
+
+| Método | Ruta | Devuelve |
+| --- | --- | --- |
+| GET | `auditoria-intervenciones` `?desde=&hasta=` | Las filas de `INTERVENCIONES_JN` cuya fecha de auditoría cae en el período (`YYYY-MM-DD`, hasta 366 días), con todas sus columnas y los ids con su nombre |
+
+- **Un paquete aparte** (`PKG_AUDITORIA_INTERV_ETHOS`) y no una función más de `auditoria.sql`:
+  un script por tabla, y la consulta nombra columnas de la bitácora. Si un día cambiara, no
+  compila solo este paquete; la pantalla Auditoría y los gráficos del Inicio siguen andando.
+- **`JN_DATETIME` se corre a Paraguay** (UTC−3) con el mismo `c_desfase` de `auditoria.sql`, y el
+  filtro desde/hasta se corre al revés. **Si se toca uno, se toca el otro.** APEX mostraba la hora
+  del servidor tal cual. `FECHA_HORA` no se corre: ya está en hora de Paraguay.
+- **`nombre_usuario`**: el facilitador cuyo `USUARIO` es el `JN_ORACLE_USER` (la LOV del filtro
+  Usuario de APEX). El usuario y la operación los elige la pantalla sobre lo que trae el período.
+- **Tope de 20.000 filas**, con `truncado`.
+
 ## Auditoría (`auditoria.sql`)
 
 Tres endpoints de **solo lectura** sobre las bitácoras, y el procedimiento que las genera.
@@ -804,6 +851,76 @@ Lo que conviene saber:
   marcaciones: la columna de ubicación de la institución guarda links de Google Maps acortados,
   no coordenadas.
 
+## Intervenciones no realizadas (`intervenciones.sql`, la página 69)
+
+Desde el 12/10/2026, en `PKG_INTERVENCIONES_ETHOS` (`no_realizadas`). **Hay que volver a correr
+`intervenciones.sql`** antes de publicar `/intervenciones-no-realizadas`.
+
+| Método | Ruta | Devuelve |
+| --- | --- | --- |
+| GET | `intervenciones/no-realizadas` `?anio=` | Las marcaciones con el índice no desarrollado de un año (`TODOS`: de todos; sin `anio`, el en curso) y los años que tienen alguna |
+
+- **`NVL(si_no, 'Si') = 'No'`**, como APEX: sin dato cuenta como desarrollada.
+- **No reusa `realizadas`:** el `GROUP BY` de la 69 es más fino. Separa por turno, sección y
+  énfasis (y por las coordenadas) y junta solo los grados de cada uno (`"7, 8"`), así que turno,
+  grado y sección son columnas aparte. `realizadas` junta todo eso en un solo texto.
+- **APEX traía todo el historial**; acá se pide por año. Tope de 20.000 filas, con `truncado`.
+
+## Resumen de Intervenciones (`intervenciones.sql`, la página 53)
+
+Desde el 12/10/2026, también en `PKG_INTERVENCIONES_ETHOS` (`resumen_periodo`). **Hay que volver
+a correr `intervenciones.sql`** antes de publicar `/resumen-intervenciones`.
+
+| Método | Ruta | Devuelve |
+| --- | --- | --- |
+| GET | `intervenciones/resumen-periodo` `?desde=&hasta=&si_no=` | Las intervenciones del período (`YYYY-MM-DD`, hasta 366 días) que cuentan para el pago, `Si`, `No` o las dos |
+
+Es la consulta de la página 53 de APEX, sobre la **tabla** `INTERVENCIONES` (no la vista):
+
+- **Una por clase y día:** de las de la misma institución, facilitador, turno, día, manual e
+  índice cuenta solo la última (`MAX(id_intervencion)`). Es la regla de APEX y la base del pago:
+  el total de intervenciones son las filas, y el salario, filas × sueldo (lo calcula el front).
+- **El horario sale de la postulación**, el del día de la semana de la marcación. El día se saca
+  con `TRUNC(fecha) - TRUNC(fecha, 'IW')` (0 = lunes) y no con `TO_CHAR(…, 'DY')`, que depende
+  del idioma y en español devuelve `MIÉ` con tilde.
+- **`diferencia` en minutos**, `(fecha + hora de inicio) − marcación`: positivo = llegó antes.
+- **Las postulaciones de la clase con `FN_DETALLE_POSTULACIONES`**, la función que ya usaba APEX
+  y que **no está en ningún script del repo**. Se llama con `EXECUTE IMMEDIATE`: llamada directa,
+  si faltara, no compilaría el paquete entero y se caerían también los gráficos del Inicio. Así,
+  si falta, esa columna sale vacía. La verificación previa del script avisa con `[WARN]`.
+- **La institución y el facilitador no se filtran en el backend:** la pantalla los elige sobre lo
+  que trajo el período, con cuántas tiene cada uno.
+- **Tope de 20.000 filas**, con `truncado`.
+
+## Intervenciones Realizadas (`intervenciones.sql`, la página 52)
+
+Desde el 12/10/2026, en el mismo paquete (`PKG_INTERVENCIONES_ETHOS.realizadas`), porque es la
+misma vista. **Hay que volver a correr `intervenciones.sql`** antes de publicar la pantalla
+`/consulta-intervenciones`.
+
+| Método | Ruta | Devuelve |
+| --- | --- | --- |
+| GET | `intervenciones/realizadas` `?anio=&meses=` | **Todas** las marcaciones del año y de los meses pedidos (`meses=8,9`; sin `meses`, el año entero), los años con datos (`anios`) y cuántas filas tiene cada mes del año (`meses`) |
+
+Es la consulta de la página 52 de APEX tal cual, con lo que ya se aprendió en `listar`:
+
+- **El mismo `GROUP BY` de APEX:** una fila por marcación con `MAX(id_intervencion)`, y los
+  grados juntos (`"Mañana-7-A-Bachillerato; …"`) con `LISTAGG … ON OVERFLOW TRUNCATE`.
+- **`diferencia` está en MINUTOS** (`HORA_DESDE − HORA`: positivo = llegó antes), sin el `/60`
+  de `listar`: es la columna "Dif. Min." de APEX. Mismo `CASE + REGEXP_LIKE` contra horas vacías.
+- **El mes por `FECHA_HORA`**, nunca por la columna `MES` (ver arriba).
+- **El índice resuelto** (`nro_indice`, `indice_titulo`) desde `INDICES_MANUALES`, que APEX
+  mostraba con una LOV.
+- **`meses=0` no matchea ningún mes:** la pantalla lo usa para pedir solo los años y las cuentas
+  por mes, sin filas, y así elegir el mes de entrada de otro año.
+- **Tope de 20.000 filas** (`c_limite_maximo`): se pide una de más y `truncado` avisa si se cortó.
+  Un mes son unos pocos miles; el año entero puede acercarse.
+- **Por período (la página 55, Totales por Facilitador, 12/10/2026):** con `?desde=&hasta=`
+  (`YYYY-MM-DD`, hasta 366 días) se ignoran `anio` y `meses`, y `?si_no=Si|No` deja solo las
+  desarrolladas o las no. Es la misma consulta y el mismo `GROUP BY` con que contaba la 55 de
+  APEX; la cuenta por facilitador e institución la arma el front. **Ojo:** la 53 cuenta con otra
+  regla (una por clase y día), así que sus totales pueden no coincidir con los de la 55.
+
 ## Agendas (`agendas.sql`)
 
 **Solo lectura** sobre `V_AGENDA`, otra vista que ya existía (la agenda se arma desde
@@ -833,6 +950,16 @@ devuelve todas. Las reglas de la carga —la postulación como eje, los triggers
 validan campos— están en el encabezado del script. Solo necesita `auth.sql`.
 
 ## Inventario de manuales (`inventarios.sql`)
+
+> **La página 76 (Inventarios de Manuales) no cambió el backend** (12/10/2026): su vista "Último
+> conteo" en `/consulta-inventarios` lee `inventarios/historial` sin filtros y se queda, por
+> sucursal y manual, con el de `ID_INVENTARIO` más alto, como el `MAX(ID_INVENTARIO)` de APEX.
+> **La consulta de APEX tenía un error:** cruzaba `INVENTARIOS` con `INDICES_MANUALES` por
+> `MANUAL`, y desde que se cuenta por manual (25/09/2026) eso repite cada conteo una vez por índice
+> del manual. El sitio no lo copia. Si el historial pasa el tope (5.000), la vista lo avisa.
+> **La 77 (Historial de Inventarios de Manuales, `/historial-inventarios`) tampoco** (12/10/2026):
+> es la misma consulta con todos los conteos, y el mismo error de APEX que el sitio no copia. Las
+> dos son el mismo componente, `src/components/reporte-conteos.tsx`.
 
 | Método | Ruta | Cuerpo / respuesta |
 | --- | --- | --- |
@@ -1013,6 +1140,16 @@ viejo queda en la tabla `_JN`.
 `ASPECTOS_POSITIVOS` y `ASPECTOS_MEJORAR` son `CLOB`: sin tope de largo. El límite
 práctico lo pone el bind de ORDS (~32 KB por campo), no la columna.
 
+## Monitoreo de Facilitadores (la página 87): sin SQL propio
+
+Desde el 12/10/2026, `/monitoreo-facilitadores` muestra las filas de `EVALUACIONES_FACILITADORES`
+**una por ítem evaluado**, como el reporte de APEX (ver la sección siguiente: una fila no es una
+evaluación). Lee el mismo `GET evaluaciones-facilitadores` de la pantalla Evaluaciones, **todas
+las páginas de a 200** (`todasLasEvaluaciones` en `src/lib/evaluaciones.ts`), filtrado por año con
+`desde`/`hasta`. La calificación y su descripción salen de cruzar `escala` con
+`GET escalas-evaluacion`, como el `LEFT JOIN ESCALAS_EVALUACIONES` de APEX. El listado no trae la
+CI del facilitador, así que el buscador no la mira (en APEX era una columna oculta).
+
 ## Cabecera y detalle: una fila NO es una evaluación
 
 Esto es lo más importante para entender el API, y no está modelado en la base.
@@ -1167,6 +1304,16 @@ sitio*. Del lado de Oracle, lo que ya se aprendió:
 - **Permisos:** `GET` pide solo sesión (otros combos usan la lista); `POST`/`PUT`/`DELETE`
   piden insertar/actualizar/borrar en la página de su ruta, con
   `PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta` y `puede`. Nunca un número de página fijo.
+- **El preflight `OPTIONS` va en un bloque APARTE y a prueba de fallos** (12/10/2026): este ORDS
+  rechaza `p_method => 'OPTIONS'` con `ORA-02290` (`ORDS_HANDLERS_MD_CK`). Si va en el mismo
+  bloque que el `GET`, el error dispara el `ROLLBACK` y el `GET` queda sin publicar (pasó con
+  `auditoria_intervenciones.sql`). Copiar el patrón `preflight(...)` de `intervenciones.sql`, que
+  ante el error solo imprime `[WARN]`.
+- **Un reporte que pagina tiene que poder bajar todo** (12/10/2026): todo reporte con detalle
+  lleva Excel en el sitio, y el Excel baja todo lo filtrado. El sitio pide las páginas de a una
+  con el `limite` máximo (ver `todasLasAgendas`), así que el endpoint tiene que devolver el
+  `total` sin paginar y aceptar `pagina`. Uno sin paginar con tope (`truncado`, como el historial
+  de inventarios) avisa en pantalla cuando se corta: el Excel sale igual de incompleto.
 - **"En uso" lo dice la base:** las FK de una columna que apuntan a la tabla (salvo las `_JN`),
   contadas por id. La pantalla no ofrece borrar lo que está en uso.
 - **El id lo pone la tabla** (identity o trigger), como en APEX. Si da ORA-01400 en la PK, el

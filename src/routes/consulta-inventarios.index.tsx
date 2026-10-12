@@ -1,13 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, ClipboardList, FileDown, Loader2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
+import { BotonExcel } from "@/components/boton-excel";
 import { ComparativoInventarios } from "@/components/comparativo-inventarios-chart";
 import { ChipsSeleccion, MultiSelectorModal } from "@/components/multi-selector-modal";
+import { ReporteConteos } from "@/components/reporte-conteos";
 import { SelectorModal } from "@/components/selector-modal";
+import { descargarExcel, paraArchivo, type ColumnaExcel } from "@/lib/excel";
 import {
   diferenciaDe,
   historialInventarios,
@@ -23,7 +26,10 @@ export const Route = createFileRoute("/consulta-inventarios/")({
   head: () => ({
     meta: [
       { title: "Consulta de inventarios — Juventud con Valores" },
-      { name: "description", content: "Detalle de conteos pendientes y cerrados, con PDF." },
+      {
+        name: "description",
+        content: "El último conteo de cada manual en cada sucursal, y el historial con PDF.",
+      },
     ],
   }),
   component: ConsultaInventariosPage,
@@ -49,9 +55,78 @@ const ddmmyyyy = (s: string) => s.split("-").reverse().join("/");
 const numero = new Intl.NumberFormat("es-PY");
 const conSigno = (n: number) => (n > 0 ? `+${numero.format(n)}` : numero.format(n));
 
+type Vista = "ultimo" | "historial";
+
 /**
- * Consulta de detalle de los inventarios: los conteos pendientes y cerrados de
- * una sucursal (o de todas) en un período, con su PDF.
+ * Consulta de inventarios: la página 76 de APEX (Inventarios de Manuales),
+ * en dos vistas en pastillas (decidido el 12/10/2026):
+ *
+ * - **Último conteo** (la que abre): la 76 de APEX, el último conteo de cada
+ *   manual en cada sucursal. Ver `ReporteConteos` (`components/reporte-conteos.tsx`), que
+ *   comparte con Historial de Inventarios (la 77).
+ * - **Historial**: la consulta que ya tenía el sitio, con todos los conteos de
+ *   un período, su gráfico y su PDF. Ver `VistaHistorial`.
+ *
+ * Es de SOLO LECTURA: para contar o cerrar está Inventario de manuales.
+ */
+function ConsultaInventariosPage() {
+  const [vista, setVista] = useState<Vista>("ultimo");
+  const vistas = (
+    <div
+      role="tablist"
+      aria-label="Vista"
+      className="mb-4 flex h-11 w-full rounded-xl border border-input bg-card p-0.5 text-sm sm:w-fit"
+    >
+      {(
+        [
+          { valor: "ultimo", texto: "Último conteo" },
+          { valor: "historial", texto: "Historial" },
+        ] as const
+      ).map((o) => (
+        <button
+          key={o.valor}
+          type="button"
+          role="tab"
+          aria-selected={vista === o.valor}
+          onClick={() => setVista(o.valor)}
+          className={`flex-1 rounded-[10px] px-4 font-medium whitespace-nowrap transition-colors ${
+            vista === o.valor
+              ? "bg-primary text-primary-foreground shadow-soft"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {o.texto}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <AppShell>
+      <div className="px-5 pt-5 pb-24">
+        {vista === "ultimo" ? (
+          <ReporteConteos
+            modo="ultimo"
+            titulo="Consulta de inventarios"
+            subtitulo="El último conteo de cada manual en cada sucursal"
+            vistas={vistas}
+          />
+        ) : (
+          <VistaHistorial vistas={vistas} />
+        )}
+      </div>
+    </AppShell>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Historial                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * La vista "Historial": los conteos pendientes y cerrados de una sucursal (o de
+ * todas) en un período, con su gráfico y su PDF. La que abre la pantalla es
+ * "Último conteo" (`ReporteConteos`).
  *
  * Es de SOLO LECTURA: para contar o cerrar está Inventario de manuales. Lee
  * `INVENTARIOS` entero —el historial—, no la planilla del conteo en curso.
@@ -60,7 +135,7 @@ const conSigno = (n: number) => (n > 0 ? `+${numero.format(n)}` : numero.format(
  * aplica acá, sobre lo que ya llegó: así marcar y desmarcar manuales es
  * instantáneo y no dispara una consulta por cada check.
  */
-function ConsultaInventariosPage() {
+function VistaHistorial({ vistas }: { vistas: ReactNode }) {
   const { sesion } = useSession();
   const hoy = new Date();
 
@@ -141,16 +216,33 @@ function ConsultaInventariosPage() {
       .finally(() => setGenerando(false));
   }
 
+  /** El Excel: el mismo detalle que el PDF, una fila por conteo, por sucursal. */
+  const descargar = () =>
+    descargarExcel(
+      `inventario-${paraArchivo(nombreSucursal)}-${iso(new Date())}`,
+      [
+        ["Sucursal", (c) => c.sucursal],
+        ["Fecha", (c) => c.fecha],
+        ["Manual", (c) => c.manual],
+        ["Cantidad sistema", (c) => c.cantidad_sistema],
+        ["Cantidad física", (c) => c.cantidad_fisica],
+        ["Diferencia", (c) => diferenciaDe(c)],
+        ["Estado", (c) => (c.estado === "ABIERTO" ? "Pendiente" : "Cerrado")],
+      ] satisfies ColumnaExcel<ConteoHistorial>[],
+      grupos.flatMap(([, conteos]) => conteos),
+    );
+
   return (
-    <AppShell>
-      <div className="px-5 pt-5 pb-24">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h1 className="font-display text-2xl font-bold">Consulta de inventarios</h1>
-            <p className="text-xs text-muted-foreground">
-              Conteos pendientes y cerrados por sucursal
-            </p>
-          </div>
+    <>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-bold">Consulta de inventarios</h1>
+          <p className="text-xs text-muted-foreground">
+            Todos los conteos de un período, pendientes y cerrados, por sucursal
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          <BotonExcel onDescargar={descargar} deshabilitado={!filas.length} />
           <button
             type="button"
             onClick={generarPdf}
@@ -168,150 +260,152 @@ function ConsultaInventariosPage() {
             PDF
           </button>
         </div>
+      </div>
 
-        {/* ── Filtros ──────────────────────────────────────────────────── */}
-        <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <SelectorModal
-            label="Sucursal"
-            descripcion="Una sucursal o todas"
-            value={sucursal}
-            onChange={setSucursal}
-            opciones={[
-              { valor: "", texto: "Todas las sucursales" },
-              ...(sucursales.data ?? []).map((s) => ({
-                valor: String(s.id_sucursal),
-                texto: s.descripcion,
-              })),
-            ]}
-            className="min-h-11 px-3.5 py-2 text-sm"
-          />
-          <MultiSelectorModal
-            label="Manuales"
-            placeholder="Todos los manuales"
-            descripcion="Los que tienen conteos con los filtros elegidos"
-            value={manualesSel}
-            onChange={setManualesSel}
-            opciones={manualesDisponibles.map((m) => ({ valor: m, texto: m }))}
-            className="min-h-11 px-3.5 py-2 text-sm"
-          />
-          <div className="grid grid-cols-2 gap-2 sm:col-span-2 xl:col-span-1">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium">Desde</label>
-              <input
-                type="date"
-                value={desde}
-                max={hasta || undefined}
-                onChange={(e) => setDesde(e.target.value)}
-                className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium">Hasta</label>
-              <input
-                type="date"
-                value={hasta}
-                min={desde || undefined}
-                onChange={(e) => setHasta(e.target.value)}
-                className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
-              />
-            </div>
+      {vistas}
+
+      {/* ── Filtros ──────────────────────────────────────────────────── */}
+      <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <SelectorModal
+          label="Sucursal"
+          descripcion="Una sucursal o todas"
+          value={sucursal}
+          onChange={setSucursal}
+          opciones={[
+            { valor: "", texto: "Todas las sucursales" },
+            ...(sucursales.data ?? []).map((s) => ({
+              valor: String(s.id_sucursal),
+              texto: s.descripcion,
+            })),
+          ]}
+          className="min-h-11 px-3.5 py-2 text-sm"
+        />
+        <MultiSelectorModal
+          label="Manuales"
+          placeholder="Todos los manuales"
+          descripcion="Los que tienen conteos con los filtros elegidos"
+          value={manualesSel}
+          onChange={setManualesSel}
+          opciones={manualesDisponibles.map((m) => ({ valor: m, texto: m }))}
+          className="min-h-11 px-3.5 py-2 text-sm"
+        />
+        <div className="grid grid-cols-2 gap-2 sm:col-span-2 xl:col-span-1">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Desde</label>
+            <input
+              type="date"
+              value={desde}
+              max={hasta || undefined}
+              onChange={(e) => setDesde(e.target.value)}
+              className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
+            />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium">Estado</label>
-            {/* Segmentado: son tres opciones y se leen de un vistazo. */}
-            <div className="flex h-11 rounded-xl border border-input bg-card p-0.5 text-sm">
-              {ESTADOS.map((e) => (
-                <button
-                  key={e.valor}
-                  type="button"
-                  onClick={() => setEstado(e.valor)}
-                  aria-pressed={estado === e.valor}
-                  className={`flex-1 rounded-[10px] px-2 font-medium transition-colors ${
-                    estado === e.valor
-                      ? "bg-primary text-primary-foreground shadow-soft"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {e.texto}
-                </button>
-              ))}
-            </div>
+            <label className="mb-1.5 block text-sm font-medium">Hasta</label>
+            <input
+              type="date"
+              value={hasta}
+              min={desde || undefined}
+              onChange={(e) => setHasta(e.target.value)}
+              className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm outline-none focus:border-primary/40"
+            />
           </div>
         </div>
-
-        <div className="mb-4">
-          <ChipsSeleccion
-            valores={manualesSel}
-            onQuitar={(m) => setManualesSel((prev) => prev.filter((x) => x !== m))}
-            onLimpiar={() => setManualesSel([])}
-          />
+        <div>
+          <label className="mb-1.5 block text-sm font-medium">Estado</label>
+          {/* Segmentado: son tres opciones y se leen de un vistazo. */}
+          <div className="flex h-11 rounded-xl border border-input bg-card p-0.5 text-sm">
+            {ESTADOS.map((e) => (
+              <button
+                key={e.valor}
+                type="button"
+                onClick={() => setEstado(e.valor)}
+                aria-pressed={estado === e.valor}
+                className={`flex-1 rounded-[10px] px-2 font-medium transition-colors ${
+                  estado === e.valor
+                    ? "bg-primary text-primary-foreground shadow-soft"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {e.texto}
+              </button>
+            ))}
+          </div>
         </div>
+      </div>
 
-        {/* ── Resultado ────────────────────────────────────────────────── */}
-        {rangoInvalido ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">
-            La fecha «desde» es posterior a «hasta».
-          </p>
-        ) : historial.isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            Cargando…
-          </div>
-        ) : historial.isError ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">
-            No se pudo cargar la consulta.
-          </p>
-        ) : !filas.length ? (
-          <div className="py-12 text-center">
-            <ClipboardList className="mx-auto size-10 text-muted-foreground/40" />
-            <p className="mt-3 text-sm text-muted-foreground">No hay conteos con estos filtros.</p>
-          </div>
-        ) : (
-          <>
-            {/* Cortado por el tope del backend: el PDF también saldría incompleto. */}
-            {historial.data?.truncado && (
-              <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
-                Se muestran los primeros {numero.format(historial.data.tope)} conteos. Achicá el
-                período o elegí una sucursal para verlos todos.
-              </div>
-            )}
+      <div className="mb-4">
+        <ChipsSeleccion
+          valores={manualesSel}
+          onQuitar={(m) => setManualesSel((prev) => prev.filter((x) => x !== m))}
+          onLimpiar={() => setManualesSel([])}
+        />
+      </div>
 
-            {/* ── Resumen ─────────────────────────────────────────────── */}
-            <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
-              <Resumen etiqueta="Conteos" valor={numero.format(filas.length)} />
-              <Resumen
-                etiqueta="Pendientes"
-                valor={numero.format(pendientes)}
-                clase={pendientes ? "text-amber-600" : ""}
-              />
-              <Resumen etiqueta="Cerrados" valor={numero.format(filas.length - pendientes)} />
-              <Resumen
-                etiqueta="Diferencia neta"
-                valor={conSigno(neta)}
-                ayuda="Física menos sistema, sumada: negativo es que faltan libros"
-                clase={neta < 0 ? "text-destructive" : neta > 0 ? "text-amber-600" : ""}
-              />
+      {/* ── Resultado ────────────────────────────────────────────────── */}
+      {rangoInvalido ? (
+        <p className="py-12 text-center text-sm text-muted-foreground">
+          La fecha «desde» es posterior a «hasta».
+        </p>
+      ) : historial.isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          Cargando…
+        </div>
+      ) : historial.isError ? (
+        <p className="py-12 text-center text-sm text-muted-foreground">
+          No se pudo cargar la consulta.
+        </p>
+      ) : !filas.length ? (
+        <div className="py-12 text-center">
+          <ClipboardList className="mx-auto size-10 text-muted-foreground/40" />
+          <p className="mt-3 text-sm text-muted-foreground">No hay conteos con estos filtros.</p>
+        </div>
+      ) : (
+        <>
+          {/* Cortado por el tope del backend: el PDF también saldría incompleto. */}
+          {historial.data?.truncado && (
+            <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
+              Se muestran los primeros {numero.format(historial.data.tope)} conteos. Achicá el
+              período o elegí una sucursal para verlos todos.
             </div>
+          )}
 
-            {/*
+          {/* ── Resumen ─────────────────────────────────────────────── */}
+          <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <Resumen etiqueta="Conteos" valor={numero.format(filas.length)} />
+            <Resumen
+              etiqueta="Pendientes"
+              valor={numero.format(pendientes)}
+              clase={pendientes ? "text-amber-600" : ""}
+            />
+            <Resumen etiqueta="Cerrados" valor={numero.format(filas.length - pendientes)} />
+            <Resumen
+              etiqueta="Diferencia neta"
+              valor={conSigno(neta)}
+              ayuda="Física menos sistema, sumada: negativo es que faltan libros"
+              clase={neta < 0 ? "text-destructive" : neta > 0 ? "text-amber-600" : ""}
+            />
+          </div>
+
+          {/*
               El gráfico ANTES del detalle: responde la pregunta de un vistazo
               ("¿cambió desde el último inventario?") y la tabla de abajo es su
               vista accesible, con todos los números.
             */}
-            <div className="mb-5">
-              <ComparativoInventarios conteos={filas} />
-            </div>
+          <div className="mb-5">
+            <ComparativoInventarios conteos={filas} />
+          </div>
 
-            <div className="space-y-5">
-              {grupos.map(([nombre, conteos]) => (
-                <GrupoSucursal key={nombre} nombre={nombre} conteos={conteos} />
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </AppShell>
+          <div className="space-y-5">
+            {grupos.map(([nombre, conteos]) => (
+              <GrupoSucursal key={nombre} nombre={nombre} conteos={conteos} />
+            ))}
+          </div>
+        </>
+      )}
+    </>
   );
 }
 

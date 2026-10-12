@@ -267,6 +267,40 @@ export const PANTALLAS: Record<string, { descripcion: string }> = {
     descripcion: "Quién cubre cada postulación, por ciudad, institución y facilitador",
   },
   "/mapa-intervenciones": { descripcion: "Dónde marcó cada facilitador, día por día" },
+  "/monitoreo-facilitadores": {
+    descripcion: "Las evaluaciones de los facilitadores, ítem por ítem, con su calificación",
+  },
+  "/historial-inventarios": { descripcion: "Todos los conteos de manuales de cada sucursal" },
+  "/intervenciones-no-realizadas": {
+    descripcion: "Las intervenciones con el índice no desarrollado, y por qué",
+  },
+  "/consulta-facilitadores": {
+    descripcion: "Los facilitadores con sus datos personales y si están activos",
+  },
+  "/consulta-instituciones": {
+    descripcion: "Las instituciones con su ubicación, su facilitador y su estado",
+  },
+  "/auditoria-intervenciones": {
+    descripcion: "Quién insertó, modificó o borró cada intervención, y cuándo",
+  },
+  "/totales-facilitador": {
+    descripcion: "Cuántas intervenciones hizo cada facilitador en cada institución, y su total",
+  },
+  "/resumen-intervenciones": {
+    descripcion: "Las intervenciones de un período y lo que se le paga a cada facilitador",
+  },
+  "/consulta-cantidad-manuales": {
+    descripcion: "Cuántos manuales de cada uno van a cada institución y facilitador",
+  },
+  "/consulta-alumnos-grado": {
+    descripcion: "Cuántos alumnos hay en cada grado, por institución y facilitador",
+  },
+  "/consulta-intervenciones": {
+    descripcion: "Cada marcación de los facilitadores, con su horario y su diferencia",
+  },
+  "/consulta-instituciones-facilitadores": {
+    descripcion: "Qué facilitadores van a cada institución, por año y ubicación",
+  },
   "/coordinadores": {
     descripcion: "Los coordinadores y en qué institución coordina cada uno",
   },

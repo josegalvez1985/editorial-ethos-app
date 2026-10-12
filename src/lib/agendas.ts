@@ -363,6 +363,22 @@ export async function listarAgendas(f: FiltrosAgenda = {}): Promise<PaginaAgenda
 }
 
 /**
+ * Todas las agendas de los filtros, sin paginar: es lo que baja el Excel, que
+ * lleva todo lo filtrado y no solo lo que se ve (ver `lib/excel.ts`). El
+ * backend corta en 500 por página (`c_limite_maximo` en `agendas.sql`), así que
+ * se piden de a 500 hasta completar el total.
+ */
+export async function todasLasAgendas(f: FiltrosAgenda = {}): Promise<Agenda[]> {
+  const LIMITE = 500;
+  const filas: Agenda[] = [];
+  for (let pagina = 1; ; pagina++) {
+    const r = await listarAgendas({ ...f, limite: LIMITE, pagina });
+    filas.push(...r.data);
+    if (!r.data.length || filas.length >= r.total) return filas;
+  }
+}
+
+/**
  * Las opciones de los combos, recortadas por los filtros ya elegidos.
  *
  * `anios` **no** se recorta por nada: es el filtro más externo de la pantalla, y
