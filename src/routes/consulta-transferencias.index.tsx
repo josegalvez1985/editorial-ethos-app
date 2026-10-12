@@ -10,6 +10,7 @@ import {
   Loader2,
   Route as RouteIcon,
   Truck,
+  UserRound,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -26,8 +27,10 @@ import {
   agruparPorTransferencia,
   historialTransferencias,
   keysTransferencias,
+  resumirFacilitadores,
   resumirManuales,
   resumirRutas,
+  textoDestinatario,
   type FiltrosHistorialTransf,
   type LineaHistorial,
   type TransferenciaAgrupada,
@@ -61,6 +64,9 @@ function iso(d: Date): string {
 }
 
 const ddmmyyyy = (s: string) => s.split("-").reverse().join("/");
+
+/** Las líneas de antes del 12/10/2026 no tienen facilitador ni institución. */
+const SIN_ASIGNAR = "Sin asignar";
 const numero = new Intl.NumberFormat("es-PY");
 const plural = (n: number, uno: string, varios: string) =>
   `${numero.format(n)} ${n === 1 ? uno : varios}`;
@@ -72,17 +78,19 @@ const plural = (n: number, uno: string, varios: string) =>
  * ## TRES CAPAS, DE LO GENERAL AL DETALLE
  *
  * 1. **Resumen**: cuántas, cuántos libros, cuántas siguen en camino.
- * 2. **Panorama**: por RUTA (origen → destino) y por MANUAL, de mayor a menor.
- *    Contestan de un vistazo "¿qué se mueve y hacia dónde?".
+ * 2. **Panorama**: por RUTA (origen → destino), por MANUAL y por FACILITADOR,
+ *    de mayor a menor. Contestan de un vistazo "¿qué se mueve, hacia dónde y
+ *    para quién?". Desde el 12/10/2026 cada línea va a un facilitador y una
+ *    institución; las viejas figuran como "Sin asignar".
  * 3. **Detalle**: cada transferencia con sus manuales. Tocarla abre la
  *    transferencia (para recibirla, si está en camino).
  *
  * Es de SOLO LECTURA: cargar y recibir se hace en Transferencias de manuales.
  *
- * Sucursal, estado y fechas van al backend; el filtro de manuales se aplica
- * acá, sobre las líneas que ya llegaron, así marcar y desmarcar es instantáneo.
- * Con manuales elegidos, cada transferencia muestra SOLO esas líneas y los
- * totales cuentan solo esos libros.
+ * Sucursal, estado y fechas van al backend; los filtros de manuales y de
+ * facilitadores se aplican acá, sobre las líneas que ya llegaron, así marcar y
+ * desmarcar es instantáneo. Con alguno elegido, cada transferencia muestra
+ * SOLO esas líneas y los totales cuentan solo esos libros.
  */
 function ConsultaTransferenciasPage() {
   const { sesion } = useSession();
@@ -93,6 +101,7 @@ function ConsultaTransferenciasPage() {
   const [desde, setDesde] = useState(iso(new Date(hoy.getFullYear(), 0, 1)));
   const [hasta, setHasta] = useState(iso(hoy));
   const [manualesSel, setManualesSel] = useState<string[]>([]);
+  const [facilitadoresSel, setFacilitadoresSel] = useState<string[]>([]);
   const [generando, setGenerando] = useState(false);
 
   const sucursales = useQuery({
@@ -120,15 +129,28 @@ function ConsultaTransferenciasPage() {
     [todas],
   );
 
+  const facilitadoresDisponibles = useMemo(
+    () =>
+      [...new Set(todas.map((l) => l.facilitador ?? SIN_ASIGNAR))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [todas],
+  );
+
   const lineas = useMemo(() => {
-    if (!manualesSel.length) return todas;
-    const elegidos = new Set(manualesSel);
-    return todas.filter((l) => elegidos.has(l.manual));
-  }, [todas, manualesSel]);
+    const manualesOk = new Set(manualesSel);
+    const facOk = new Set(facilitadoresSel);
+    return todas.filter(
+      (l) =>
+        (!manualesOk.size || manualesOk.has(l.manual)) &&
+        (!facOk.size || facOk.has(l.facilitador ?? SIN_ASIGNAR)),
+    );
+  }, [todas, manualesSel, facilitadoresSel]);
 
   const transf = useMemo(() => agruparPorTransferencia(lineas), [lineas]);
   const rutas = useMemo(() => resumirRutas(transf), [transf]);
   const manuales = useMemo(() => resumirManuales(lineas), [lineas]);
+  const porFacilitador = useMemo(() => resumirFacilitadores(lineas), [lineas]);
 
   const enCamino = transf.filter((x) => !x.recibida).length;
   const unidades = transf.reduce((s, x) => s + x.unidades, 0);
@@ -151,6 +173,7 @@ function ConsultaTransferenciasPage() {
               ? `${desde ? ddmmyyyy(desde) : "inicio"} al ${hasta ? ddmmyyyy(hasta) : "hoy"}`
               : "Todo",
           manuales: manualesSel.length ? manualesSel.join(", ") : "Todos",
+          facilitadores: facilitadoresSel.length ? facilitadoresSel.join(", ") : "Todos",
           usuario: sesion?.nombre ?? "",
         }),
       `transferencias-${nombreSucursal.toLowerCase().replace(/\W+/g, "-")}-${iso(new Date())}.pdf`,
@@ -170,6 +193,8 @@ function ConsultaTransferenciasPage() {
         ["Destino", (l) => l.destino],
         ["Estado", (l) => (l.recibida ? "Recibida" : "En camino")],
         ["Recibida el", (l) => l.recibida_el],
+        ["Facilitador", (l) => l.facilitador ?? SIN_ASIGNAR],
+        ["Institución", (l) => l.institucion ?? SIN_ASIGNAR],
         ["Manual", (l) => l.manual],
         ["Cantidad", (l) => l.cantidad],
       ] satisfies ColumnaExcel<LineaHistorial>[],
@@ -210,7 +235,7 @@ function ConsultaTransferenciasPage() {
         </div>
 
         {/* ── Filtros ──────────────────────────────────────────────────── */}
-        <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <SelectorModal
             label="Sucursal"
             descripcion="Las transferencias que salen o llegan a esta sucursal"
@@ -232,6 +257,15 @@ function ConsultaTransferenciasPage() {
             value={manualesSel}
             onChange={setManualesSel}
             opciones={manualesDisponibles.map((m) => ({ valor: m, texto: m }))}
+            className="min-h-11 px-3.5 py-2 text-sm"
+          />
+          <MultiSelectorModal
+            label="Facilitadores"
+            placeholder="Todos los facilitadores"
+            descripcion="A quiénes fueron los manuales con los filtros elegidos"
+            value={facilitadoresSel}
+            onChange={setFacilitadoresSel}
+            opciones={facilitadoresDisponibles.map((m) => ({ valor: m, texto: m }))}
             className="min-h-11 px-3.5 py-2 text-sm"
           />
           <div className="grid grid-cols-2 gap-2 sm:col-span-2 xl:col-span-1">
@@ -278,11 +312,16 @@ function ConsultaTransferenciasPage() {
           </div>
         </div>
 
-        <div className="mb-4">
+        <div className="mb-4 space-y-1">
           <ChipsSeleccion
             valores={manualesSel}
             onQuitar={(m) => setManualesSel((prev) => prev.filter((x) => x !== m))}
             onLimpiar={() => setManualesSel([])}
+          />
+          <ChipsSeleccion
+            valores={facilitadoresSel}
+            onQuitar={(m) => setFacilitadoresSel((prev) => prev.filter((x) => x !== m))}
+            onLimpiar={() => setFacilitadoresSel([])}
           />
         </div>
 
@@ -331,7 +370,7 @@ function ConsultaTransferenciasPage() {
             </div>
 
             {/* ── 2. Panorama ─────────────────────────────────────────── */}
-            <div className="mb-5 grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <div className="mb-5 grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
               <Ranking
                 titulo="Por ruta"
                 icono={<RouteIcon className="size-4" />}
@@ -356,6 +395,16 @@ function ConsultaTransferenciasPage() {
                   etiqueta: <span className="truncate">{m.manual}</span>,
                   valor: m.unidades,
                   detalle: plural(m.transferencias, "envío", "envíos"),
+                }))}
+              />
+              <Ranking
+                titulo="Por facilitador"
+                icono={<UserRound className="size-4" />}
+                filas={porFacilitador.map((f) => ({
+                  clave: f.facilitador,
+                  etiqueta: <span className="truncate">{f.facilitador}</span>,
+                  valor: f.unidades,
+                  detalle: plural(f.instituciones, "institución", "instituciones"),
                 }))}
               />
             </div>
@@ -476,6 +525,7 @@ const CHIPS = 4;
 
 function TarjetaTransferencia({ x }: { x: TransferenciaAgrupada }) {
   const ocultos = x.lineas.length - CHIPS;
+  const destinatarios = [...new Set(x.lineas.map((l) => textoDestinatario(l)))];
 
   return (
     <li>
@@ -502,15 +552,20 @@ function TarjetaTransferencia({ x }: { x: TransferenciaAgrupada }) {
               #{x.id_transferencia} · {x.fecha}
               {x.recibida && x.recibida_el && ` · recibida ${x.recibida_el}`}
             </p>
+            <p className="mt-1 flex items-start gap-1 text-[11.5px]">
+              <UserRound className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+              <span className="line-clamp-2 min-w-0">{destinatarios.join(" / ")}</span>
+            </p>
           </div>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
         </div>
 
         {/* Los manuales como chips: se ve QUÉ viajó sin abrirla. */}
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {x.lineas.slice(0, CHIPS).map((l) => (
+          {x.lineas.slice(0, CHIPS).map((l, i) => (
             <span
-              key={l.manual}
+              key={i}
+              title={textoDestinatario(l)}
               className="flex max-w-full items-center gap-1 rounded-lg bg-muted/60 px-2 py-1 text-xs"
             >
               <span className="truncate">{l.manual}</span>

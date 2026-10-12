@@ -406,14 +406,27 @@ Docente), que en el sitio es el diálogo de `/docentes`, con los permisos de la 
 Reemplaza a la página 28 de APEX (Índices, IG de solo lectura sobre `INDICES_MANUALES`) y a su
 modal 29 (Crear Índice), que en el sitio es el diálogo de `/indices`, con los permisos de la 28.
 Paquete `PKG_INDICES_ETHOS`. La tabla: `ID_INDICE` (identity), `MANUAL` (obligatorio, 100),
-`NRO_INDICE` (obligatorio, número) y `TITULO` (obligatorio, 500).
+`NRO_INDICE` (obligatorio, número), `TITULO` (obligatorio, 500) y `ACTIVO` (`SI`/`NO`).
+
+> **12/10/2026: estado activo.** La columna `ACTIVO VARCHAR2(2)` se agrega a mano (y el trigger
+> `INDICES_MANUALES_JNTRG` la copia a la `_JN`) **antes** de correr el script: sin ella el paquete
+> no compila, y la verificación previa lo avisa.
 
 | Método | Ruta | Exige | Qué hace |
 | --- | --- | --- | --- |
-| GET | `indices` | sesión | Todos por manual y número, con `usos` y `tablas` |
-| POST | `indices` | insertar en la página de `/indices` | `{manual, nro_indice, titulo}` → `{id_indice, manual}` |
+| GET | `indices` | sesión | Todos por manual y número, con `activo`, `usos` y `tablas` |
+| POST | `indices` | insertar en la página de `/indices` | `{manual, nro_indice, titulo, activo?}` → `{id_indice, manual, activo}` |
 | PUT | `indices/:id` | actualizar | Lo mismo |
 | DELETE | `indices/:id` | borrar | **409** si lo usa una intervención o una evaluación (con o sin FK) |
+| PUT | `indices-manual` | actualizar | `{manual, activo}`: activa o inactiva **todos** los índices del manual → `{cambiados}` |
+
+- **Activo / inactivo**: un manual está inactivo cuando no le queda ningún índice activo.
+  Inactivarlo inactiva todos sus índices; activarlo los activa a todos. Un índice nuevo sin
+  `activo` hereda el estado del manual; una edición sin `activo` lo deja como estaba. `NULL` se
+  lee como `SI` (las filas viejas no se tocan: un UPDATE masivo dejaría una fila por índice en la
+  `_JN`), y `indices-manual` solo actualiza las filas que cambian. **Las listas que consumen
+  índices** (evaluaciones, intervenciones, inventario, transferencias) **todavía no filtran los
+  inactivos.**
 
 - **No hay tabla de manuales**: el `DISTINCT` de `MANUAL` es el catálogo de evaluaciones,
   intervenciones, inventario y transferencias. Un manual escrito con otras mayúsculas o
@@ -1052,12 +1065,25 @@ tiene `pr_crear_trigger_auditoria`.
 
 ## Transferencias de manuales (`transferencias.sql`)
 
+> **12/10/2026: cada línea va a un facilitador y una institución.** `TRANSFERENCIAS_DETALLE`
+> tiene `ID_FACILITADOR` e `ID_INSTITUCION` (FK a `FACILITADORES` e `INSTITUCIONES`), que se
+> agregan a mano **antes** de correr el script. Al guardar son **obligatorios**: cada item es
+> `manual:cantidad:id_facilitador:id_institucion`, y uno de dos partes (el formato viejo) da 400.
+> La clave de la línea es (manual, facilitador, institución): el mismo manual puede ir a varios
+> facilitadores, pero no dos veces al mismo par. Las líneas viejas quedan con `NULL`, se ven
+> como "Sin asignar" y, al editar su transferencia, hay que asignarlas. El detalle, el historial
+> y la lista devuelven `id_facilitador`, `facilitador`, `id_institucion`, `institucion` (la lista,
+> `facilitadores` separados por coma). Como un manual puede repetirse, `recibir` crea las filas
+> en 0 del origen con `DISTINCT`, y la verificación final imprime el código del trigger
+> `TRANSFERENCIAS_ACTUALIZAR_EXISTENCIAS` (no está en el repo) para revisar que sume línea por
+> línea.
+
 | Método | Ruta | Cuerpo / respuesta |
 | --- | --- | --- |
 | GET | `transferencias` `?estado=N\|S&id_sucursal=&limite=&pagina=` | Pendientes primero; `id_sucursal` filtra las que salen **o** llegan |
 | GET | `transferencias/manuales` `?id_sucursal=&excluir_id=` | El catálogo con `existencia` y `comprometido` en el origen |
-| GET | `transferencias/:id` | Cabecera + `detalle`; si está recibida, `recibida_el` / `recibida_por` (salen de la bitácora) |
-| POST / PUT | `transferencias` / `transferencias/:id` | `{id_sucursal_origen, id_sucursal_destino, items: "Manual%201:5;Manual%202:3"}` |
+| GET | `transferencias/:id` | Cabecera + `detalle` (con facilitador e institución); si está recibida, `recibida_el` / `recibida_por` (salen de la bitácora) |
+| POST / PUT | `transferencias` / `transferencias/:id` | `{id_sucursal_origen, id_sucursal_destino, items: "Manual%201:5:12:34;Manual%202:3:12:34"}` (manual, cantidad, facilitador, institución) |
 | POST | `transferencias/:id/recibir` | Pasa `IND_RECIBIDA` a `'S'`; **409** si ya estaba |
 | POST | `transferencias/:id/revertir` | Deshace la recepción: devuelve las existencias y la deja pendiente; **409** si no estaba recibida |
 | DELETE | `transferencias/:id` | Pendiente: la borra. Recibida: revierte la recepción y la borra, en una transacción |

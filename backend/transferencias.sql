@@ -10,6 +10,7 @@
 --                                    en la sucursal de origen
 --   GET     transferencias/:id       cabecera + detalle
 --   POST    transferencias           {id_sucursal_origen, id_sucursal_destino, items}
+--                                    items: 'manual:cantidad:id_facilitador:id_institucion;...'
 --   PUT     transferencias/:id       idem (solo pendientes)
 --   POST    transferencias/:id/recibir
 --   POST    transferencias/:id/revertir
@@ -73,12 +74,25 @@
 --      `eliminar` de una recibida = revertir + borrar, en una transaccion.
 --
 --------------------------------------------------------------------------------
--- EL DETALLE: UNA LINEA POR MANUAL
+-- EL DETALLE: UNA LINEA POR MANUAL, FACILITADOR E INSTITUCION (12/10/2026)
 --------------------------------------------------------------------------------
 --
+-- Cada linea dice que manual, cuantos, para que FACILITADOR y en que
+-- INSTITUCION (TRANSFERENCIAS_DETALLE.ID_FACILITADOR / ID_INSTITUCION, con FK a
+-- FACILITADORES e INSTITUCIONES). Una misma transferencia reparte manuales
+-- entre varios facilitadores e instituciones.
+--
+--   - Facilitador e institucion son OBLIGATORIOS al guardar. Las lineas viejas
+--     (de antes de las columnas) los tienen en NULL: se siguen viendo, y al
+--     editar esa transferencia hay que completarlos.
+--   - La clave de la linea es (manual, facilitador, institucion): el mismo
+--     manual puede ir dos veces si va a otro facilitador o a otra institucion,
+--     pero no dos veces al mismo par (eso es la misma linea escrita dos veces).
+--   - Las existencias siguen siendo por sucursal: lo disponible y lo
+--     comprometido suman todas las lineas del manual.
+--
 -- El manual es el texto de INDICES_MANUALES.MANUAL (no hay tabla de manuales),
--- igual que en inventarios.sql. Una transferencia no puede repetir un manual:
--- dos lineas del mismo manual son la misma cosa escrita dos veces.
+-- igual que en inventarios.sql.
 --
 -- `guardar` compara lo que llega con lo que hay y hace UPDATE / INSERT / DELETE
 -- solo de lo que cambio, en vez de borrar y recrear todo: asi la bitacora
@@ -107,7 +121,9 @@ BEGIN
             UNION ALL SELECT 'TRANSFERENCIAS_DETALLE' FROM dual
             UNION ALL SELECT 'EXISTENCIAS' FROM dual
             UNION ALL SELECT 'INDICES_MANUALES' FROM dual
-            UNION ALL SELECT 'SUCURSALES' FROM dual) LOOP
+            UNION ALL SELECT 'SUCURSALES' FROM dual
+            UNION ALL SELECT 'FACILITADORES' FROM dual
+            UNION ALL SELECT 'INSTITUCIONES' FROM dual) LOOP
     SELECT COUNT(*) INTO l_n FROM user_tables WHERE table_name = t.nombre;
     IF l_n = 0 THEN
       DBMS_OUTPUT.PUT_LINE('[ERROR] No existe la tabla ' || t.nombre || '.');
@@ -115,6 +131,34 @@ BEGIN
       DBMS_OUTPUT.PUT_LINE('[OK]   Tabla ' || t.nombre || ' encontrada.');
     END IF;
   END LOOP;
+
+  -- Las dos columnas del 12/10/2026: sin ellas el paquete no compila.
+  FOR c IN (SELECT 'ID_FACILITADOR' AS col FROM dual
+            UNION ALL SELECT 'ID_INSTITUCION' FROM dual) LOOP
+    SELECT COUNT(*) INTO l_n FROM user_tab_columns
+     WHERE table_name = 'TRANSFERENCIAS_DETALLE' AND column_name = c.col;
+    IF l_n = 0 THEN
+      DBMS_OUTPUT.PUT_LINE('[ERROR] Falta TRANSFERENCIAS_DETALLE.' || c.col
+                           || '. Agregala antes: el paquete no va a compilar.');
+    ELSE
+      DBMS_OUTPUT.PUT_LINE('[OK]   Columna TRANSFERENCIAS_DETALLE.' || c.col || ' encontrada.');
+    END IF;
+  END LOOP;
+
+  -- Lineas viejas sin facilitador o institucion: se ven, pero al editar su
+  -- transferencia hay que completarlas. Dinamico: si faltan las columnas, este
+  -- conteo no tiene que romper el bloque.
+  BEGIN
+    EXECUTE IMMEDIATE
+      'SELECT COUNT(*) FROM transferencias_detalle'
+      || ' WHERE id_facilitador IS NULL OR id_institucion IS NULL' INTO l_n;
+    IF l_n > 0 THEN
+      DBMS_OUTPUT.PUT_LINE('[INFO]  ' || l_n || ' linea(s) de detalle sin facilitador o institucion'
+                           || ' (anteriores al cambio).');
+    END IF;
+  EXCEPTION
+    WHEN OTHERS THEN NULL;
+  END;
 END;
 /
 
@@ -144,8 +188,9 @@ CREATE OR REPLACE PACKAGE PKG_TRANSFERENCIAS_ETHOS AS
   -- Cabecera + detalle.
   PROCEDURE obtener(p_token IN VARCHAR2, p_id IN NUMBER);
 
-  -- Alta (p_id NULL) o modificacion de una PENDIENTE. p_items: 'manual:cantidad'
-  -- separados por ';', con el manual URL-encoded.
+  -- Alta (p_id NULL) o modificacion de una PENDIENTE. p_items:
+  -- 'manual:cantidad:id_facilitador:id_institucion' separados por ';', con el
+  -- manual URL-encoded. Facilitador e institucion, obligatorios.
   PROCEDURE guardar(
       p_token      IN VARCHAR2,
       p_id         IN NUMBER,
@@ -229,7 +274,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
   BEGIN
     CASE
       WHEN SQLCODE = -2291 THEN
-        p_error(400, 'Bad Request', 'Alguna de las sucursales no existe. Recarga la pantalla.');
+        p_error(400, 'Bad Request', 'Alguna sucursal, facilitador o institucion no existe. Recarga la pantalla.');
       WHEN SQLCODE IN (-1438, -12899) THEN
         p_error(400, 'Bad Request', 'Una cantidad o un texto excede el largo permitido');
       WHEN SQLCODE = -4098 THEN
@@ -327,10 +372,17 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
                -- que abrirla (el front la corta a dos lineas). Un solo nivel de
                -- subconsulta: correlacionar una vista en linea con `t` da
                -- ORA-00904 segun la version de Oracle.
-               (SELECT LISTAGG(d.manual, ', ' ON OVERFLOW TRUNCATE '…' WITHOUT COUNT)
+               -- DISTINCT: el mismo manual puede ir en varias lineas (a otro
+               -- facilitador o institucion).
+               (SELECT LISTAGG(DISTINCT d.manual, ', ' ON OVERFLOW TRUNCATE '…' WITHOUT COUNT)
                          WITHIN GROUP (ORDER BY d.manual)
                   FROM transferencias_detalle d
-                 WHERE d.id_transferencia = t.id_transferencia) AS resumen
+                 WHERE d.id_transferencia = t.id_transferencia) AS resumen,
+               (SELECT LISTAGG(DISTINCT f.nombre_apellido, ', ' ON OVERFLOW TRUNCATE '…' WITHOUT COUNT)
+                         WITHIN GROUP (ORDER BY f.nombre_apellido)
+                  FROM transferencias_detalle d
+                  JOIN facilitadores f ON f.id_facilitador = d.id_facilitador
+                 WHERE d.id_transferencia = t.id_transferencia) AS facilitadores
           FROM transferencias t
           JOIN sucursales so ON so.id_sucursal = t.id_sucursal_origen
           JOIN sucursales sd ON sd.id_sucursal = t.id_sucursal_destino
@@ -352,6 +404,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
       APEX_JSON.WRITE('lineas',              r.lineas);
       APEX_JSON.WRITE('unidades',            r.unidades);
       APEX_JSON.WRITE('resumen',             r.resumen);
+      APEX_JSON.WRITE('facilitadores',       r.facilitadores);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
 
@@ -480,17 +533,26 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
       APEX_JSON.WRITE('recibida_por', r.recibida_por);
     END LOOP;
 
+    -- LEFT JOIN: las lineas viejas no tienen facilitador ni institucion.
     APEX_JSON.OPEN_ARRAY('detalle');
     FOR r IN (
-        SELECT id_detalle, manual, cantidad
-          FROM transferencias_detalle
-         WHERE id_transferencia = p_id
-         ORDER BY manual
+        SELECT d.id_detalle, d.manual, d.cantidad,
+               d.id_facilitador, f.nombre_apellido AS facilitador,
+               d.id_institucion, i.nombre          AS institucion
+          FROM transferencias_detalle d
+          LEFT JOIN facilitadores f ON f.id_facilitador = d.id_facilitador
+          LEFT JOIN instituciones i ON i.id_institucion = d.id_institucion
+         WHERE d.id_transferencia = p_id
+         ORDER BY f.nombre_apellido NULLS FIRST, i.nombre NULLS FIRST, d.manual
     ) LOOP
       APEX_JSON.OPEN_OBJECT;
-      APEX_JSON.WRITE('id_detalle', r.id_detalle);
-      APEX_JSON.WRITE('manual',     r.manual);
-      APEX_JSON.WRITE('cantidad',   r.cantidad);
+      APEX_JSON.WRITE('id_detalle',     r.id_detalle);
+      APEX_JSON.WRITE('manual',         r.manual);
+      APEX_JSON.WRITE('cantidad',       r.cantidad);
+      APEX_JSON.WRITE('id_facilitador', r.id_facilitador);
+      APEX_JSON.WRITE('facilitador',    r.facilitador);
+      APEX_JSON.WRITE('id_institucion', r.id_institucion);
+      APEX_JSON.WRITE('institucion',    r.institucion);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;
@@ -513,8 +575,13 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
   -- inventarios.sql: ORDS bindea solo los campos escalares del body. El manual va
   -- URL-encoded porque es texto libre y podria traer los separadores ':' o ';'.
   --
-  -- El detalle se compara con lo que ya habia: UPDATE de lo que cambio de
-  -- cantidad, INSERT de lo nuevo, DELETE de lo que ya no esta. Ver el encabezado.
+  -- Cada item: 'manual:cantidad:id_facilitador:id_institucion'. Un item de dos
+  -- partes (el formato de antes del 12/10/2026) se rechaza: falta a quien va.
+  --
+  -- El detalle se compara con lo que ya habia, por la clave (manual,
+  -- facilitador, institucion): UPDATE de lo que cambio de cantidad, INSERT de
+  -- lo nuevo, DELETE de lo que ya no esta. Una linea vieja sin facilitador no
+  -- coincide con ninguna clave nueva: se borra y entra la completa.
   ------------------------------------------------------------------------------
   PROCEDURE guardar(
       p_token      IN VARCHAR2,
@@ -523,13 +590,21 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
       p_id_destino IN NUMBER,
       p_items      IN VARCHAR2
   ) IS
+    -- Separa las partes de la clave; no puede venir en un texto de manual.
+    c_sep       CONSTANT VARCHAR2(1) := CHR(31);
     l_id        NUMBER := p_id;
     l_items     APEX_T_VARCHAR2;
     l_par       APEX_T_VARCHAR2;
     l_manuales  APEX_T_VARCHAR2 := APEX_T_VARCHAR2();
     l_cants     APEX_T_NUMBER   := APEX_T_NUMBER();
+    l_facs      APEX_T_NUMBER   := APEX_T_NUMBER();
+    l_insts     APEX_T_NUMBER   := APEX_T_NUMBER();
+    l_claves    APEX_T_VARCHAR2 := APEX_T_VARCHAR2();
     l_manual    VARCHAR2(400);
     l_texto     VARCHAR2(50);
+    l_fac       NUMBER;
+    l_inst      NUMBER;
+    l_clave     VARCHAR2(500);
     l_n         PLS_INTEGER;
     l_fecha     DATE;
   BEGIN
@@ -555,7 +630,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
       CONTINUE WHEN TRIM(l_items(k)) IS NULL; -- un ';' de mas al final
 
       l_par := APEX_STRING.SPLIT(l_items(k), ':');
-      IF l_par.COUNT <> 2 OR TRIM(l_par(1)) IS NULL THEN
+      IF l_par.COUNT NOT IN (2, 4) OR TRIM(l_par(1)) IS NULL THEN
         rechazar('Item mal formado: "' || l_items(k) || '"');
       END IF;
       l_manual := UTL_URL.UNESCAPE(TRIM(l_par(1)), 'AL32UTF8');
@@ -566,19 +641,41 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
         rechazar('La cantidad de ' || l_manual || ' tiene que ser un entero mayor que 0');
       END IF;
 
+      -- Facilitador e institucion: obligatorios (ver el encabezado).
+      IF l_par.COUNT = 2
+         OR NOT REGEXP_LIKE(NVL(TRIM(l_par(3)), 'x'), '^[0-9]{1,15}$')
+         OR NOT REGEXP_LIKE(NVL(TRIM(l_par(4)), 'x'), '^[0-9]{1,15}$') THEN
+        rechazar('Falta el facilitador o la institucion de ' || l_manual);
+      END IF;
+      l_fac  := TO_NUMBER(TRIM(l_par(3)));
+      l_inst := TO_NUMBER(TRIM(l_par(4)));
+
       SELECT COUNT(*) INTO l_n FROM indices_manuales WHERE manual = l_manual;
       IF l_n = 0 THEN
         rechazar('El manual "' || l_manual || '" no existe');
       END IF;
+      SELECT COUNT(*) INTO l_n FROM facilitadores WHERE id_facilitador = l_fac;
+      IF l_n = 0 THEN
+        rechazar('El facilitador ' || l_fac || ' no existe. Recarga la pantalla');
+      END IF;
+      SELECT COUNT(*) INTO l_n FROM instituciones WHERE id_institucion = l_inst;
+      IF l_n = 0 THEN
+        rechazar('La institucion ' || l_inst || ' no existe. Recarga la pantalla');
+      END IF;
 
-      FOR j IN 1 .. l_manuales.COUNT LOOP
-        IF l_manuales(j) = l_manual THEN
-          rechazar(l_manual || ' esta dos veces: deja una sola linea con el total');
+      l_clave := l_manual || c_sep || l_fac || c_sep || l_inst;
+      FOR j IN 1 .. l_claves.COUNT LOOP
+        IF l_claves(j) = l_clave THEN
+          rechazar(l_manual || ' esta dos veces para el mismo facilitador e institucion:'
+                   || ' deja una sola linea con el total');
         END IF;
       END LOOP;
 
       l_manuales.EXTEND; l_manuales(l_manuales.COUNT) := l_manual;
       l_cants.EXTEND;    l_cants(l_cants.COUNT)       := TO_NUMBER(l_texto);
+      l_facs.EXTEND;     l_facs(l_facs.COUNT)         := l_fac;
+      l_insts.EXTEND;    l_insts(l_insts.COUNT)       := l_inst;
+      l_claves.EXTEND;   l_claves(l_claves.COUNT)     := l_clave;
     END LOOP;
 
     IF l_manuales.COUNT = 0 THEN
@@ -606,10 +703,12 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
        WHERE id_transferencia = l_id;
     END IF;
 
-    -- Lo que ya no esta.
+    -- Lo que ya no esta. Con facilitador o institucion en NULL la clave no
+    -- coincide con ninguna nueva: las lineas viejas se reemplazan.
     DELETE FROM transferencias_detalle
      WHERE id_transferencia = l_id
-       AND manual NOT IN (SELECT column_value FROM TABLE(l_manuales));
+       AND (manual || c_sep || id_facilitador || c_sep || id_institucion)
+           NOT IN (SELECT column_value FROM TABLE(l_claves));
 
     -- Lo que cambio de cantidad, y lo nuevo.
     FOR k IN 1 .. l_manuales.COUNT LOOP
@@ -617,13 +716,19 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
          SET cantidad = l_cants(k)
        WHERE id_transferencia = l_id
          AND manual = l_manuales(k)
+         AND id_facilitador = l_facs(k)
+         AND id_institucion = l_insts(k)
          AND cantidad <> l_cants(k);
 
       SELECT COUNT(*) INTO l_n FROM transferencias_detalle
-       WHERE id_transferencia = l_id AND manual = l_manuales(k);
+       WHERE id_transferencia = l_id
+         AND manual = l_manuales(k)
+         AND id_facilitador = l_facs(k)
+         AND id_institucion = l_insts(k);
       IF l_n = 0 THEN
-        INSERT INTO transferencias_detalle (id_transferencia, manual, cantidad)
-        VALUES (l_id, l_manuales(k), l_cants(k));
+        INSERT INTO transferencias_detalle
+               (id_transferencia, manual, cantidad, id_facilitador, id_institucion)
+        VALUES (l_id, l_manuales(k), l_cants(k), l_facs(k), l_insts(k));
       END IF;
     END LOOP;
 
@@ -677,8 +782,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
     SELECT id_sucursal_origen INTO l_origen
       FROM transferencias WHERE id_transferencia = p_id;
 
+    -- DISTINCT: el mismo manual puede venir en varias lineas (otro facilitador
+    -- o institucion) y la fila de existencias es una por manual y sucursal.
     INSERT INTO existencias (id_sucursal, manual, cantidad_actual, fecha_actualizacion)
-    SELECT l_origen, d.manual, 0, TRUNC(SYSDATE - 3/24, 'MI')
+    SELECT DISTINCT l_origen, d.manual, 0, TRUNC(SYSDATE - 3/24, 'MI')
       FROM transferencias_detalle d
      WHERE d.id_transferencia = p_id
        AND NOT EXISTS (SELECT 1 FROM existencias e
@@ -906,18 +1013,24 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
                -- -3h: JN_DATETIME lo pone el trigger con SYSDATE (UTC).
                CASE WHEN t.ind_recibida = 'S'
                     THEN TO_CHAR(r.cuando - 3/24, 'DD/MM/YYYY HH24:MI') END AS recibida_el,
-               d.id_detalle, d.manual, d.cantidad
+               d.id_detalle, d.manual, d.cantidad,
+               d.id_facilitador, f.nombre_apellido AS facilitador,
+               d.id_institucion, i.nombre          AS institucion
           FROM transferencias t
           JOIN sucursales so ON so.id_sucursal = t.id_sucursal_origen
           JOIN sucursales sd ON sd.id_sucursal = t.id_sucursal_destino
           JOIN transferencias_detalle d ON d.id_transferencia = t.id_transferencia
           LEFT JOIN recep r ON r.id_transferencia = t.id_transferencia
+          -- LEFT: las lineas viejas no tienen facilitador ni institucion.
+          LEFT JOIN facilitadores f ON f.id_facilitador = d.id_facilitador
+          LEFT JOIN instituciones i ON i.id_institucion = d.id_institucion
          WHERE (l_estado IS NULL OR NVL(t.ind_recibida, 'N') = l_estado)
            AND (p_id_sucursal IS NULL
                 OR p_id_sucursal IN (t.id_sucursal_origen, t.id_sucursal_destino))
            AND (l_desde IS NULL OR t.fecha >= l_desde)
            AND (l_hasta IS NULL OR t.fecha <  l_hasta)
-         ORDER BY t.fecha DESC, t.id_transferencia DESC, d.manual
+         ORDER BY t.fecha DESC, t.id_transferencia DESC,
+                  f.nombre_apellido NULLS FIRST, i.nombre NULLS FIRST, d.manual
          FETCH FIRST c_tope + 1 ROWS ONLY
     ) LOOP
       l_n := l_n + 1;
@@ -935,6 +1048,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_TRANSFERENCIAS_ETHOS AS
       APEX_JSON.WRITE('id_detalle',          r.id_detalle);
       APEX_JSON.WRITE('manual',              r.manual);
       APEX_JSON.WRITE('cantidad',            r.cantidad);
+      APEX_JSON.WRITE('id_facilitador',      r.id_facilitador);
+      APEX_JSON.WRITE('facilitador',         r.facilitador);
+      APEX_JSON.WRITE('id_institucion',      r.id_institucion);
+      APEX_JSON.WRITE('institucion',         r.institucion);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;
@@ -1162,6 +1279,17 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('        recibir una transferencia no moveria las existencias.');
   ELSE
     DBMS_OUTPUT.PUT_LINE('[OK]   TRANSFERENCIAS_ACTUALIZAR_EXISTENCIAS habilitado.');
+    -- Desde el 12/10/2026 el detalle puede traer el mismo manual en varias
+    -- lineas (otro facilitador o institucion). El trigger tiene que sumar
+    -- linea por linea; si crea la fila del destino con un INSERT ... SELECT
+    -- sin agrupar, la duplicaria. Su codigo no esta en el repo: se imprime
+    -- para revisarlo.
+    DBMS_OUTPUT.PUT_LINE('[INFO]  Codigo del trigger (revisar que sume por linea):');
+    FOR s IN (SELECT text FROM user_source
+               WHERE name = 'TRANSFERENCIAS_ACTUALIZAR_EXISTENCIAS' AND type = 'TRIGGER'
+               ORDER BY line) LOOP
+      DBMS_OUTPUT.PUT_LINE('        | ' || RTRIM(s.text, CHR(10) || CHR(13)));
+    END LOOP;
   END IF;
 
   -- `o.status` y no `status`: user_triggers TAMBIEN tiene STATUS (ORA-00918).

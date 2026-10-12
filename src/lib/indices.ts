@@ -9,6 +9,10 @@
  * cada fila y el `DISTINCT` de esa columna es el catálogo que usan
  * evaluaciones, intervenciones, inventario y transferencias. Por eso guardar
  * acá refresca también sus listas (ver {@link invalidarIndices}).
+ *
+ * Cada índice está activo o no (`ACTIVO` SI/NO). Un manual está inactivo
+ * cuando no le queda ningún índice activo: inactivarlo inactiva todos sus
+ * índices y activarlo los activa a todos ({@link activarManual}).
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -23,12 +27,14 @@ export type Indice = {
   manual: string;
   nro: number;
   titulo: string;
+  activo: boolean;
   usos: Uso[];
 };
 
 export type ListaIndices = { items: Indice[]; tablas: string[] };
 
-export type DatosIndice = { manual: string; nro: number; titulo: string };
+/** `activo` sin poner: un alta hereda el estado del manual; una edición lo deja igual. */
+export type DatosIndice = { manual: string; nro: number; titulo: string; activo?: boolean };
 
 const s = (v: unknown) => (v == null ? "" : String(v));
 
@@ -43,6 +49,8 @@ export async function listarIndices(): Promise<ListaIndices> {
       manual: s(x.manual),
       nro: Number(x.nro_indice ?? 0),
       titulo: s(x.titulo),
+      // Las filas de antes de la columna vienen sin valor: activas.
+      activo: s(x.activo).toUpperCase() !== "NO",
       usos: ((x.usos as Record<string, unknown>[] | undefined) ?? []).map((u) => ({
         tabla: s(u.tabla),
         cantidad: Number(u.cantidad ?? 0),
@@ -60,19 +68,41 @@ export async function listarIndices(): Promise<ListaIndices> {
 export async function guardarIndice(
   id: number | null,
   d: DatosIndice,
-): Promise<{ id: number; manual: string }> {
+): Promise<{ id: number; manual: string; activo: boolean }> {
   const r = (await authFetch(id == null ? "indices" : `indices/${id}`, {
     method: id == null ? "POST" : "PUT",
     headers: { "Content-Type": "application/json" },
     // El número como texto: el backend lo lee con punto sin depender del NLS.
-    body: JSON.stringify({ manual: d.manual, nro_indice: String(d.nro), titulo: d.titulo }),
-  })) as { id_indice?: number; manual?: string };
-  return { id: Number(r.id_indice ?? id ?? 0), manual: s(r.manual) || d.manual };
+    body: JSON.stringify({
+      manual: d.manual,
+      nro_indice: String(d.nro),
+      titulo: d.titulo,
+      activo: d.activo == null ? undefined : d.activo ? "SI" : "NO",
+    }),
+  })) as { id_indice?: number; manual?: string; activo?: string };
+  return {
+    id: Number(r.id_indice ?? id ?? 0),
+    manual: s(r.manual) || d.manual,
+    activo: s(r.activo).toUpperCase() !== "NO",
+  };
 }
 
 /** Baja. El backend responde 409 si una intervención o una evaluación lo usa. */
 export async function eliminarIndice(id: number): Promise<void> {
   await authFetch(`indices/${id}`, { method: "DELETE" });
+}
+
+/**
+ * Activa o inactiva **todos** los índices del manual. El manual va con la
+ * grafía exacta del listado. Devuelve cuántos índices cambiaron.
+ */
+export async function activarManual(manual: string, activo: boolean): Promise<number> {
+  const r = (await authFetch("indices-manual", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manual, activo: activo ? "SI" : "NO" }),
+  })) as { cambiados?: number };
+  return Number(r.cambiados ?? 0);
 }
 
 export const keysIndices = {

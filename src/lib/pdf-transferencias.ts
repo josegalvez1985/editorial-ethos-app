@@ -1,6 +1,7 @@
 /**
- * El PDF de la consulta de transferencias: resumen, por ruta, por manual y el
- * detalle de cada transferencia con sus manuales.
+ * El PDF de la consulta de transferencias: resumen, por ruta, por manual, por
+ * facilitador y el detalle de cada transferencia con sus manuales, cada uno con
+ * el facilitador y la institución a los que fue (12/10/2026).
  *
  * Lo común de los reportes —encabezado con logo, pie, tarjetas, estilo de
  * tabla, abrir en pestaña nueva— está en `pdf-base.ts`. Acá va solo el cuerpo.
@@ -31,8 +32,10 @@ import {
 } from "@/lib/pdf-base";
 import {
   agruparPorTransferencia,
+  resumirFacilitadores,
   resumirManuales,
   resumirRutas,
+  textoDestinatario,
   type LineaHistorial,
 } from "@/lib/transferencias";
 
@@ -44,6 +47,7 @@ export type MetaPdfTransferencias = {
   estado: string;
   periodo: string;
   manuales: string;
+  facilitadores: string;
   usuario: string;
 };
 
@@ -63,6 +67,7 @@ export async function generarPdfTransferencias(
   const transf = agruparPorTransferencia(lineas);
   const rutas = resumirRutas(transf);
   const manuales = resumirManuales(lineas);
+  const porFacilitador = resumirFacilitadores(lineas);
   const enCamino = transf.filter((x) => !x.recibida).length;
   const unidades = transf.reduce((s, x) => s + x.unidades, 0);
 
@@ -70,6 +75,7 @@ export async function generarPdfTransferencias(
   let y = dibujarFiltros(doc, INICIO_PRIMERA, [
     `Estado: ${meta.estado}   ·   Período: ${meta.periodo}`,
     `Manuales: ${meta.manuales}`,
+    `Facilitadores: ${meta.facilitadores}`,
   ]);
   y = dibujarTarjetas(doc, y, [
     { etiqueta: "Transferencias", valor: fmt(transf.length) },
@@ -126,6 +132,30 @@ export async function generarPdfTransferencias(
   });
   y = despuesDeTabla(doc, y);
 
+  // ── Por facilitador ──────────────────────────────────────────────────
+  y = dibujarSeccion(
+    doc,
+    y,
+    "Por facilitador",
+    `${porFacilitador.length} facilitador${porFacilitador.length === 1 ? "" : "es"}`,
+  );
+  autoTable(doc, {
+    ...ESTILO_TABLA,
+    startY: y,
+    didDrawPage: rotuloContinuacion(doc, doc.getNumberOfPages(), "Por facilitador"),
+    head: [["Facilitador", "Instituciones", "Libros"]],
+    body: porFacilitador.map((p) => [t(p.facilitador), fmt(p.instituciones), fmt(p.unidades)]),
+    foot: [["Total", "", fmt(unidades)]],
+    columnStyles: {
+      1: { halign: "right", cellWidth: 28 },
+      2: { halign: "right", cellWidth: 22 },
+    },
+    didParseCell: (d) => {
+      if (d.section !== "body" && d.column.index >= 1) d.cell.styles.halign = "right";
+    },
+  });
+  y = despuesDeTabla(doc, y);
+
   // ── Detalle: una transferencia por grupo de filas ────────────────────
   y = dibujarSeccion(
     doc,
@@ -158,6 +188,7 @@ export async function generarPdfTransferencias(
         );
       }
       fila.push(
+        { content: t(textoDestinatario(l)), styles: { fillColor: fondo } },
         { content: t(l.manual), styles: { fillColor: fondo } },
         { content: fmt(l.cantidad), styles: { fillColor: fondo, halign: "right" } },
       );
@@ -173,18 +204,18 @@ export async function generarPdfTransferencias(
     // Un grupo no se corta entre páginas si entra entero en la siguiente.
     rowPageBreak: "avoid",
     didDrawPage: rotuloContinuacion(doc, doc.getNumberOfPages(), "Detalle"),
-    head: [["Nº", "Fecha", "Ruta", "Estado", "Manual", "Cant."]],
+    head: [["Nº", "Fecha", "Ruta", "Estado", "Facilitador / Institución", "Manual", "Cant."]],
     body: cuerpo,
-    foot: [["", "", "", "", "Total", fmt(unidades)]],
+    foot: [["", "", "", "", "", "Total", fmt(unidades)]],
     columnStyles: {
-      0: { cellWidth: 12 },
-      1: { cellWidth: 26 },
-      2: { cellWidth: 44 },
-      3: { cellWidth: 26 },
-      5: { halign: "right", cellWidth: 14 },
+      0: { cellWidth: 11 },
+      1: { cellWidth: 22 },
+      2: { cellWidth: 32 },
+      3: { cellWidth: 22 },
+      6: { halign: "right", cellWidth: 13 },
     },
     didParseCell: (d) => {
-      if (d.section !== "body" && d.column.index === 5) d.cell.styles.halign = "right";
+      if (d.section !== "body" && d.column.index === 6) d.cell.styles.halign = "right";
     },
   });
   despuesDeTabla(doc, y);

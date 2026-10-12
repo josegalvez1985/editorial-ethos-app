@@ -1,6 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, CheckCircle2, ChevronRight, Loader2, Plus, Truck } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  ChevronRight,
+  Loader2,
+  Plus,
+  Truck,
+  UserRound,
+} from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
@@ -177,6 +185,12 @@ function Fila({ t }: { t: Transferencia }) {
             <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 truncate">{t.destino}</span>
           </p>
+          {t.facilitadores && (
+            <p className="mt-0.5 flex items-center gap-1 text-xs font-medium">
+              <UserRound className="size-3 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 truncate">{t.facilitadores}</span>
+            </p>
+          )}
           {t.resumen && (
             <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{t.resumen}</p>
           )}
@@ -191,8 +205,9 @@ function Fila({ t }: { t: Transferencia }) {
             <span className="font-medium text-foreground">
               {t.unidades} libro{t.unidades === 1 ? "" : "s"}
             </span>
+            {/* Líneas y no manuales: el mismo manual puede ir a varios facilitadores. */}
             <span>
-              {t.lineas} manual{t.lineas === 1 ? "" : "es"}
+              {t.lineas} línea{t.lineas === 1 ? "" : "s"}
             </span>
             {t.fecha && <span>{t.fecha}</span>}
           </p>

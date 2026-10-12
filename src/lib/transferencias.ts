@@ -1,6 +1,13 @@
 /**
  * Transferencias de manuales entre sucursales: cabecera (`TRANSFERENCIAS`) y
- * detalle (`TRANSFERENCIAS_DETALLE`, una línea por manual).
+ * detalle (`TRANSFERENCIAS_DETALLE`).
+ *
+ * **Cada línea va a un facilitador y una institución** (12/10/2026): manual,
+ * cantidad, `ID_FACILITADOR` e `ID_INSTITUCION`, los dos obligatorios al
+ * guardar. Una transferencia reparte manuales entre varios; el mismo manual
+ * puede repetirse si va a otro facilitador o a otra institución. Las líneas
+ * viejas no los tienen (`null`): se ven como "Sin asignar" y hay que
+ * completarlas para volver a guardar.
  *
  * Contrato del backend: `backend/transferencias.sql`.
  *
@@ -48,11 +55,24 @@ export type Transferencia = {
   unidades: number;
   /** Los manuales, separados por coma. */
   resumen: string | null;
+  /** Los facilitadores, separados por coma. */
+  facilitadores: string | null;
 };
 
-export type LineaDetalle = { manual: string; cantidad: number };
+/** A quién va una línea. `null` en las líneas de antes del 12/10/2026. */
+export type Destinatario = {
+  id_facilitador: number | null;
+  facilitador: string | null;
+  id_institucion: number | null;
+  institucion: string | null;
+};
 
-export type TransferenciaDetalle = Omit<Transferencia, "lineas" | "unidades" | "resumen"> & {
+export type LineaDetalle = Destinatario & { manual: string; cantidad: number };
+
+export type TransferenciaDetalle = Omit<
+  Transferencia,
+  "lineas" | "unidades" | "resumen" | "facilitadores"
+> & {
   /** Solo si está recibida. Sale de la bitácora: no hay columna. */
   recibida_el: string | null;
   recibida_por: string | null;
@@ -79,10 +99,18 @@ export type FiltrosTransferencias = {
 
 export type PaginaTransferencias = { data: Transferencia[]; total: number };
 
+/** Al guardar, facilitador e institución son obligatorios. */
+export type LineaInput = {
+  manual: string;
+  cantidad: number;
+  id_facilitador: number;
+  id_institucion: number;
+};
+
 export type TransferenciaInput = {
   id_sucursal_origen: number;
   id_sucursal_destino: number;
-  lineas: LineaDetalle[];
+  lineas: LineaInput[];
 };
 
 /* -------------------------------------------------------------------------- */
@@ -90,6 +118,16 @@ export type TransferenciaInput = {
 /* -------------------------------------------------------------------------- */
 
 const txt = (v: unknown) => (v == null || v === "" ? null : String(v));
+const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
+
+function mapearDestinatario(row: Record<string, unknown>): Destinatario {
+  return {
+    id_facilitador: num(row.id_facilitador),
+    facilitador: txt(row.facilitador),
+    id_institucion: num(row.id_institucion),
+    institucion: txt(row.institucion),
+  };
+}
 
 function mapearCabecera(row: Record<string, unknown>) {
   return {
@@ -121,6 +159,7 @@ export async function listarTransferencias(
       lineas: Number(row.lineas ?? 0),
       unidades: Number(row.unidades ?? 0),
       resumen: txt(row.resumen),
+      facilitadores: txt(row.facilitadores),
     })),
   };
 }
@@ -133,6 +172,7 @@ export async function obtenerTransferencia(id: number): Promise<TransferenciaDet
     recibida_el: txt(d.recibida_el),
     recibida_por: txt(d.recibida_por),
     detalle: ((d.detalle as Record<string, unknown>[] | undefined) ?? []).map((l) => ({
+      ...mapearDestinatario(l),
       manual: String(l.manual ?? ""),
       cantidad: Number(l.cantidad ?? 0),
     })),
@@ -169,15 +209,21 @@ export function disponible(m: ManualOrigen): number {
 
 /**
  * El cuerpo de alta y modificación. Las líneas viajan como texto
- * (`"Manual%201:5;Manual%202:3"`) y no como array JSON: ORDS bindea solo los
- * campos escalares. El manual va con `encodeURIComponent` porque es texto
- * libre y podría traer `:` o `;`, que son los separadores.
+ * (`"Manual%201:5:12:34;..."` = manual, cantidad, facilitador, institución) y
+ * no como array JSON: ORDS bindea solo los campos escalares. El manual va con
+ * `encodeURIComponent` porque es texto libre y podría traer `:` o `;`, que
+ * son los separadores.
  */
 function cuerpo(input: TransferenciaInput) {
   return JSON.stringify({
     id_sucursal_origen: input.id_sucursal_origen,
     id_sucursal_destino: input.id_sucursal_destino,
-    items: input.lineas.map((l) => `${encodeURIComponent(l.manual)}:${l.cantidad}`).join(";"),
+    items: input.lineas
+      .map(
+        (l) =>
+          `${encodeURIComponent(l.manual)}:${l.cantidad}:${l.id_facilitador}:${l.id_institucion}`,
+      )
+      .join(";"),
   });
 }
 
@@ -230,7 +276,7 @@ export async function eliminarTransferencia(id: number): Promise<void> {
  * la misma lista salen las tres vistas (por transferencia, por ruta, por
  * manual). Ver `historial` en el SQL.
  */
-export type LineaHistorial = {
+export type LineaHistorial = Destinatario & {
   id_transferencia: number;
   id_sucursal_origen: number;
   origen: string;
@@ -277,6 +323,7 @@ export async function historialTransferencias(
     tope: Number(r.tope ?? 0),
     data: (r.data ?? []).map((row) => ({
       ...mapearCabecera(row),
+      ...mapearDestinatario(row),
       recibida_el: txt(row.recibida_el),
       manual: String(row.manual ?? ""),
       cantidad: Number(row.cantidad ?? 0),
@@ -285,7 +332,10 @@ export async function historialTransferencias(
 }
 
 /** Una transferencia armada a partir de sus líneas. */
-export type TransferenciaAgrupada = Omit<LineaHistorial, "manual" | "cantidad"> & {
+export type TransferenciaAgrupada = Omit<
+  LineaHistorial,
+  "manual" | "cantidad" | keyof Destinatario
+> & {
   lineas: LineaDetalle[];
   unidades: number;
 };
@@ -299,11 +349,26 @@ export function agruparPorTransferencia(lineas: LineaHistorial[]): Transferencia
   for (const l of lineas) {
     let t = m.get(l.id_transferencia);
     if (!t) {
-      const { manual: _m, cantidad: _c, ...cab } = l;
+      const {
+        manual: _m,
+        cantidad: _c,
+        id_facilitador: _f,
+        facilitador: _fn,
+        id_institucion: _i,
+        institucion: _in,
+        ...cab
+      } = l;
       t = { ...cab, lineas: [], unidades: 0 };
       m.set(l.id_transferencia, t);
     }
-    t.lineas.push({ manual: l.manual, cantidad: l.cantidad });
+    t.lineas.push({
+      manual: l.manual,
+      cantidad: l.cantidad,
+      id_facilitador: l.id_facilitador,
+      facilitador: l.facilitador,
+      id_institucion: l.id_institucion,
+      institucion: l.institucion,
+    });
     t.unidades += l.cantidad;
   }
   return [...m.values()];
@@ -347,6 +412,38 @@ export function resumirManuales(lineas: LineaHistorial[]): ManualMovido[] {
   }
   return [...m.values()]
     .map(({ ids, ...r }) => ({ ...r, transferencias: ids.size }))
+    .sort((a, b) => b.unidades - a.unidades);
+}
+
+/** "Ana Pérez · Esc. San José", o "Sin asignar" en las líneas viejas. */
+export function textoDestinatario(d: Destinatario): string {
+  if (d.id_facilitador == null && d.id_institucion == null) return "Sin asignar";
+  return [d.facilitador ?? "Sin facilitador", d.institucion ?? "Sin institución"].join(" · ");
+}
+
+export type FacilitadorMovido = {
+  facilitador: string;
+  unidades: number;
+  instituciones: number;
+};
+
+/** Cuánto recibió cada facilitador (en cuántas instituciones), de mayor a menor. */
+export function resumirFacilitadores(lineas: LineaHistorial[]): FacilitadorMovido[] {
+  const m = new Map<string, FacilitadorMovido & { insts: Set<string> }>();
+  for (const l of lineas) {
+    const k = l.id_facilitador == null ? "" : String(l.id_facilitador);
+    const r = m.get(k) ?? {
+      facilitador: l.facilitador ?? "Sin asignar",
+      unidades: 0,
+      instituciones: 0,
+      insts: new Set(),
+    };
+    r.unidades += l.cantidad;
+    if (l.id_institucion != null) r.insts.add(String(l.id_institucion));
+    m.set(k, r);
+  }
+  return [...m.values()]
+    .map(({ insts, ...r }) => ({ ...r, instituciones: insts.size }))
     .sort((a, b) => b.unidades - a.unidades);
 }
 

@@ -8,7 +8,9 @@
 -- de la 28.
 --
 -- La tabla: ID_INDICE (identity), MANUAL (obligatorio, VARCHAR2(100)),
--- NRO_INDICE (obligatorio, NUMBER) y TITULO (obligatorio, hasta 500).
+-- NRO_INDICE (obligatorio, NUMBER), TITULO (obligatorio, hasta 500) y ACTIVO
+-- ('SI'/'NO', ver REGLAS, 4). La columna ACTIVO se agrega a mano antes de
+-- correr este script (y el trigger INDICES_MANUALES_JNTRG la copia a la _JN).
 --
 -- NO HAY TABLA DE MANUALES: MANUAL es el texto de cada fila, y el DISTINCT de
 -- esa columna ES el catalogo de manuales (lo usan evaluaciones, intervenciones,
@@ -21,9 +23,11 @@
 -- QUE PUBLICA ESTE SCRIPT
 --
 --   GET     indices          todos, por manual y numero, con en que tablas se usa cada uno
---   POST    indices          {manual, nro_indice, titulo} -> {id_indice, manual}
---   PUT     indices/:id      {manual, nro_indice, titulo}
+--   POST    indices          {manual, nro_indice, titulo, activo?} -> {id_indice, manual, activo}
+--   PUT     indices/:id      {manual, nro_indice, titulo, activo?}
 --   DELETE  indices/:id      solo si nada lo usa
+--   PUT     indices-manual   {manual, activo} -> activa o inactiva TODOS los
+--                            indices del manual; devuelve {cambiados}
 --
 -- CORRER DESPUES de auth.sql y roles_paginas.sql (usa PKG_ROLES_PAGINAS_ETHOS
 -- para los permisos).
@@ -52,6 +56,16 @@
 --
 -- 3. UN INDICE EN USO NO SE BORRA (409), como los demas catalogos.
 --
+-- 4. ACTIVO. Cada indice es 'SI' o 'NO'; NULL se lee como 'SI' (las filas de
+--    antes de la columna no se tocan: un UPDATE masivo dejaria una fila de
+--    auditoria en la _JN por cada indice).
+--    - Inactivar un manual (PUT indices-manual) inactiva todos sus indices, y
+--      activarlo los activa a todos. Solo se actualizan las filas que cambian.
+--    - Un indice nuevo sin "activo" hereda el estado del manual: 'NO' si el
+--      manual ya existe y no le queda ninguno activo; si no, 'SI'.
+--    - Un manual esta inactivo cuando no tiene ningun indice activo.
+--    - Desde el dialogo se puede activar o inactivar un indice suelto.
+--
 --------------------------------------------------------------------------------
 -- EN USO
 --------------------------------------------------------------------------------
@@ -68,7 +82,7 @@
 --
 --   GET     solo sesion.
 --   POST    PUEDE_INSERTAR   en la pagina de /indices (la 28)
---   PUT     PUEDE_ACTUALIZAR
+--   PUT     PUEDE_ACTUALIZAR (tambien indices-manual)
 --   DELETE  PUEDE_BORRAR
 --
 --------------------------------------------------------------------------------
@@ -98,6 +112,19 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('[ERROR] No existe la tabla INDICES_MANUALES.');
   ELSE
     DBMS_OUTPUT.PUT_LINE('[OK]   Tabla INDICES_MANUALES encontrada.');
+    SELECT COUNT(*) INTO l_n FROM user_tab_columns
+     WHERE table_name = 'INDICES_MANUALES' AND column_name = 'ACTIVO';
+    IF l_n = 0 THEN
+      DBMS_OUTPUT.PUT_LINE('[ERROR] Falta la columna INDICES_MANUALES.ACTIVO (VARCHAR2(2), SI/NO).'
+                           || ' Agregala antes: el paquete no va a compilar.');
+    ELSE
+      DBMS_OUTPUT.PUT_LINE('[OK]   Columna ACTIVO encontrada.');
+    END IF;
+    SELECT COUNT(*) INTO l_n FROM user_tab_columns
+     WHERE table_name = 'INDICES_MANUALES_JN' AND column_name = 'ACTIVO';
+    IF l_n = 0 THEN
+      DBMS_OUTPUT.PUT_LINE('[WARN]  INDICES_MANUALES_JN no tiene ACTIVO: la auditoria no lo guarda.');
+    END IF;
     FOR tr IN (SELECT trigger_name, triggering_event FROM user_triggers
                 WHERE table_name = 'INDICES_MANUALES' ORDER BY trigger_name) LOOP
       DBMS_OUTPUT.PUT_LINE('       trigger ' || tr.trigger_name || ' (' || tr.triggering_event || ')');
@@ -108,6 +135,20 @@ BEGIN
       DBMS_OUTPUT.PUT_LINE('       manual ''' || m.manual || ''': ' || m.n
                            || ' indice(s), del ' || m.desde || ' al ' || m.hasta);
     END LOOP;
+    -- Dinamico: si ACTIVO todavia no existe, este bloque no tiene que fallar.
+    BEGIN
+      EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM indices_manuales WHERE activo = ''NO'''
+        INTO l_n;
+      DBMS_OUTPUT.PUT_LINE('       ' || l_n || ' indice(s) inactivo(s).');
+      EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM indices_manuales'
+        || ' WHERE activo IS NOT NULL AND activo NOT IN (''SI'', ''NO'')' INTO l_n;
+      IF l_n > 0 THEN
+        DBMS_OUTPUT.PUT_LINE('[WARN]  ' || l_n || ' indice(s) con ACTIVO distinto de SI/NO:'
+                             || ' se leen como activos.');
+      END IF;
+    EXCEPTION
+      WHEN OTHERS THEN NULL;
+    END;
     -- Los numeros repetidos dentro de un manual (ver REGLAS, 1).
     FOR d IN (SELECT manual, nro_indice, COUNT(*) AS n
                 FROM indices_manuales
@@ -137,14 +178,21 @@ CREATE OR REPLACE PACKAGE PKG_INDICES_ETHOS AS
 
   PROCEDURE listar(p_token IN VARCHAR2);
 
-  -- p_id NULL = alta.
+  -- p_id NULL = alta. p_activo 'SI'/'NO'; NULL = alta hereda el estado del
+  -- manual, edicion lo deja como estaba (REGLAS, 4).
   PROCEDURE guardar(p_token  IN VARCHAR2,
                     p_id     IN VARCHAR2,
                     p_manual IN VARCHAR2,
                     p_nro    IN VARCHAR2,
-                    p_titulo IN VARCHAR2);
+                    p_titulo IN VARCHAR2,
+                    p_activo IN VARCHAR2 DEFAULT NULL);
 
   PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN VARCHAR2);
+
+  -- Activa ('SI') o inactiva ('NO') todos los indices del manual.
+  PROCEDURE activar_manual(p_token  IN VARCHAR2,
+                           p_manual IN VARCHAR2,
+                           p_activo IN VARCHAR2);
 
 END PKG_INDICES_ETHOS;
 /
@@ -228,6 +276,19 @@ CREATE OR REPLACE PACKAGE BODY PKG_INDICES_ETHOS AS
   BEGIN
     RETURN TRIM(REGEXP_REPLACE(p_valor, '\s+', ' '));
   END f_limpio;
+
+  -- 'SI' / 'NO' (acepta S/N, true/false, 1/0); NULL si vino vacio; 'X' si no
+  -- es ninguno de esos (el que llama responde 400).
+  FUNCTION f_activo(p_valor IN VARCHAR2) RETURN VARCHAR2 IS
+    l_v VARCHAR2(10) := UPPER(TRIM(SUBSTR(p_valor, 1, 10)));
+  BEGIN
+    RETURN CASE
+             WHEN l_v IS NULL THEN NULL
+             WHEN l_v IN ('SI', 'S', 'TRUE', '1') THEN 'SI'
+             WHEN l_v IN ('NO', 'N', 'FALSE', '0') THEN 'NO'
+             ELSE 'X'
+           END;
+  END f_activo;
 
   ------------------------------------------------------------------------------
   -- Sesion + permiso. 'C' pide solo sesion; 'I', 'U', 'D' piden la accion en
@@ -327,7 +388,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_INDICES_ETHOS AS
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;
     APEX_JSON.OPEN_ARRAY('data');
-    FOR r IN (SELECT id_indice, manual, nro_indice, titulo
+    FOR r IN (SELECT id_indice, manual, nro_indice, titulo,
+                     CASE WHEN activo = 'NO' THEN 'NO' ELSE 'SI' END AS activo
                 FROM indices_manuales
                ORDER BY UPPER(manual), nro_indice, id_indice) LOOP
       APEX_JSON.OPEN_OBJECT;
@@ -335,6 +397,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INDICES_ETHOS AS
       APEX_JSON.WRITE('manual',     r.manual);
       APEX_JSON.WRITE('nro_indice', r.nro_indice);
       APEX_JSON.WRITE('titulo',     r.titulo, TRUE);
+      APEX_JSON.WRITE('activo',     r.activo);
       APEX_JSON.OPEN_ARRAY('usos');
       FOR i IN 1 .. l_hijas.COUNT LOOP
         IF l_hijas(i).cuentas.EXISTS(r.id_indice) THEN
@@ -362,21 +425,29 @@ CREATE OR REPLACE PACKAGE BODY PKG_INDICES_ETHOS AS
                     p_id     IN VARCHAR2,
                     p_manual IN VARCHAR2,
                     p_nro    IN VARCHAR2,
-                    p_titulo IN VARCHAR2) IS
+                    p_titulo IN VARCHAR2,
+                    p_activo IN VARCHAR2 DEFAULT NULL) IS
     -- 32767: un texto mas largo romperia en la declaracion, antes del
     -- EXCEPTION. Los topes reales se validan abajo con mensaje.
     l_manual    VARCHAR2(32767) := f_limpio(p_manual);
     l_titulo    VARCHAR2(32767) := f_limpio(p_titulo);
     l_nro       NUMBER := f_nro(p_nro);
     l_id        NUMBER := f_id(p_id);
+    l_activo    VARCHAR2(2) := f_activo(p_activo);
     l_ant_man   indices_manuales.manual%TYPE;
     l_ant_nro   indices_manuales.nro_indice%TYPE;
+    l_ant_act   VARCHAR2(2);
     l_ocupado   indices_manuales.titulo%TYPE;
     l_hijas     t_hijas;
+    l_n         PLS_INTEGER;
+    l_activos   PLS_INTEGER;
   BEGIN
     IF NOT exigir(p_token, CASE WHEN p_id IS NULL THEN 'I' ELSE 'U' END) THEN RETURN; END IF;
     IF p_id IS NOT NULL AND l_id IS NULL THEN
       p_error(400, 'Bad Request', 'Id de indice invalido'); RETURN;
+    END IF;
+    IF l_activo = 'X' THEN
+      p_error(400, 'Bad Request', 'Activo tiene que ser SI o NO'); RETURN;
     END IF;
     IF l_manual IS NULL THEN
       p_error(400, 'Bad Request', 'El manual es obligatorio'); RETURN;
@@ -399,7 +470,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_INDICES_ETHOS AS
 
     IF l_id IS NOT NULL THEN
       BEGIN
-        SELECT manual, nro_indice INTO l_ant_man, l_ant_nro
+        SELECT manual, nro_indice, CASE WHEN activo = 'NO' THEN 'NO' ELSE 'SI' END
+          INTO l_ant_man, l_ant_nro, l_ant_act
           FROM indices_manuales WHERE id_indice = l_id;
       EXCEPTION
         WHEN NO_DATA_FOUND THEN
@@ -456,15 +528,30 @@ CREATE OR REPLACE PACKAGE BODY PKG_INDICES_ETHOS AS
       END;
     END IF;
 
+    -- REGLAS, 4: sin "activo", el alta hereda el estado del manual (un manual
+    -- inactivo sigue inactivo aunque se le cargue un indice) y la edicion
+    -- deja el que tenia.
+    IF l_activo IS NULL THEN
+      IF l_id IS NULL THEN
+        SELECT COUNT(*), COUNT(CASE WHEN NVL(activo, 'SI') <> 'NO' THEN 1 END)
+          INTO l_n, l_activos
+          FROM indices_manuales WHERE manual = l_manual;
+        l_activo := CASE WHEN l_n > 0 AND l_activos = 0 THEN 'NO' ELSE 'SI' END;
+      ELSE
+        l_activo := l_ant_act;
+      END IF;
+    END IF;
+
     IF l_id IS NULL THEN
-      INSERT INTO indices_manuales (manual, nro_indice, titulo)
-      VALUES (l_manual, l_nro, l_titulo)
+      INSERT INTO indices_manuales (manual, nro_indice, titulo, activo)
+      VALUES (l_manual, l_nro, l_titulo, l_activo)
       RETURNING id_indice INTO l_id;
     ELSE
       UPDATE indices_manuales
          SET manual     = l_manual,
              nro_indice = l_nro,
-             titulo     = l_titulo
+             titulo     = l_titulo,
+             activo     = l_activo
        WHERE id_indice = l_id;
     END IF;
     COMMIT;
@@ -475,6 +562,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INDICES_ETHOS AS
     APEX_JSON.WRITE('id_indice', l_id);
     -- Con la grafia con que quedo, que puede no ser la que se mando.
     APEX_JSON.WRITE('manual', l_manual);
+    APEX_JSON.WRITE('activo', l_activo);
     APEX_JSON.WRITE('message', CASE WHEN p_id IS NULL THEN 'Indice creado' ELSE 'Indice actualizado' END);
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION
@@ -522,6 +610,69 @@ CREATE OR REPLACE PACKAGE BODY PKG_INDICES_ETHOS AS
       p_error_oracle;
   END eliminar;
 
+  /* ---------------------------------------------------------------------- */
+  /* ACTIVAR / INACTIVAR UN MANUAL                                          */
+  /* ---------------------------------------------------------------------- */
+
+  -- REGLAS, 4. El manual va con la grafia exacta del listado (el texto es el
+  -- identificador): dos grafias del "mismo" manual son dos manuales aca, como
+  -- en la pantalla.
+  PROCEDURE activar_manual(p_token  IN VARCHAR2,
+                           p_manual IN VARCHAR2,
+                           p_activo IN VARCHAR2) IS
+    l_activo  VARCHAR2(2) := f_activo(p_activo);
+    l_manual  VARCHAR2(32767) := p_manual;
+    l_n       PLS_INTEGER;
+    l_cambios PLS_INTEGER;
+  BEGIN
+    IF NOT exigir(p_token, 'U') THEN RETURN; END IF;
+    IF l_activo IS NULL OR l_activo = 'X' THEN
+      p_error(400, 'Bad Request', 'Activo tiene que ser SI o NO'); RETURN;
+    END IF;
+    IF TRIM(l_manual) IS NULL THEN
+      p_error(400, 'Bad Request', 'El manual es obligatorio'); RETURN;
+    END IF;
+    IF LENGTH(l_manual) > c_manual THEN
+      p_error(404, 'Not Found', 'El manual no existe'); RETURN;
+    END IF;
+
+    SELECT COUNT(*) INTO l_n FROM indices_manuales WHERE manual = l_manual;
+    IF l_n = 0 THEN
+      -- Por si vino con otros espacios: el de la misma grafia limpia.
+      l_manual := f_limpio(p_manual);
+      BEGIN
+        SELECT manual INTO l_manual
+          FROM indices_manuales
+         WHERE TRIM(REGEXP_REPLACE(manual, '\s+', ' ')) = l_manual
+         FETCH FIRST 1 ROW ONLY;
+      EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+          p_error(404, 'Not Found', 'El manual no existe'); RETURN;
+      END;
+    END IF;
+
+    -- Solo las filas que cambian: cada UPDATE deja una fila en la _JN.
+    UPDATE indices_manuales
+       SET activo = l_activo
+     WHERE manual = l_manual
+       AND CASE WHEN activo = 'NO' THEN 'NO' ELSE 'SI' END <> l_activo;
+    l_cambios := SQL%ROWCOUNT;
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('manual', l_manual);
+    APEX_JSON.WRITE('activo', l_activo);
+    APEX_JSON.WRITE('cambiados', l_cambios);
+    APEX_JSON.WRITE('message', CASE l_activo WHEN 'SI' THEN 'Manual activado' ELSE 'Manual inactivado' END);
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      ROLLBACK;
+      p_error_oracle;
+  END activar_manual;
+
 END PKG_INDICES_ETHOS;
 /
 
@@ -567,7 +718,8 @@ DECLARE
   END handler;
 BEGIN
   FOR r IN (SELECT 'indices' AS p FROM dual
-            UNION ALL SELECT 'indices/:id' FROM dual) LOOP
+            UNION ALL SELECT 'indices/:id' FROM dual
+            UNION ALL SELECT 'indices-manual' FROM dual) LOOP
     FOR m IN (SELECT 'GET' AS v FROM dual UNION ALL SELECT 'POST' FROM dual
               UNION ALL SELECT 'PUT' FROM dual UNION ALL SELECT 'DELETE' FROM dual
               UNION ALL SELECT 'OPTIONS' FROM dual) LOOP
@@ -580,20 +732,28 @@ BEGIN
                        p_priority => 0, p_etag_type => 'NONE');
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'indices/:id',
                        p_priority => 1, p_etag_type => 'NONE');
+  ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'indices-manual',
+                       p_priority => 0, p_etag_type => 'NONE');
 
   handler('indices', 'GET', '
     PKG_INDICES_ETHOS.LISTAR(p_token => l_token);');
 
   handler('indices', 'POST', '
     PKG_INDICES_ETHOS.GUARDAR(p_token => l_token, p_id => NULL,
-        p_manual => :manual, p_nro => :nro_indice, p_titulo => :titulo);');
+        p_manual => :manual, p_nro => :nro_indice, p_titulo => :titulo,
+        p_activo => :activo);');
 
   handler('indices/:id', 'PUT', '
     PKG_INDICES_ETHOS.GUARDAR(p_token => l_token, p_id => :id,
-        p_manual => :manual, p_nro => :nro_indice, p_titulo => :titulo);');
+        p_manual => :manual, p_nro => :nro_indice, p_titulo => :titulo,
+        p_activo => :activo);');
 
   handler('indices/:id', 'DELETE', '
     PKG_INDICES_ETHOS.ELIMINAR(p_token => l_token, p_id => :id);');
+
+  handler('indices-manual', 'PUT', '
+    PKG_INDICES_ETHOS.ACTIVAR_MANUAL(p_token => l_token,
+        p_manual => :manual, p_activo => :activo);');
 
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Handlers de indices publicados.');
@@ -629,6 +789,7 @@ END;
 BEGIN
   preflight('indices');
   preflight('indices/:id');
+  preflight('indices-manual');
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado.');
 EXCEPTION
@@ -654,6 +815,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('       POST   indices');
     DBMS_OUTPUT.PUT_LINE('       PUT    indices/:id');
     DBMS_OUTPUT.PUT_LINE('       DELETE indices/:id');
+    DBMS_OUTPUT.PUT_LINE('       PUT    indices-manual');
   ELSE
     DBMS_OUTPUT.PUT_LINE('[ERROR] PKG_INDICES_ETHOS quedo INVALID.');
     FOR e IN (SELECT line, text FROM user_errors
