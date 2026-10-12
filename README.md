@@ -100,7 +100,7 @@ las dos fijas.
 
 | Pantalla | Ruta | Quién | Para qué |
 | --- | --- | --- | --- |
-| **Roles de páginas** | `/permisos` | quien tenga la página 2 en `ROLES_PAGINAS` | Dar y quitar permisos a cada usuario (`ROLES_PAGINAS`), y copiarle los de otro. Es la página 2 de APEX; sus modales 3 (Crear Rol) y 19 (Copiar Roles) son diálogos de esta misma pantalla, con los permisos de la 2 |
+| **Roles de páginas** | `/permisos` | quien tenga la página 2 en `ROLES_PAGINAS` | Dar y quitar permisos a cada usuario (`ROLES_PAGINAS`), y copiarle los de otro. Buscador de usuarios y, desde el 12/10/2026, de las páginas de cada usuario (por nombre o número). Es la página 2 de APEX; sus modales 3 (Crear Rol) y 19 (Copiar Roles) son diálogos de esta misma pantalla, con los permisos de la 2 |
 | **Crear páginas** | `/paginas` | solo JOSEG | Alta, modificación y baja de las páginas del menú (`MENU_PAGINAS`), con un buscador por nombre, ruta, menú principal o número |
 
 **Si nadie tiene la página 2 habilitada, nadie puede dar permisos desde el sitio**: hay que
