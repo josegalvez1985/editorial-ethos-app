@@ -19,6 +19,13 @@
  * elige un par facilitador + institución que ya tiene tarjeta, las dos se
  * juntan y se suman las cantidades del mismo manual.
  *
+ * **La cantidad se sugiere** (13/10/2026): lo que el facilitador postuló de
+ * cada manual en esa institución, en las postulaciones activas del año lectivo
+ * actual. Una tarjeta recién asignada y sin manuales se llena sola; si ya
+ * tiene, queda "Usar sugerencia", y cada línea dice cuánto se postuló. Ver
+ * `lib/transferencias.ts`, "La cantidad sugerida", por cómo se cruzan los
+ * nombres del catálogo con las columnas de POSTULACIONES.
+ *
  * Las líneas de antes del 12/10/2026 no tienen facilitador ni institución:
  * forman la tarjeta "Sin asignar", y para volver a guardar hay que asignarla.
  *
@@ -47,6 +54,7 @@ import {
   BookOpen,
   Building2,
   CheckCircle2,
+  Lightbulb,
   Loader2,
   Minus,
   PackageCheck,
@@ -59,7 +67,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { MultiSelectorModal } from "@/components/multi-selector-modal";
@@ -76,17 +84,23 @@ import {
 } from "@/components/ui/alert-dialog";
 import { keys as keysListas, lista, STALE_LISTAS } from "@/lib/evaluaciones";
 import { keysInventario, listarSucursales } from "@/lib/inventarios";
+import { keysPostulaciones, listarTodasPostulaciones, MANUALES } from "@/lib/postulaciones";
 import {
   actualizarTransferencia,
+  claveDeManual,
   crearTransferencia,
   disponible,
   eliminarTransferencia,
+  filtrosPostulacionesDe,
   keysTransferencias,
   manualesDeOrigen,
+  manualesDelCatalogo,
   recibirTransferencia,
   revertirRecepcion,
+  sugerirPorPostulaciones,
   textoDestinatario,
   type ManualOrigen,
+  type SugerenciaTransferencia,
   type TransferenciaDetalle,
 } from "@/lib/transferencias";
 
@@ -273,6 +287,14 @@ export function TransferenciaForm({ previa }: { previa?: TransferenciaDetalle })
           : l,
       ),
     }));
+
+  /** La sugerencia de las postulaciones: pisa la cantidad de esos manuales y conserva el resto. */
+  const sugerirLineas = (clave: string, nuevas: Linea[]) =>
+    cambiarGrupo(clave, (g) => {
+      const out = g.lineas.map((l) => nuevas.find((n) => n.manual === l.manual) ?? l);
+      for (const n of nuevas) if (!out.some((l) => l.manual === n.manual)) out.push(n);
+      return { ...g, lineas: out };
+    });
 
   const quitarLinea = (clave: string, manual: string) =>
     cambiarGrupo(clave, (g) => ({ ...g, lineas: g.lineas.filter((l) => l.manual !== manual) }));
@@ -601,6 +623,8 @@ export function TransferenciaForm({ previa }: { previa?: TransferenciaDetalle })
                   opcionesFacilitador={opcionesFacilitador}
                   cargandoFacilitadores={facilitadores.isLoading}
                   opcionesManual={opcionesManual}
+                  catalogo={(manuales.data ?? []).map((m) => m.manual)}
+                  onSugerir={(l) => sugerirLineas(g.clave, l)}
                   porManual={porManual}
                   totalPorManual={totalPorManual}
                   onEditar={(v) => cambiarGrupo(g.clave, (x) => ({ ...x, editando: v }))}
@@ -762,6 +786,8 @@ function GrupoCard({
   opcionesFacilitador,
   cargandoFacilitadores,
   opcionesManual,
+  catalogo,
+  onSugerir,
   porManual,
   totalPorManual,
   onEditar,
@@ -780,6 +806,10 @@ function GrupoCard({
   opcionesFacilitador: OpcionFija[];
   cargandoFacilitadores: boolean;
   opcionesManual: OpcionFija[];
+  /** Los nombres de los manuales (`INDICES_MANUALES.MANUAL`). Vacío sin origen. */
+  catalogo: string[];
+  /** Carga las líneas sugeridas por las postulaciones. */
+  onSugerir: (lineas: Linea[]) => void;
   porManual: Map<string, ManualOrigen>;
   totalPorManual: Map<string, number>;
   onEditar: (editando: boolean) => void;
@@ -797,6 +827,48 @@ function GrupoCard({
 }) {
   const asignado = completo(g);
   const libros = g.lineas.reduce((s, l) => s + (Number(l.cantidad) || 0), 0);
+
+  // Lo que postuló el facilitador en esa institución (ver lib/transferencias,
+  // "La cantidad sugerida"). El `select` va memorizado: si cambiara en cada
+  // render, la sugerencia sería otro objeto cada vez y el efecto no pararía.
+  const idFac = g.id_facilitador ?? 0;
+  const resumir = useCallback(
+    (r: Awaited<ReturnType<typeof listarTodasPostulaciones>>) => sugerirPorPostulaciones(r, idFac),
+    [idFac],
+  );
+  const sug = useQuery({
+    queryKey: keysPostulaciones.todas(filtrosPostulacionesDe(g.id_institucion ?? 0)),
+    queryFn: () => listarTodasPostulaciones(filtrosPostulacionesDe(g.id_institucion!)),
+    enabled: asignado && !soloLectura,
+    select: resumir,
+  });
+  const sugerencia = asignado && !soloLectura ? sug.data : undefined;
+  const porClave = manualesDelCatalogo(catalogo);
+  const conCantidad = sugerencia ? MANUALES.filter((m) => sugerencia.manuales[m.clave] > 0) : [];
+  const sugeridas: Linea[] = conCantidad.flatMap((m) =>
+    porClave[m.clave]
+      ? [{ manual: porClave[m.clave]!, cantidad: String(sugerencia!.manuales[m.clave]) }]
+      : [],
+  );
+  // Postulados que el catálogo no tiene con un nombre reconocible.
+  const sinManual = catalogo.length ? conCantidad.filter((m) => !porClave[m.clave]) : [];
+  const usando =
+    sugeridas.length > 0 &&
+    sugeridas.every((s) =>
+      g.lineas.some((l) => l.manual === s.manual && l.cantidad === s.cantidad),
+    );
+
+  // Una tarjeta recién asignada y sin manuales se llena sola con la
+  // sugerencia, una vez por par: si después se vacía a mano, no vuelve.
+  const llenada = useRef<string | null>(null);
+  const claveSugeridas = JSON.stringify(sugeridas);
+  useEffect(() => {
+    if (!sugeridas.length || g.lineas.length > 0 || llenada.current === par(g)) return;
+    llenada.current = par(g);
+    onSugerir(sugeridas);
+    // `sugeridas` va por su texto (`claveSugeridas`): es un arreglo nuevo en cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claveSugeridas, g.lineas.length, g.id_facilitador, g.id_institucion]);
 
   return (
     <li
@@ -878,6 +950,18 @@ function GrupoCard({
 
       {/* Los manuales */}
       <div className="space-y-2 p-3">
+        {asignado && !soloLectura && !g.editando && (
+          <SugerenciaGrupo
+            cargando={sug.isLoading}
+            error={sug.error}
+            sugerencia={sugerencia}
+            hayOrigen={!!origen}
+            usando={usando}
+            puedeUsar={sugeridas.length > 0}
+            sinManual={sinManual.map((m) => m.nombre)}
+            onUsar={() => onSugerir(sugeridas)}
+          />
+        )}
         {g.lineas.length === 0 ? (
           <p className="flex items-center gap-2 px-1 py-2 text-xs text-muted-foreground">
             <BookOpen className="size-4 shrink-0 opacity-50" />
@@ -885,19 +969,23 @@ function GrupoCard({
           </p>
         ) : (
           <ul className="grid grid-cols-1 gap-2 xl:grid-cols-2">
-            {g.lineas.map((l) => (
-              <LineaCard
-                key={l.manual}
-                linea={l}
-                info={porManual.get(l.manual)}
-                total={totalPorManual.get(l.manual) ?? 0}
-                origen={nombreOrigen}
-                soloLectura={soloLectura}
-                onCantidad={(t) => onCantidad(l.manual, t)}
-                onSumar={(d) => onSumar(l.manual, d)}
-                onQuitar={() => onQuitarLinea(l.manual)}
-              />
-            ))}
+            {g.lineas.map((l) => {
+              const clave = claveDeManual(l.manual, porClave);
+              return (
+                <LineaCard
+                  key={l.manual}
+                  linea={l}
+                  postulado={sugerencia && clave ? sugerencia.manuales[clave] : undefined}
+                  info={porManual.get(l.manual)}
+                  total={totalPorManual.get(l.manual) ?? 0}
+                  origen={nombreOrigen}
+                  soloLectura={soloLectura}
+                  onCantidad={(t) => onCantidad(l.manual, t)}
+                  onSumar={(d) => onSumar(l.manual, d)}
+                  onQuitar={() => onQuitarLinea(l.manual)}
+                />
+              );
+            })}
           </ul>
         )}
         {!soloLectura && (
@@ -1070,12 +1158,120 @@ function ElegirDestinatario({
   );
 }
 
+/**
+ * La sugerencia de una tarjeta: lo que el facilitador postuló en la
+ * institución este año, manual por manual, con "Usar sugerencia". Avisa los
+ * postulados que el catálogo no tiene con un nombre reconocible.
+ */
+function SugerenciaGrupo({
+  cargando,
+  error,
+  sugerencia,
+  hayOrigen,
+  usando,
+  puedeUsar,
+  sinManual,
+  onUsar,
+}: {
+  cargando: boolean;
+  error: unknown;
+  sugerencia: SugerenciaTransferencia | undefined;
+  hayOrigen: boolean;
+  usando: boolean;
+  puedeUsar: boolean;
+  sinManual: string[];
+  onUsar: () => void;
+}) {
+  if (cargando) {
+    return (
+      <p className="flex items-center gap-2 px-1 text-[11.5px] text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" />
+        Buscando sus postulaciones…
+      </p>
+    );
+  }
+  if (error || !sugerencia) {
+    return (
+      <p className="px-1 text-[11.5px] text-muted-foreground">
+        No se pudo armar la sugerencia
+        {error instanceof Error ? `: ${error.message}` : ""}.
+      </p>
+    );
+  }
+  if (!sugerencia.total) {
+    return (
+      <p className="flex items-center gap-1.5 px-1 text-[11.5px] text-muted-foreground">
+        <Lightbulb className="size-3.5 shrink-0" />
+        Sin manuales en sus postulaciones activas de {sugerencia.anio} en esta institución: no hay
+        cantidad para sugerir.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded-xl border border-primary/25 bg-primary-soft/30 p-2.5">
+      <div className="flex items-start gap-2">
+        <Lightbulb className="mt-0.5 size-4 shrink-0 text-primary" />
+        <p className="min-w-0 flex-1 text-[12px] leading-snug">
+          <span className="font-semibold">Sugerido: {sugerencia.total} manuales</span>{" "}
+          <span className="text-muted-foreground">
+            ({sugerencia.postulaciones}{" "}
+            {sugerencia.postulaciones === 1 ? "postulación activa" : "postulaciones activas"} de{" "}
+            {sugerencia.anio} en esta institución)
+          </span>
+        </p>
+        {usando ? (
+          <span className="flex shrink-0 items-center gap-1 text-[11.5px] font-semibold text-primary">
+            <CheckCircle2 className="size-3.5" />
+            En uso
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={onUsar}
+            disabled={!puedeUsar}
+            title={!hayOrigen ? "Elegí primero el origen" : undefined}
+            className="shrink-0 rounded-lg bg-primary px-2.5 py-1.5 text-[12px] font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            Usar sugerencia
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {MANUALES.filter((m) => sugerencia.manuales[m.clave] > 0).map((m) => (
+          <span
+            key={m.clave}
+            className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
+            style={{ backgroundColor: m.color, color: m.tinta }}
+          >
+            {m.nombre} {sugerencia.manuales[m.clave]}
+          </span>
+        ))}
+      </div>
+      {!hayOrigen ? (
+        <p className="text-[11px] text-muted-foreground">
+          Elegí el origen para cargar estas cantidades.
+        </p>
+      ) : (
+        sinManual.length > 0 && (
+          <p className="flex items-start gap-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-500">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+            No encontré en el catálogo de manuales {sinManual.length === 1 ? "uno" : "los"} que
+            corresponda{sinManual.length === 1 ? "" : "n"} a {sinManual.join(", ")}: agregalo
+            {sinManual.length === 1 ? "" : "s"} a mano.
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Una línea del carrito                                                      */
 /* -------------------------------------------------------------------------- */
 
 function LineaCard({
   linea,
+  postulado,
   info,
   total,
   origen,
@@ -1085,6 +1281,8 @@ function LineaCard({
   onQuitar,
 }: {
   linea: Linea;
+  /** Lo que el facilitador postuló de este manual en la institución, si se sabe. */
+  postulado?: number;
   /** Lo que hay en el origen. `undefined` mientras carga o sin origen. */
   info: ManualOrigen | undefined;
   /** Lo que sale de este manual sumando todas las tarjetas. */
@@ -1116,6 +1314,20 @@ function LineaCard({
             <p className="mt-0.5 text-[11px] text-muted-foreground">
               {disp} disponible{disp === 1 ? "" : "s"} en {origen}
               {info.comprometido > 0 && ` · ${info.comprometido} ya en camino en otras`}
+            </p>
+          )}
+          {!soloLectura && postulado != null && (
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-primary">
+              <span>Postulado: {postulado}</span>
+              {postulado > 0 && postulado !== cantidad && (
+                <button
+                  type="button"
+                  onClick={() => onCantidad(String(postulado))}
+                  className="font-semibold underline underline-offset-2"
+                >
+                  usar {postulado}
+                </button>
+              )}
             </p>
           )}
         </div>

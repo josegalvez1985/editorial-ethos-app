@@ -1,10 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft, FileDown, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
+import { BotonExcel } from "@/components/boton-excel";
 import { TransferenciaForm } from "@/components/transferencia-form";
-import { keysTransferencias, obtenerTransferencia } from "@/lib/transferencias";
+import { descargarExcelTransferencia } from "@/lib/excel-transferencia";
+import { abrirPdfEnPestana, generarPdfTransferencia } from "@/lib/pdf-transferencias";
+import { useSession } from "@/lib/session";
+import {
+  keysTransferencias,
+  obtenerTransferencia,
+  type TransferenciaDetalle,
+} from "@/lib/transferencias";
 
 export const Route = createFileRoute("/transferencias/$id")({
   head: () => ({
@@ -40,10 +50,15 @@ function TransferenciaPage() {
           Transferencias
         </Link>
 
-        <h1 className="font-display mb-1 text-2xl font-bold">Transferencia #{id}</h1>
-        <p className="mb-5 text-xs text-muted-foreground">
-          {data ? `${data.origen} → ${data.destino}` : " "}
-        </p>
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="font-display mb-1 text-2xl font-bold">Transferencia #{id}</h1>
+            <p className="text-xs text-muted-foreground">
+              {data ? `${data.origen} → ${data.destino}` : " "}
+            </p>
+          </div>
+          {data && <Reportes x={data} />}
+        </div>
 
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
@@ -64,5 +79,48 @@ function TransferenciaPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+/**
+ * El reporte de UNA transferencia (13/10/2026): el PDF con el logo, que se abre
+ * en una pestaña nueva, y el Excel con el mismo formato. Los dos salen de
+ * lo GUARDADO: si hay cambios sin guardar en el formulario, no están.
+ */
+function Reportes({ x }: { x: TransferenciaDetalle }) {
+  const { sesion } = useSession();
+  const [generando, setGenerando] = useState(false);
+  const vacia = x.detalle.length === 0;
+
+  function generarPdf() {
+    setGenerando(true);
+    // SIN await antes de esta llamada: la pestaña se abre dentro del clic o el
+    // navegador la bloquea como popup. Ver `abrirPdfEnPestana`.
+    abrirPdfEnPestana(
+      () => generarPdfTransferencia(x, sesion?.nombre ?? ""),
+      `transferencia-${x.id_transferencia}.pdf`,
+    )
+      .catch((err) => toast.error(err instanceof Error ? err.message : "No se pudo generar el PDF"))
+      .finally(() => setGenerando(false));
+  }
+
+  // Un .xlsx con el mismo formato que el PDF (pedido el 13/10/2026), no el CSV
+  // de los reportes: ver lib/excel-transferencia.ts.
+  const descargar = () => descargarExcelTransferencia(x, sesion?.nombre ?? "");
+
+  return (
+    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+      <BotonExcel onDescargar={descargar} deshabilitado={vacia} />
+      <button
+        type="button"
+        onClick={generarPdf}
+        disabled={generando || vacia}
+        title={vacia ? "La transferencia no tiene manuales" : "Abre el PDF en una pestaña nueva"}
+        className="flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2.5 text-sm font-semibold text-primary-foreground shadow-soft disabled:opacity-50"
+      >
+        {generando ? <Loader2 className="size-4 animate-spin" /> : <FileDown className="size-4" />}
+        PDF
+      </button>
+    </div>
   );
 }

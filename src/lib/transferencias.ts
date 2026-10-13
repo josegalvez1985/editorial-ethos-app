@@ -35,6 +35,13 @@
  */
 
 import { authFetch } from "@/lib/api";
+import {
+  MANUALES,
+  type ClaveManual,
+  type FiltrosPostulaciones,
+  type PostulacionFila,
+} from "@/lib/postulaciones";
+import { normalizar } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
 /* Tipos                                                                      */
@@ -455,3 +462,97 @@ export const keysTransferencias = {
     ["transferencias", "manuales", idSucursal, excluirId ?? 0] as const,
   historial: (f: FiltrosHistorialTransf) => ["transferencias", "historial", f] as const,
 };
+
+/* -------------------------------------------------------------------------- */
+/* La cantidad sugerida por las postulaciones (13/10/2026)                    */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Cada tarjeta (facilitador + institución) sugiere cuántos de cada manual
+ * mandar: la suma de ese manual en las postulaciones ACTIVAS del año lectivo
+ * actual de esa institución con ese facilitador. El criterio de Cantidad de
+ * Manuales (la página 50), y la misma consulta: `postulaciones/todas` con
+ * `id_institucion` (su caché la comparten las pantallas de postulaciones). Sin
+ * SQL propio.
+ *
+ * El problema es el NOMBRE: acá un manual es el texto de
+ * `INDICES_MANUALES.MANUAL`, y en POSTULACIONES son siete columnas fijas (SER …
+ * LIDERAZGO). Jose confirmó el 13/10/2026 que el catálogo usa esos mismos
+ * siete nombres (los de Envíos de Gráficas), así que se relacionan por el
+ * nombre sin tildes ni mayúsculas ("Carácter" = "CARACTER"). Por las dudas, si
+ * alguno no está igual se toma el ÚNICO que lo contenga como palabra ("Manual
+ * Ser"); si no hay ninguno, o hay varios, no se adivina: la tarjeta lo avisa.
+ */
+
+/** Los siete manuales en cero. */
+const sinManuales = () =>
+  Object.fromEntries(MANUALES.map((m) => [m.clave, 0])) as Record<ClaveManual, number>;
+
+/** La sugerencia de una tarjeta. */
+export type SugerenciaTransferencia = {
+  /** El año de las postulaciones: el lectivo actual (lo decide el backend). */
+  anio: string;
+  postulaciones: number;
+  manuales: Record<ClaveManual, number>;
+  total: number;
+};
+
+/** `postulaciones/todas` de una institución en el año lectivo actual. */
+export const filtrosPostulacionesDe = (idInstitucion: number): FiltrosPostulaciones => ({
+  anio: "",
+  idDepartamento: null,
+  idCiudad: null,
+  idBarrio: null,
+  idInstitucion,
+  turno: null,
+});
+
+/** La suma por manual de las postulaciones activas del facilitador. */
+export function sugerirPorPostulaciones(
+  r: { anio: string; items: PostulacionFila[] },
+  idFacilitador: number,
+): SugerenciaTransferencia {
+  const manuales = sinManuales();
+  let postulaciones = 0;
+  for (const p of r.items) {
+    if (!p.activa || p.idFacilitador !== idFacilitador) continue;
+    postulaciones++;
+    for (const m of MANUALES) manuales[m.clave] += Number(p.manuales[m.clave]) || 0;
+  }
+  return {
+    anio: r.anio,
+    postulaciones,
+    manuales,
+    total: MANUALES.reduce((a, m) => a + manuales[m.clave], 0),
+  };
+}
+
+const sinTildes = (s: string) =>
+  normalizar(s)
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/**
+ * El manual del catálogo que corresponde a cada columna de POSTULACIONES, o
+ * `null` si no hay uno solo (ver arriba).
+ */
+export function manualesDelCatalogo(catalogo: string[]): Record<ClaveManual, string | null> {
+  const limpios = catalogo.map((c) => ({ c, n: sinTildes(c) }));
+  return Object.fromEntries(
+    MANUALES.map((m) => {
+      const nombre = sinTildes(m.nombre);
+      const igual = limpios.filter((x) => x.n === nombre);
+      if (igual.length === 1) return [m.clave, igual[0].c];
+      const contiene = limpios.filter((x) => ` ${x.n} `.includes(` ${nombre} `));
+      return [m.clave, igual.length === 0 && contiene.length === 1 ? contiene[0].c : null];
+    }),
+  ) as Record<ClaveManual, string | null>;
+}
+
+/** La columna de POSTULACIONES de un manual del catálogo, o `null`. */
+export function claveDeManual(
+  manual: string,
+  porClave: Record<ClaveManual, string | null>,
+): ClaveManual | null {
+  return MANUALES.find((m) => porClave[m.clave] === manual)?.clave ?? null;
+}

@@ -35,10 +35,15 @@ export function descargarExcel<T>(
     columnas.map(([titulo]) => celda(titulo)).join(";"),
     ...filas.map((f) => columnas.map(([, valor]) => celda(valor(f))).join(";")),
   ].join("\r\n");
-  const url = URL.createObjectURL(new Blob(["﻿" + texto], { type: "text/csv;charset=utf-8" }));
+  descargarBlob(new Blob(["﻿" + texto], { type: "text/csv;charset=utf-8" }), `${nombre}.csv`);
+}
+
+/** Descarga un archivo ya armado: el CSV de arriba o un `.xlsx` con formato. */
+export function descargarBlob(blob: Blob, archivo: string): void {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${nombre}.csv`;
+  a.download = archivo;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

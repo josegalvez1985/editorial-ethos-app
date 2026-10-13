@@ -77,14 +77,14 @@ export function t(s: string): string {
 }
 
 /** Fecha y hora locales, armadas a mano para no depender del locale. */
-function ahora(): string {
+export function ahora(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** El logo como data URL. `null` si no se pudo leer: el PDF sale igual, sin él. */
-async function logoDataUrl(): Promise<string | null> {
+/** El logo como data URL. `null` si no se pudo leer: el PDF (o el Excel) sale igual, sin él. */
+export async function logoDataUrl(): Promise<string | null> {
   try {
     const res = await fetch(asset("logo.png"));
     if (!res.ok) return null;

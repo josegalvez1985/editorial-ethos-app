@@ -161,6 +161,36 @@ Las reglas acordadas desde el 08/10/2026. Valen para cada página que se recrea:
    Las trampas de Oracle y ORDS que ya aparecieron están en
    [`backend/README.md`](backend/README.md) → *Pasar una página de APEX: el backend*.
 
+### Una pantalla nueva que no viene de APEX
+
+La primera fue **Envíos de Gráficas** (`/envios-graficas`, 13/10/2026): Jose pasó el DDL de
+una tabla nueva y se armó back y front. Lo que cambia respecto de una página de APEX:
+
+1. **El script crea la tabla si no existe**, tal cual vino el DDL, con su `_JN` y
+   `SEQ_AUDITORIA`; si ya existe, no la toca. El trigger `_JNTRG` que viene con el export se
+   reescribe con el usuario de la app (ver [`backend/README.md`](backend/README.md) → *Pasar
+   una página de APEX: el backend*). Modelo: [`backend/envios_graficas.sql`](backend/envios_graficas.sql).
+2. **No está en `MENU_PAGINAS`:** se da de alta en **Crear páginas** (menú principal, nombre y
+   ruta; el número lo pone el sistema) y se le dan permisos en **Roles de páginas**. Hasta
+   entonces el `GET` anda y guardar o borrar responden 403 **diciendo eso**, no un "sin
+   permiso" a secas.
+3. **El ícono no existe todavía:** se **propone** uno y se agrega a `ICONOS_MENU` **solo con el
+   sí**, como **línea nueva al final**, con un comentario de la fecha y el pedido. Tiene que
+   decir de qué trata la pantalla (Envíos de Gráficas es *envío de manuales al interior*:
+   `Van`, no la imprenta) y **no repetir uno del menú** (`Truck` ya es Transferencias). Los
+   íconos que ya están no se tocan nunca.
+4. Lo demás, igual que una página de APEX: un script y un paquete por tabla, diseño moderno,
+   reportes con Excel, documentar al terminar.
+5. **Si cambia la forma de los datos** (una tabla que pasa a cabecera y detalle, un campo que
+   se renombra), **subir `CACHE_BUSTER`** en [`src/lib/query-persist.ts`](src/lib/query-persist.ts).
+   La caché de react-query se guarda en el navegador y, sin eso, la pantalla nueva recibe la
+   lista con la forma vieja y revienta (pasó con Envíos de Gráficas el 13/10/2026).
+
+**Combos de otras tablas en el formulario** (departamentos, ciudades, sucursales): el `GET` de
+la pantalla los trae **livianos** (id y nombre), en vez de llamar a los listados de sus
+pantallas, que cuentan los usos de cada fila. Y si la tabla no tiene fecha propia, "cargado el
+… por …" sale de su bitácora `_JN`.
+
 ### Cómo se ve el menú
 
 Desde el 08/10/2026, en la sidebar de escritorio y en la hoja **Menú** del celular:
@@ -182,7 +212,8 @@ Desde el 08/10/2026, en la sidebar de escritorio y en la hoja **Menú** del celu
 > **Los íconos del menú NO se cambian** (pedido el 08/10/2026). `ICONOS_MENU` **no se edita al
 > programar una pantalla**: la pantalla usa el ícono que ya tiene ahí (por ejemplo, el `icon` de `<CatalogoNombre>`). No se "mejora" ni se reemplaza por otro
 > que parezca más acorde: los usuarios reconocen cada página por su ícono. Cambiar uno es
-> solo a pedido explícito.
+> solo a pedido explícito. La única vez que la lista se edita es para **sumar** el de una
+> pantalla nueva que no tenía, con el sí de Jose: ver *Una pantalla nueva que no viene de APEX*.
 
 **El menú no es la seguridad.** Ocultar un módulo no impide llamar a su endpoint con el token.
 Hoy solo los endpoints de menú, permisos y Usuarios controlan `ROLES_PAGINAS`; los demás piden solo
@@ -231,7 +262,8 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Operaciones | **Evaluaciones** de facilitadores, con su calificación y su cierre | `/evaluaciones` | `evaluaciones_facilitadores.sql` |
 | Operaciones | **Intervenciones**: carga manual de las que quedaron sin registrar | `/intervenciones` | `intervenciones_crud.sql` |
 | Operaciones | **Inventario de manuales**: conteo físico por manual y sucursal; al cerrar, actualiza las existencias. El conteo en curso se descarta y el último cierre se revierte | `/inventario` | `inventarios.sql` |
-| Operaciones | **Transferencias de manuales**: envío entre sucursales (cabecera y detalle), repartido por **facilitador e institución**: cada línea dice a qué facilitador y en qué institución van los manuales (obligatorios; las líneas viejas figuran como "Sin asignar"). Al recibir, mueve las existencias. Una recibida se revierte (vuelve a pendiente) o se elimina, devolviendo las existencias | `/transferencias` | `transferencias.sql` |
+| Operaciones | **Transferencias de manuales**: envío entre sucursales (cabecera y detalle), repartido por **facilitador e institución**: cada línea dice a qué facilitador y en qué institución van los manuales (obligatorios; las líneas viejas figuran como "Sin asignar"). Al recibir, mueve las existencias. Una recibida se revierte (vuelve a pendiente) o se elimina, devolviendo las existencias. **La cantidad se sugiere** (13/10/2026) con lo que el facilitador postuló en esa institución (postulaciones activas del año lectivo actual): la tarjeta nueva se llena sola y cada línea dice lo postulado; los manuales del catálogo se cruzan con las columnas de `POSTULACIONES` por el nombre. **Cada transferencia tiene su PDF y su Excel** (13/10/2026, en `/transferencias/$id`): el PDF con el logo se abre en una pestaña nueva, con los datos y el estado, el total por manual, el detalle por facilitador e institución y las firmas de quien entrega y quien recibe; el Excel es un `.xlsx` **con el mismo formato que el PDF** (logo, colores, celdas unidas, listo para imprimir en A4), armado con `exceljs`, que se carga recién al tocar el botón. Los dos salen de lo guardado | `/transferencias` | `transferencias.sql`; la sugerencia usa `postulaciones/todas` de `postulaciones.sql`, sin SQL propio |
+| Operaciones | **Envíos de Gráficas** (pantalla nueva, 13/10/2026, no viene de APEX): **cabecera y detalle** como Transferencias. Cada envío es una gráfica y una fecha, con sus **destinos** (departamento, ciudad, sucursal y cuántos manuales de cada uno). Cada destino tiene además un **comentario** (`COMENTARIO`, hasta 2000). El listado: los totales de lo filtrado por manual (con sus colores); filtros en pastillas por año, sucursal y gráfica con cuántos envíos, buscador (también en los comentarios) y Restablecer; tarjetas con la fecha, los destinos y los manuales. **Sin PDF ni Excel generales** (13/10/2026: salen solo por envío). **Los paquetes:** cada cantidad se divide en paquetes de 100, 50 y 25 y lo que sobra va suelto (no se guarda, se calcula): en el formulario debajo de cada manual y por destino, y en el comprobante. El alta y la edición en su pantalla (`/envios-graficas/nuevo` y `/envios-graficas/$id`): la gráfica con las ya usadas como sugerencia, la fecha y una tarjeta por destino (la ciudad se busca sin elegir antes el departamento; el total en vivo); el pie fijo dice qué falta. **Cada destino sugiere sus cantidades**: la suma de cada manual en las postulaciones activas del año lectivo actual de las instituciones de esa ciudad (el criterio de Cantidad de Manuales), con el detalle por institución y un aviso si ese año ya se mandó algo a esa ciudad en otro envío; se cargan solas con los campos vacíos y nunca pisan lo escrito. Cada envío tiene su **comprobante en PDF y en Excel con el mismo formato** (en `/envios-graficas/$id`): por manual, destinos (cada uno con su comentario debajo), **armado de paquetes** por destino y manual, y una firma para la gráfica y una por sucursal | `/envios-graficas` | `envios_graficas.sql` (crea las tablas si faltan); la sugerencia usa `postulaciones/todas` de `postulaciones.sql`, sin SQL propio |
 | Reportes y Consultas | **Agendas**: el horario semanal, con **Excel** de todo lo filtrado (junta las páginas del backend) | `/agendas` | `agendas.sql` |
 | Reportes y Consultas | **Consulta de inventarios**: dos vistas en pastillas (12/10/2026). **Último conteo** (la que abre, la página 76 de APEX): el último conteo de cada manual en cada sucursal, con las facetas Sucursal y Manual, buscador, Sucursal / Manual / Fecha / Cantidad Física con el total al pie, orden y filtro por columna y **Excel**; sin la columna Título de APEX, que repetía cada conteo una vez por índice del manual. **Historial**: los conteos pendientes y cerrados de un período por sucursal, gráfico comparativo entre inventarios, PDF con el logo y **Excel** | `/consulta-inventarios` | `inventarios.sql` (sin cambios: las dos vistas leen `inventarios/historial`) |
 | Reportes y Consultas | **Monitoreo de Facilitadores**: las evaluaciones de los facilitadores ítem por ítem (una fila de `EVALUACIONES_FACILITADORES` por ítem). Año (el en curso de entrada, o "Todos los años"), las facetas Facilitador e Institución con cuántas filas, buscador y Restablecer; un resumen (filas, facilitadores, instituciones, sin cerrar); el reporte de APEX con sus 14 columnas (Nombre Apellido, que abre la evaluación, Institución, Ciudad, fechas, Evaluado Por, Área, Evaluación, Calificación y Escala Descripción de `ESCALAS_EVALUACIONES`, aspectos, Observación Admin, Cerrado), por fecha, 50 por página, orden y filtro por columna y **Excel**. Página 87 de APEX | `/monitoreo-facilitadores` | `evaluaciones_facilitadores.sql` y `escalas_evaluaciones.sql` (sin SQL propio) |
@@ -280,6 +312,8 @@ abrirse: la WebView no abre pestañas).
 | Consulta de Instituciones | cabecera | las columnas del reporte y el estado |
 | Consulta de Facilitadores | cabecera | las columnas del reporte y si está activo |
 | Intervenciones no realizadas | cabecera | las no desarrolladas filtradas, con el motivo |
+| Un envío de gráficas (`/envios-graficas/$id`) | cabecera, al lado del PDF | **un `.xlsx` con el formato del PDF**: ver *Comprobante de un registro*. El listado no tiene Excel: va solo por envío (13/10/2026) |
+| Una transferencia (`/transferencias/$id`) | cabecera, al lado del PDF | **un `.xlsx` con el formato del PDF**: ver *Comprobante de un registro* |
 
 Las reglas, para no repetir lo que ya se resolvió:
 
@@ -297,9 +331,115 @@ Las reglas, para no repetir lo que ya se resolvió:
   (el PDF sigue siendo el botón lleno). También en los reportes con el formato de APEX, aunque
   APEX lo ponía como link al pie (pedido el 12/10/2026).
 - **Es un CSV con `;` y BOM**, no un `.xlsx`: Excel en español lo abre directo en columnas y con
-  tildes, y no suma ninguna librería. Como los PDF, en el APK la descarga puede no andar.
+  tildes, y no suma ninguna librería. Como los PDF, en el APK la descarga puede no andar. **La
+  excepción** es el comprobante de un solo registro, que se pidió con el mismo formato que su
+  PDF: ver *Comprobante de un registro* abajo.
 - **Baja lo que se ve, en el orden en que se ve:** con el orden y los filtros por columna puestos
   (ver abajo). Las columnas del Excel salen de las mismas `ColumnaReporte` de la tabla.
+
+### Comprobante de un registro: PDF y Excel con el mismo formato
+
+Desde el 13/10/2026, **cada transferencia** tiene su PDF y su Excel en su pantalla
+(`/transferencias/$id`), y el Excel **se ve igual que el PDF** (pedido de Jose). Es el modelo
+para el reporte de un solo registro (un envío, una evaluación, un inventario):
+
+| Pieza | Archivo | Qué hace |
+| --- | --- | --- |
+| PDF | [`pdf-transferencias.ts`](src/lib/pdf-transferencias.ts) → `generarPdfTransferencia` | solo el cuerpo; el encabezado con logo, el pie "Página X de Y", las tarjetas, las secciones y el estilo de tabla salen de [`pdf-base.ts`](src/lib/pdf-base.ts) |
+| Excel | [`excel-transferencia.ts`](src/lib/excel-transferencia.ts) → `descargarExcelTransferencia` | solo el cuerpo; el libro A4 listo para imprimir, el encabezado con logo, las tarjetas, las secciones, las cabeceras navy, la fila de total y las firmas salen de [`excel-base.ts`](src/lib/excel-base.ts) |
+| Botones | [`transferencias.$id.tsx`](src/routes/transferencias.$id.tsx) → `Reportes` | `<BotonExcel>` con borde y el PDF lleno, en la cabecera |
+
+**Un envío de gráficas** (13/10/2026) es el segundo: [`pdf-envios-graficas.ts`](src/lib/pdf-envios-graficas.ts)
+(`generarPdfEnvio`) y [`excel-envio-grafica.ts`](src/lib/excel-envio-grafica.ts)
+(`descargarExcelEnvio`), con los botones en la cabecera de `/envios-graficas/$id`. Cabecera y
+detalle: por manual (con sus colores), destinos (numerados, **cada uno con su comentario
+debajo**), **armado de paquetes** (por destino y manual, con Nº y destino unidos sobre sus
+manuales) y una firma para quien entrega y **una por cada sucursal que recibe**. Jose pidió que
+salgan **solo por registro, no generales**: el listado no tiene PDF ni Excel. Si se cambia el
+PDF, se cambia el Excel.
+
+**El Excel con formato se arma con [`excel-base.ts`](src/lib/excel-base.ts)**: `nuevoLibro`
+(A4, sin cuadrícula, pie con páginas; la columna A es el margen con el logo), `encabezado`,
+`tarjetas`, `seccion`, `cabecera` (con columnas a la derecha y colores por columna, para los
+manuales), `filaTotal`, `firmas` y `bajarLibro`. Los rangos se escriben como en Excel ("B5:E5").
+Un comprobante nuevo arma solo su cuerpo, igual que con `pdf-base.ts`.
+
+Las reglas:
+
+- **El Excel con formato es un `.xlsx` de [`exceljs`](https://github.com/exceljs/exceljs)**, que
+  se carga con `import()` recién al tocar el botón (como jsPDF): queda en su propio archivo y el
+  resto del sitio no lo descarga. Para un reporte que es una lista para filtrar y sumar sigue
+  siendo el CSV de `descargarExcel`.
+- **Los colores, el logo y la hora salen de `pdf-base.ts`** (`NAVY`, `ROJO`, `GRIS`, `AMBAR`,
+  `SUAVE`, `logoDataUrl`, `ahora`): si cambia la marca, cambian los dos.
+- **La columna A del Excel es el margen** (angosta y vacía, ahí va el logo), como el margen del
+  PDF. Las cantidades van como **número** con formato `#,##0`, para que se puedan sumar.
+- **El PDF se abre en una pestaña nueva:** `abrirPdfEnPestana` **sin `await` antes** en el
+  handler del clic, o el navegador lo bloquea como popup.
+- **Sale de lo GUARDADO**, no de lo que se está editando en el formulario.
+- **Lleva firmas** de quien entrega y quien recibe cuando el papel acompaña algo físico (los
+  libros de una transferencia).
+- **Solo por registro, cabecera y detalle** (13/10/2026): un comprobante es de UN registro. Un
+  listado no lleva un PDF o un Excel "general" salvo que se pida (Envíos de Gráficas no lo tiene).
+- **Lo que es de una fila del detalle va en esa fila, no al final** (13/10/2026): el comentario de
+  un destino es una fila debajo de él, a lo ancho, con el mismo fondo (la cebra va por registro,
+  no por fila). En el PDF es una celda con `colSpan`; en el Excel, una fila con las celdas unidas
+  y alta según el largo del texto. No una sección "Comentarios" aparte.
+
+**Probarlo sin entrar al sitio** (no hace falta usuario):
+
+1. Un archivo de prueba en el scratchpad que importe el generador con datos de ejemplo y
+   reemplace lo del navegador (`fetch` del logo leyendo `public/logo.png`, `FileReader`,
+   `document`, `URL.createObjectURL`) para escribir el archivo a disco.
+2. Empaquetarlo y correrlo con Node:
+   `MSYS_NO_PATHCONV=1 npx esbuild prueba.ts --bundle --platform=node --format=esm --outfile=prueba.mjs --tsconfig=tsconfig.json --define:import.meta.env.BASE_URL='"/"'`
+   (sin el `define` el logo no carga; en Git Bash sin `MSYS_NO_PATHCONV` los alias se rompen).
+3. El PDF se mira directo. El `.xlsx`, con el Excel de la máquina: abrirlo por COM desde
+   PowerShell y `ExportAsFixedFormat(0, "salida.pdf")` da exactamente lo que se imprimiría.
+
+### Paquetes de 100, 50 y 25 (Envíos de Gráficas)
+
+El esquema de trabajo de las gráficas (13/10/2026): los manuales van en **paquetes de 100, 50 y
+25**, y lo que no completa uno de 25 va **suelto**. 380 → 3 de 100, 1 de 50, 1 de 25 y 5
+sueltos. **No se guarda**: se calcula de cada cantidad con `dividir`, en
+[`envios-graficas.ts`](src/lib/envios-graficas.ts) (con `PAQUETES`, `sumarDivisiones`,
+`paquetesDe` y `textoDivision`).
+
+- Se divide **cada cantidad por separado** (un manual para un destino, que es lo que se arma
+  junto), y los totales son la suma de esas divisiones, no la división del total.
+- Se ve en el formulario (debajo de cada manual, y los paquetes del destino), y en el
+  comprobante PDF y Excel (la tabla "Armado de paquetes").
+- Si cambia el esquema (otro tamaño de paquete), se toca solo `PAQUETES`.
+
+### Cantidades sugeridas desde las postulaciones
+
+Desde el 13/10/2026, dos pantallas **sugieren cuántos manuales mandar** con lo que se postuló:
+
+| Pantalla | Qué suma | Función |
+| --- | --- | --- |
+| Envíos de Gráficas (cada destino) | las postulaciones de **las instituciones de la ciudad** del destino | `sumarSugerencia` en [`envios-graficas.ts`](src/lib/envios-graficas.ts) |
+| Transferencias (cada tarjeta) | las postulaciones de **esa institución con ese facilitador** | `sugerirPorPostulaciones` en [`transferencias.ts`](src/lib/transferencias.ts) |
+
+Las reglas, para la próxima que lo necesite:
+
+- **Sin SQL nuevo:** usa `postulaciones/todas` (`listarTodasPostulaciones`) con sus filtros
+  (`id_departamento` + `id_ciudad`, o `id_institucion`) y la **misma `queryKey`**
+  (`keysPostulaciones.todas`), así comparte la caché con las pantallas de postulaciones. La suma
+  va en el `select` de la consulta, **memorizado** (`useCallback` o una función del módulo): si
+  cambia en cada render, el efecto que carga la sugerencia no para.
+- **Mismo criterio que Cantidad de Manuales (la 50):** solo las **activas** (`ESTADO` distinto
+  de 'Inactivo') y del **año lectivo actual** (`anio` vacío: lo decide el backend).
+- **Se carga sola solo si no hay nada escrito** (o si sigue la sugerencia anterior sin tocar);
+  **nunca pisa lo que escribió el usuario**: queda el botón "Usar sugerencia". Cada cantidad
+  muestra lo postulado al lado.
+- **Los nombres de los manuales:** en `POSTULACIONES` son 7 columnas fijas (`MANUALES` en
+  [`postulaciones.ts`](src/lib/postulaciones.ts): Ser, Hacer, Tener, Carácter, Visión, Coraje,
+  Liderazgo); en Transferencias e Inventario son el texto de `INDICES_MANUALES.MANUAL`, que usa
+  **esos mismos siete nombres** (confirmado el 13/10/2026). Se cruzan por el nombre sin tildes
+  ni mayúsculas con `manualesDelCatalogo`; si alguno no cruza, la pantalla lo avisa en vez de
+  adivinar.
+- **Avisa lo ya enviado** cuando se puede saber (Envíos de Gráficas: lo cargado a esa ciudad
+  ese año), para no mandar dos veces.
 
 ### Reportes: orden y filtro por columna
 

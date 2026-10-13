@@ -120,6 +120,7 @@ import {
   UserPlus,
   Users,
   UsersRound,
+  Van,
   Wallet,
   Warehouse,
   Workflow,
@@ -220,6 +221,9 @@ const ICONOS_MENU: Record<string, LucideIcon> = {
   "/items-evaluacion": ListTodo,
   "/escalas-evaluacion": Gauge,
   "/monitoreo-facilitadores": Activity,
+  // Pantalla nueva, no de APEX (13/10/2026): el envío de manuales al interior,
+  // a pedido. Una camioneta y no Truck, que es el de Transferencias.
+  "/envios-graficas": Van,
 };
 
 /**
@@ -308,6 +312,7 @@ export const PANTALLAS: Record<string, { descripcion: string }> = {
   "/intervenciones": { descripcion: "Carga manual de intervenciones" },
   "/inventario": { descripcion: "Conteo de manuales por sucursal" },
   "/transferencias": { descripcion: "Envío de manuales entre sucursales" },
+  "/envios-graficas": { descripcion: "Lo que cada gráfica mandó a cada sucursal, por manual" },
   "/agendas": { descripcion: "Horario semanal de los facilitadores" },
   "/consulta-inventarios": { descripcion: "Conteos pendientes y cerrados, con PDF" },
   "/consulta-transferencias": { descripcion: "Envíos entre sucursales por ruta y manual, con PDF" },

@@ -33,6 +33,9 @@ import { Route as DepartamentosIndexRouteImport } from './routes/departamentos.i
 import { Route as DirectoresIndexRouteImport } from './routes/directores.index'
 import { Route as DocentesIndexRouteImport } from './routes/docentes.index'
 import { Route as EnfasisIndexRouteImport } from './routes/enfasis.index'
+import { Route as EnviosGraficasIndexRouteImport } from './routes/envios-graficas.index'
+import { Route as EnviosGraficasIdRouteImport } from './routes/envios-graficas.$id'
+import { Route as EnviosGraficasNuevoRouteImport } from './routes/envios-graficas.nuevo'
 import { Route as EscalasEvaluacionIndexRouteImport } from './routes/escalas-evaluacion.index'
 import { Route as EtapasIndexRouteImport } from './routes/etapas.index'
 import { Route as EvaluacionesIndexRouteImport } from './routes/evaluaciones.index'
@@ -199,6 +202,21 @@ const DocentesIndexRoute = DocentesIndexRouteImport.update({
 const EnfasisIndexRoute = EnfasisIndexRouteImport.update({
   id: '/enfasis/',
   path: '/enfasis/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EnviosGraficasIndexRoute = EnviosGraficasIndexRouteImport.update({
+  id: '/envios-graficas/',
+  path: '/envios-graficas/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EnviosGraficasIdRoute = EnviosGraficasIdRouteImport.update({
+  id: '/envios-graficas/$id',
+  path: '/envios-graficas/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EnviosGraficasNuevoRoute = EnviosGraficasNuevoRouteImport.update({
+  id: '/envios-graficas/nuevo',
+  path: '/envios-graficas/nuevo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EscalasEvaluacionIndexRoute = EscalasEvaluacionIndexRouteImport.update({
@@ -398,6 +416,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/home': typeof HomeRoute
+  '/envios-graficas/$id': typeof EnviosGraficasIdRoute
+  '/envios-graficas/nuevo': typeof EnviosGraficasNuevoRoute
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/facilitadores/$id': typeof FacilitadoresIdRoute
@@ -427,6 +447,7 @@ export interface FileRoutesByFullPath {
   '/directores/': typeof DirectoresIndexRoute
   '/docentes/': typeof DocentesIndexRoute
   '/enfasis/': typeof EnfasisIndexRoute
+  '/envios-graficas/': typeof EnviosGraficasIndexRoute
   '/escalas-evaluacion/': typeof EscalasEvaluacionIndexRoute
   '/etapas/': typeof EtapasIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
@@ -461,6 +482,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/home': typeof HomeRoute
+  '/envios-graficas/$id': typeof EnviosGraficasIdRoute
+  '/envios-graficas/nuevo': typeof EnviosGraficasNuevoRoute
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/facilitadores/$id': typeof FacilitadoresIdRoute
@@ -490,6 +513,7 @@ export interface FileRoutesByTo {
   '/directores': typeof DirectoresIndexRoute
   '/docentes': typeof DocentesIndexRoute
   '/enfasis': typeof EnfasisIndexRoute
+  '/envios-graficas': typeof EnviosGraficasIndexRoute
   '/escalas-evaluacion': typeof EscalasEvaluacionIndexRoute
   '/etapas': typeof EtapasIndexRoute
   '/evaluaciones': typeof EvaluacionesIndexRoute
@@ -525,6 +549,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/home': typeof HomeRoute
+  '/envios-graficas/$id': typeof EnviosGraficasIdRoute
+  '/envios-graficas/nuevo': typeof EnviosGraficasNuevoRoute
   '/evaluaciones/$id': typeof EvaluacionesIdRoute
   '/evaluaciones/nueva': typeof EvaluacionesNuevaRoute
   '/facilitadores/$id': typeof FacilitadoresIdRoute
@@ -554,6 +580,7 @@ export interface FileRoutesById {
   '/directores/': typeof DirectoresIndexRoute
   '/docentes/': typeof DocentesIndexRoute
   '/enfasis/': typeof EnfasisIndexRoute
+  '/envios-graficas/': typeof EnviosGraficasIndexRoute
   '/escalas-evaluacion/': typeof EscalasEvaluacionIndexRoute
   '/etapas/': typeof EtapasIndexRoute
   '/evaluaciones/': typeof EvaluacionesIndexRoute
@@ -590,6 +617,8 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/home'
+    | '/envios-graficas/$id'
+    | '/envios-graficas/nuevo'
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
     | '/facilitadores/$id'
@@ -619,6 +648,7 @@ export interface FileRouteTypes {
     | '/directores/'
     | '/docentes/'
     | '/enfasis/'
+    | '/envios-graficas/'
     | '/escalas-evaluacion/'
     | '/etapas/'
     | '/evaluaciones/'
@@ -653,6 +683,8 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/home'
+    | '/envios-graficas/$id'
+    | '/envios-graficas/nuevo'
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
     | '/facilitadores/$id'
@@ -682,6 +714,7 @@ export interface FileRouteTypes {
     | '/directores'
     | '/docentes'
     | '/enfasis'
+    | '/envios-graficas'
     | '/escalas-evaluacion'
     | '/etapas'
     | '/evaluaciones'
@@ -716,6 +749,8 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/home'
+    | '/envios-graficas/$id'
+    | '/envios-graficas/nuevo'
     | '/evaluaciones/$id'
     | '/evaluaciones/nueva'
     | '/facilitadores/$id'
@@ -745,6 +780,7 @@ export interface FileRouteTypes {
     | '/directores/'
     | '/docentes/'
     | '/enfasis/'
+    | '/envios-graficas/'
     | '/escalas-evaluacion/'
     | '/etapas/'
     | '/evaluaciones/'
@@ -780,6 +816,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
   HomeRoute: typeof HomeRoute
+  EnviosGraficasIdRoute: typeof EnviosGraficasIdRoute
+  EnviosGraficasNuevoRoute: typeof EnviosGraficasNuevoRoute
   EvaluacionesIdRoute: typeof EvaluacionesIdRoute
   EvaluacionesNuevaRoute: typeof EvaluacionesNuevaRoute
   FacilitadoresIdRoute: typeof FacilitadoresIdRoute
@@ -809,6 +847,7 @@ export interface RootRouteChildren {
   DirectoresIndexRoute: typeof DirectoresIndexRoute
   DocentesIndexRoute: typeof DocentesIndexRoute
   EnfasisIndexRoute: typeof EnfasisIndexRoute
+  EnviosGraficasIndexRoute: typeof EnviosGraficasIndexRoute
   EscalasEvaluacionIndexRoute: typeof EscalasEvaluacionIndexRoute
   EtapasIndexRoute: typeof EtapasIndexRoute
   EvaluacionesIndexRoute: typeof EvaluacionesIndexRoute
@@ -1008,6 +1047,27 @@ declare module '@tanstack/react-router' {
       path: '/enfasis'
       fullPath: '/enfasis/'
       preLoaderRoute: typeof EnfasisIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/envios-graficas/': {
+      id: '/envios-graficas/'
+      path: '/envios-graficas'
+      fullPath: '/envios-graficas/'
+      preLoaderRoute: typeof EnviosGraficasIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/envios-graficas/$id': {
+      id: '/envios-graficas/$id'
+      path: '/envios-graficas/$id'
+      fullPath: '/envios-graficas/$id'
+      preLoaderRoute: typeof EnviosGraficasIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/envios-graficas/nuevo': {
+      id: '/envios-graficas/nuevo'
+      path: '/envios-graficas/nuevo'
+      fullPath: '/envios-graficas/nuevo'
+      preLoaderRoute: typeof EnviosGraficasNuevoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/escalas-evaluacion/': {
@@ -1276,6 +1336,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
   HomeRoute: HomeRoute,
+  EnviosGraficasIdRoute: EnviosGraficasIdRoute,
+  EnviosGraficasNuevoRoute: EnviosGraficasNuevoRoute,
   EvaluacionesIdRoute: EvaluacionesIdRoute,
   EvaluacionesNuevaRoute: EvaluacionesNuevaRoute,
   FacilitadoresIdRoute: FacilitadoresIdRoute,
@@ -1306,6 +1368,7 @@ const rootRouteChildren: RootRouteChildren = {
   DirectoresIndexRoute: DirectoresIndexRoute,
   DocentesIndexRoute: DocentesIndexRoute,
   EnfasisIndexRoute: EnfasisIndexRoute,
+  EnviosGraficasIndexRoute: EnviosGraficasIndexRoute,
   EscalasEvaluacionIndexRoute: EscalasEvaluacionIndexRoute,
   EtapasIndexRoute: EtapasIndexRoute,
   EvaluacionesIndexRoute: EvaluacionesIndexRoute,

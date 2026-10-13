@@ -39,8 +39,13 @@ export const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
  * del backend: `obtenerEvaluacionAgrupada` cachea la evaluación ya agrupada, y
  * cuando ganó `ids_cabecera` (07/10/2026) una caché vieja la restauraba sin ese
  * campo y la pantalla de edición reventaba ("ids_cabecera is not iterable").
+ *
+ * Pasó otra vez el 13/10/2026: Envíos de Gráficas pasó a cabecera y detalle, y la
+ * lista guardada con la forma vieja (sin `fecha` ni `lineas`) hacía reventar el
+ * listado ("Cannot read properties of undefined (reading 'slice')").
+ * Y el mismo día otra vez, cuando cada destino ganó `comentario`.
  */
-export const CACHE_BUSTER = "ids-cabecera-v1";
+export const CACHE_BUSTER = "envios-comentario-v1";
 
 /** En SSR no hay `localStorage`: un persister que no hace nada. */
 const enMemoria: Persister = {

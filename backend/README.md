@@ -11,6 +11,7 @@
 | **[`inventarios.sql`](inventarios.sql)** | Inventario de manuales por sucursal (`PKG_INVENTARIOS_ETHOS`) + corrige `INVENTARIOS_ACTUALIZAR_EXISTENCIAS` | independiente |
 | **[`transferencias.sql`](transferencias.sql)** | Transferencias de manuales entre sucursales (`PKG_TRANSFERENCIAS_ETHOS`) | después de `inventarios.sql` |
 | **[`sucursales.sql`](sucursales.sql)** | ABM de sucursales (`PKG_SUCURSALES_ETHOS`) + corrige `SUCURSALES_JNTRG` | independiente |
+| **[`envios_graficas.sql`](envios_graficas.sql)** | Envíos de gráficas a las sucursales, cabecera y detalle: crea `ENVIOS_CABECERA`, `ENVIOS_GRAFICAS` y sus bitácoras si faltan, los dos `_JNTRG` con el usuario de la app y el ABM (`PKG_ENVIOS_GRAFICAS_ETHOS`) | después de `roles_paginas.sql`, `ciudades.sql` y `sucursales.sql` |
 | **[`auditoria.sql`](auditoria.sql)** | Consulta de las bitácoras `_JN` (`PKG_AUDITORIA_ETHOS`) + `pr_crear_trigger_auditoria` | independiente |
 | **[`auditoria_intervenciones.sql`](auditoria_intervenciones.sql)** | La bitácora `INTERVENCIONES_JN` con todas sus columnas, para la página 58, Auditoría de Intervenciones (`PKG_AUDITORIA_INTERV_ETHOS`, `auditoria-intervenciones`) | independiente |
 | **[`menu_paginas.sql`](menu_paginas.sql)** | Tabla `MENU_PAGINAS`: el menú del sitio, con las páginas del menú de APEX (mismo número, ruta del sitio) y las pantallas nuevas | independiente |
@@ -1063,6 +1064,47 @@ se haya recibido una transferencia de ese manual en esa sucursal.
 siempre), y registraba el esquema en vez del usuario de la app. Son los dos arreglos que ya
 tiene `pr_crear_trigger_auditoria`.
 
+## Envíos de gráficas (`envios_graficas.sql`)
+
+Pantalla nueva del sitio (13/10/2026), `/envios-graficas`: no viene de APEX, así que **se da
+de alta a mano en Crear páginas** (Operaciones) y se le dan permisos en Roles de páginas.
+Hasta entonces el GET anda y guardar o borrar responden 403 diciendo eso.
+
+**Cabecera y detalle** (Jose cambió la estructura el mismo 13/10/2026):
+
+| Tabla | Qué es |
+| --- | --- |
+| `ENVIOS_CABECERA` | un envío: `NOMBRE_GRAFICA` y `FECHA` |
+| `ENVIOS_GRAFICAS` | sus destinos: `ID_CABECERA`, departamento, ciudad, `SUCURSAL`, los 7 manuales, `CANTIDAD` y `COMENTARIO` (hasta 2000, agregado por Jose el mismo día) |
+
+| Método | Ruta | Cuerpo / respuesta |
+| --- | --- | --- |
+| GET | `envios-graficas` | Los envíos (fecha más nueva primero), cada uno con sus `lineas` y con `cargado_el` / `cargado_por` y `modificado_el` / `modificado_por` (de `ENVIOS_CABECERA_JN`, en hora de Paraguay); además `departamentos`, `ciudades` y `sucursales` para el formulario. No hay GET de uno: la pantalla lo busca en esta lista |
+| POST / PUT | `envios-graficas` / `envios-graficas/:id` | `{nombre_grafica, fecha, detalle}` → `{id_cabecera}`. `detalle` es **texto** con el JSON `{"lineas":[{id_envio?, id_departamento, id_ciudad, sucursal, ser … liderazgo, comentario}]}` |
+| DELETE | `envios-graficas/:id` | el envío con todos sus destinos, en una transacción |
+
+- **El script crea las tablas** (tal cual las pasó Jose), sus `_JN` y `SEQ_AUDITORIA` si no
+  existen; si existen, no las toca. Si `ENVIOS_GRAFICAS` tiene la **estructura vieja** (sin
+  `ID_CABECERA`, la primera versión del mismo día) lo dice con `[ERROR]` y no la migra; a una
+  `ENVIOS_GRAFICAS_JN` vieja solo le suma la columna `ID_CABECERA`.
+- **Los dos `_JNTRG` son los que vinieron con las tablas**, con el usuario de la app en
+  `JN_ORACLE_USER` (era `NVL(V('APP_USER'), USER)`: desde ORDS quedaba el esquema). En un UPD
+  siguen guardando `:NEW`.
+- **Guardar toca SIEMPRE la cabecera** (aunque gráfica y fecha no cambien): así "modificado el /
+  por", que sale de la bitácora de la cabecera, cuenta también los cambios de destinos.
+- **El detalle se compara** con lo que hay, como `transferencias.sql`: UPDATE de los destinos que
+  cambiaron (por `id_envio`), INSERT de los nuevos, DELETE de los que no vienen. Un `id_envio`
+  de otro envío responde 400. Todo se valida antes de tocar nada, y en UNA transacción.
+- Si `ENVIOS_GRAFICAS` o su `_JN` no tienen `COMENTARIO`, el script la suma (solo agrega).
+- Cada destino: departamento, ciudad (del departamento) y sucursal obligatorios; dos destinos
+  del mismo envío no pueden ser la misma ciudad y sucursal.
+- `SUCURSAL` es el **nombre**, no el id: tiene que ser uno de `SUCURSALES` y se guarda con su
+  grafía. Un destino cuya sucursal cambió de nombre o se borró se puede guardar con el nombre
+  que tenía.
+- La gráfica escrita con otras mayúsculas se guarda como ya está en `ENVIOS_CABECERA`.
+- Cada manual es un entero de 0 en adelante (vacío = 0), al menos uno mayor que 0 por destino,
+  y **`CANTIDAD` es la suma de los siete**: la pone el paquete.
+
 ## Transferencias de manuales (`transferencias.sql`)
 
 > **12/10/2026: cada línea va a un facilitador y una institución.** `TRANSFERENCIAS_DETALLE`
@@ -1088,6 +1130,10 @@ tiene `pr_crear_trigger_auditoria`.
 | POST | `transferencias/:id/revertir` | Deshace la recepción: devuelve las existencias y la deja pendiente; **409** si no estaba recibida |
 | DELETE | `transferencias/:id` | Pendiente: la borra. Recibida: revierte la recepción y la borra, en una transacción |
 | GET | `transferencias/historial` `?estado=&id_sucursal=&desde=&hasta=` | La consulta y el PDF: **una fila por línea de detalle** con la cabecera repetida y `recibida_el` (de la bitácora). Tope de 5000 líneas (`truncado`) |
+
+El PDF y el Excel de **una** transferencia (13/10/2026) y la cantidad sugerida por las
+postulaciones salen del front con lo que ya devuelven `transferencias/:id` y
+`postulaciones/todas`: no agregaron endpoints.
 
 **Las existencias las mueve el trigger `TRANSFERENCIAS_ACTUALIZAR_EXISTENCIAS` al recibir**
 (resta del origen, suma al destino). El script no lo toca. El paquete escribe `EXISTENCIAS`
@@ -1366,6 +1412,34 @@ sitio*. Del lado de Oracle, lo que ya se aprendió:
   dinámico.
 - **Triggers de bitácora a mano:** la verificación previa los lista; uno que asigna `:NEW` en un
   DELETE da ORA-04084 (como `SUCURSALES_JNTRG`).
+- **El `_JNTRG` que viene en un export de APEX se reescribe** (13/10/2026, `envios_graficas.sql`):
+  graba `JN_ORACLE_USER` con `NVL(V('APP_USER'), USER)`, y desde ORDS eso es el **esquema**, no
+  quien usó la app. Va
+  `SUBSTR(NVL(V('APP_USER'), NVL(SYS_CONTEXT('USERENV', 'CLIENT_IDENTIFIER'), USER)), 1, 30)`
+  (`VALIDAR_TOKEN` deja el usuario en `CLIENT_IDENTIFIER`; 30 es el largo de la columna). Lo
+  demás se respeta tal cual: si en un UPD guardaba `:NEW`, sigue guardando `:NEW`.
+- **`INSERTING` / `UPDATING` no van dentro de un SQL:** son booleanos de PL/SQL. Un
+  `CASE WHEN INSERTING THEN 'INS' …` dentro del `VALUES` no compila: se calcula antes en una
+  variable (`v_operacion`).
+- **Tabla nueva que pasa Jose** (13/10/2026): el script la crea **solo si no existe**, tal cual
+  el DDL (identity, FKs, comentarios), y lo mismo su `_JN` (las columnas `JN_*` de
+  `pr_crear_trigger_auditoria`) y `SEQ_AUDITORIA`. Si ya existe, `[SKIP]` y no se toca.
+- **Pantalla nueva sin fila en `MENU_PAGINAS`:** `pagina_de_ruta` da `NULL`; `exigir` responde
+  403 diciendo que hay que darla de alta en Crear páginas, y la verificación final lo avisa con
+  `[INFO]`. Ver `envios_graficas.sql`.
+- **Una tabla sin fecha propia:** "cargado el / por" sale de su `_JN` (la fila `INS`), y "último
+  cambio", de la última `UPD`, en una subconsulta con `MIN(…) KEEP (DENSE_RANK FIRST …)`.
+  `JN_DATETIME` es UTC: se devuelve con `- 3/24` (hora de Paraguay), como `transferencias.sql`.
+- **Los combos del formulario, en el mismo `GET`:** id y nombre de las tablas que el formulario
+  elige (departamentos, ciudades, sucursales), sin los usos que cuentan sus propios listados.
+- **Una columna que guarda el NOMBRE de otra tabla** (`ENVIOS_GRAFICAS.SUCURSAL`): se valida
+  contra esa tabla y se guarda con su grafía; al modificar, se acepta el nombre que ya tenía
+  (por si la otra fila cambió de nombre o se borró).
+- **Un total que es la suma de otras columnas** (`CANTIDAD`): lo calcula el paquete, no viaja
+  en el body.
+- **Sugerir no necesita SQL:** las cantidades sugeridas de Envíos de Gráficas y Transferencias
+  salen de `postulaciones/todas`, que ya existía. Ver el [`README`](../README.md) → *Cantidades
+  sugeridas desde las postulaciones*.
 - **Datos viejos desalineados** (una ciudad con otro país que su departamento): la verificación
   los cuenta e imprime el `UPDATE` que los alinea, sin correrlo sola.
 - **Fin de línea de las guías:** `README.md` y `backend/README.md` son LF; `src/routes/README.md`
