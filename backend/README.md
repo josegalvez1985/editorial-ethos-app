@@ -20,6 +20,7 @@
 | **[`paises.sql`](paises.sql)** | ABM de países (`PKG_PAISES_ETHOS`) | después de `roles_paginas.sql` |
 | **[`nacionalidades.sql`](nacionalidades.sql)** | ABM de nacionalidades (`PKG_NACIONALIDADES_ETHOS`) | después de `roles_paginas.sql` |
 | **[`facilitadores.sql`](facilitadores.sql)** | Facilitadores con su ficha completa y sus 4 listas (`PKG_FACILITADORES_ETHOS`) | después de `nacionalidades.sql`, `ciudades.sql` y `barrios.sql` |
+| **[`facilitadores_dias_bloqueos.sql`](facilitadores_dias_bloqueos.sql)** | Horarios bloqueados de cada facilitador por año lectivo: crea `FACILITADORES_DIAS_BLOQUEOS` y su `_JN` si faltan, el `_JNTRG` con el usuario de la app y el ABM (`PKG_FAC_BLOQUEOS_ETHOS`) | después de `anios_lectivos.sql` y `facilitadores.sql` |
 | **[`departamentos.sql`](departamentos.sql)** | ABM de departamentos, cada uno de un país (`PKG_DEPARTAMENTOS_ETHOS`) | después de `paises.sql` |
 | **[`ciudades.sql`](ciudades.sql)** | ABM de ciudades, cada una de un departamento; el país sale del departamento (`PKG_CIUDADES_ETHOS`) | después de `departamentos.sql` |
 | **[`barrios.sql`](barrios.sql)** | ABM de barrios, cada uno de una ciudad; departamento y país salen de la ciudad (`PKG_BARRIOS_ETHOS`) | después de `ciudades.sql` |
@@ -478,6 +479,44 @@ transacción. Todo con los permisos de la 14. Paquete `PKG_FACILITADORES_ETHOS`.
 - **CI repetida**: se rechaza en un alta o al cambiarle la CI a uno.
 - **`UNISTR` devuelve NVARCHAR2**: unirlo con un texto común en un `UNION` da ORA-12704; va con
   `TO_CHAR` (pasó con "Físico" en `tipo_factura`, 08/10/2026).
+
+## Horarios bloqueados de los facilitadores (`facilitadores_dias_bloqueos.sql`)
+
+Tabla nueva que pasó Jose el 14/10/2026: en qué franjas **no** está disponible cada
+facilitador, por año lectivo y día (`LUNES` a `VIERNES`, `VARCHAR2(100)` cada uno). En el sitio
+es un **modal de Facilitadores** (`components/bloqueos-facilitador.tsx`), por facilitador: no es
+una página ni va en `MENU_PAGINAS`.
+
+| Método | Ruta | Cuerpo / respuesta |
+| --- | --- | --- |
+| GET | `facilitadores-bloqueos` | Todos los bloqueos (de todos los facilitadores y años), con `cargado_el` / `cargado_por` y `modificado_el` / `modificado_por` de la `_JN` en hora de Paraguay; además `anios` (`id_anio`, `anio`, `vigente`), `id_anio_actual` y `largo` (100) |
+| POST | `facilitadores-bloqueos` | `{id_facilitador, id_anio, lunes, martes, miercoles, jueves, viernes}` → `{id_bloqueo}`. Sin `id_anio`, el año actual. **409** si ese facilitador ya tiene fila en ese año |
+| PUT | `facilitadores-bloqueos/:id` | `{lunes … viernes}`: el facilitador y el año son los de la fila |
+| DELETE | `facilitadores-bloqueos/:id` | la fila del año (dejarlo sin bloqueos) |
+
+- **Sin permisos propios** (pedido de Jose, 14/10/2026): los cuatro métodos piden solo
+  sesión. Quien tiene habilitada la pantalla de Facilitadores ya usa el modal entero.
+- **El año actual sale de `FN_ANIO_LECTIVO_ACTUAL()`** (pedido de Jose, 14/10/2026), el mismo de
+  horarios, pre-horarios y postulaciones. Como la tabla guarda `ID_ANIO`, `f_id_anio_actual`
+  busca el id de ese `ANIO` (la fila activa si hubiera dos). Es el año con que abre el modal
+  (`vigente` en `anios`) y el de un POST sin `id_anio`. Sin año activo da `NULL`: el modal abre
+  en el más nuevo y el POST pide elegir uno.
+- **El formato de cada día:** franjas `HH:MI - HH:MI` separadas por coma y espacio, en orden de
+  hora (`07:00 - 08:00, 13:30 - 15:00`); vacío = libre. El paquete **normaliza** lo que llega
+  (`7:00-8:00`, otro orden) y rechaza con 400 una franja mal escrita, una hora que no existe, una
+  que termina antes de empezar, dos que se pisan o un día que no entra en 100 caracteres (unas 6
+  franjas). El sitio valida lo mismo antes de mandar.
+- **Una fila por facilitador y año:** la tabla no tiene `UNIQUE`; lo controla el paquete, y la
+  verificación final avisa si ya había repetidos.
+- **Al menos una franja:** guardar todo vacío responde 400; para dejarlo libre se borra la fila
+  (en el modal, el botón "Dejarlo libre en {año}").
+- **El `_JNTRG`** es el que vino con la tabla, con el usuario de la app en `JN_ORACLE_USER`
+  (como `envios_graficas.sql`).
+- **No son un "uso" del facilitador:** `facilitadores.sql` los excluye de sus usos y los borra
+  con él, como sus 4 listas (con SQL dinámico, para compilar aunque la tabla no exista). Hay
+  que **volver a correr `facilitadores.sql`** para que tome el cambio.
+- **Años Lectivos no los cuenta** como datos del año: cuenta las tablas con columna `ANIO`, y
+  esta tiene `ID_ANIO`. Borrar un año con bloqueos lo frena la FK `FK_FAC_BLOQ_ANIO`.
 
 ## Departamentos (`departamentos.sql`)
 

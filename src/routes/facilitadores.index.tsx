@@ -5,7 +5,14 @@ import { useState } from "react";
 
 import { Buscador, Cargando, Fallo } from "@/components/admin-ui";
 import { AppShell } from "@/components/app-shell";
+import { BloqueosFacilitador, BotonBloqueos } from "@/components/bloqueos-facilitador";
 import { keysFacilitadores, listarFacilitadores } from "@/lib/facilitadores";
+import {
+  anioVigente,
+  cuantasFranjas,
+  keysBloqueos,
+  listarBloqueos,
+} from "@/lib/facilitadores-bloqueos";
 import { iniciales } from "@/lib/navegacion";
 import { usePermisos } from "@/lib/permisos";
 import { normalizar } from "@/lib/utils";
@@ -27,6 +34,10 @@ type Filtro = "todos" | "activos" | "inactivos";
  * con lo que se busca de un vistazo —nombre, CI, teléfono, ciudad, si está
  * activo— y la ficha completa al tocar una (`/facilitadores/$id`).
  *
+ * El botón del costado de cada tarjeta abre sus horarios bloqueados (14/10/2026,
+ * `components/bloqueos-facilitador.tsx`), con cuántas franjas tiene en el año
+ * vigente.
+ *
  * El ícono es el que ya tenía en el menú (`UserCheck`): no se cambia.
  */
 function FacilitadoresPage() {
@@ -34,10 +45,21 @@ function FacilitadoresPage() {
   const [buscar, setBuscar] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("activos");
 
+  const [bloqueos, setBloqueos] = useState<{ id: number; nombre: string } | null>(null);
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: keysFacilitadores.lista,
     queryFn: listarFacilitadores,
   });
+  // Los horarios bloqueados, para el número de cada tarjeta. Si falla (el
+  // script todavía no se corrió) el listado sigue igual: el modal dice el error.
+  const listaBloqueos = useQuery({ queryKey: keysBloqueos.todo, queryFn: listarBloqueos });
+  const vigente = listaBloqueos.data ? anioVigente(listaBloqueos.data.anios) : undefined;
+  const franjasVigente = new Map(
+    (listaBloqueos.data?.bloqueos ?? [])
+      .filter((b) => b.idAnio === vigente?.id)
+      .map((b) => [b.idFacilitador, cuantasFranjas(b)]),
+  );
 
   const todos = data ?? [];
   const cuenta = {
@@ -128,11 +150,14 @@ function FacilitadoresPage() {
         ) : (
           <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
             {filas.map((f) => (
-              <li key={f.id}>
+              <li
+                key={f.id}
+                className="flex h-full items-stretch rounded-2xl border border-border/60 bg-card shadow-soft hover:border-primary/40"
+              >
                 <Link
                   to="/facilitadores/$id"
                   params={{ id: String(f.id) }}
-                  className="tap flex h-full items-center gap-3 rounded-2xl border border-border/60 bg-card p-3 shadow-soft hover:border-primary/40"
+                  className="tap flex min-w-0 flex-1 items-center gap-3 p-3"
                 >
                   <span
                     aria-hidden
@@ -172,11 +197,25 @@ function FacilitadoresPage() {
                   </span>
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                 </Link>
+                <BotonBloqueos
+                  franjas={franjasVigente.get(f.id) ?? 0}
+                  anio={vigente?.anio}
+                  nombre={f.nombre}
+                  onClick={() => setBloqueos({ id: f.id, nombre: f.nombre })}
+                />
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      {bloqueos && (
+        <BloqueosFacilitador
+          idFacilitador={bloqueos.id}
+          nombre={bloqueos.nombre}
+          onCerrar={() => setBloqueos(null)}
+        />
+      )}
     </AppShell>
   );
 }

@@ -283,7 +283,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
   /* ---------------------------------------------------------------------- */
 
   -- Las tablas con FK de una columna hacia FACILITADORES (salvo las _JN y las
-  -- 4 de la ficha), y cuantas filas de cada una usan cada facilitador. Si
+  -- 4 de la ficha, y los bloqueos), y cuantas filas de cada una usan cada facilitador. Si
   -- p_id viene, cuenta solo ese.
   PROCEDURE cargar_hijas(p_hijas OUT t_hijas, p_id IN NUMBER DEFAULT NULL) IS
     TYPE t_nums IS TABLE OF NUMBER;
@@ -302,7 +302,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
                                           AND constraint_type IN ('P', 'U'))
            AND c.table_name NOT LIKE '%\_JN' ESCAPE '\'
            AND c.table_name NOT IN ('FACILITADORES_NOMINADO', 'FACILITADORES_REFERENCIA_PERSONAL',
-                                    'FACILITADORES_ESTUDIOS', 'FACILITADORES_LABORAL')
+                                    'FACILITADORES_ESTUDIOS', 'FACILITADORES_LABORAL',
+                                    -- Sus horarios bloqueados (14/10/2026): son suyos, no un uso.
+                                    'FACILITADORES_DIAS_BLOQUEOS')
            AND (SELECT COUNT(*) FROM user_cons_columns x
                  WHERE x.constraint_name = c.constraint_name) = 1
          ORDER BY c.table_name
@@ -1034,7 +1036,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
   /* ELIMINAR                                                               */
   /* ---------------------------------------------------------------------- */
 
-  -- Solo si nada lo usa (fuera de su ficha). Sus 4 listas se borran con el.
+  -- Solo si nada lo usa (fuera de su ficha). Sus 4 listas y sus horarios bloqueados se borran con el.
   PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN VARCHAR2) IS
     l_id    NUMBER := f_numero(p_id);
     l_hijas t_hijas;
@@ -1060,6 +1062,15 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
     DELETE FROM facilitadores_referencia_personal WHERE id_facilitador = l_id;
     DELETE FROM facilitadores_estudios            WHERE id_facilitador = l_id;
     DELETE FROM facilitadores_laboral             WHERE id_facilitador = l_id;
+    -- Sus horarios bloqueados (facilitadores_dias_bloqueos.sql, 14/10/2026).
+    -- Dinamico: el paquete tiene que compilar aunque la tabla no exista todavia.
+    BEGIN
+      EXECUTE IMMEDIATE 'DELETE FROM facilitadores_dias_bloqueos WHERE id_facilitador = :id'
+        USING l_id;
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE <> -942 THEN RAISE; END IF;  -- ORA-00942: la tabla no existe
+    END;
     DELETE FROM facilitadores                     WHERE id_facilitador = l_id;
     IF SQL%ROWCOUNT = 0 THEN
       ROLLBACK;

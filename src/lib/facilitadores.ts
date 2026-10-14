@@ -253,6 +253,29 @@ export function textoUsos(u: Uso[]): string | null {
   return `en ${partes.length ? `${partes.join(", ")} y ${ultimo}` : ultimo}`;
 }
 
+export type CumpleHoy = FacilitadorFila & { cumple: number };
+
+/**
+ * Los facilitadores ACTIVOS que cumplen años hoy (hora local), con los años
+ * que cumplen. Para la tarjeta del Inicio (14/10/2026): sale de `fecha_nacimiento`
+ * del listado, sin SQL propio. Quien nació un 29/02 lo festeja el 28/02 en los
+ * años que no son bisiestos.
+ */
+export function cumplenHoy(lista: FacilitadorFila[], hoy = new Date()): CumpleHoy[] {
+  const dia = hoy.getDate();
+  const mes = hoy.getMonth() + 1;
+  const anio = hoy.getFullYear();
+  const bisiesto = (anio % 4 === 0 && anio % 100 !== 0) || anio % 400 === 0;
+  return lista.flatMap((f) => {
+    const p = f.fechaNacimiento.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!f.activo || !p) return [];
+    let d = Number(p[1]);
+    const m = Number(p[2]);
+    if (d === 29 && m === 2 && !bisiesto) d = 28;
+    return d === dia && m === mes ? [{ ...f, cumple: anio - Number(p[3]) }] : [];
+  });
+}
+
 /** Si un valor de SI_NO es el "sí" (S, Si, Sí…). */
 export const esSi = (v: string) => /^s/i.test(v.trim());
 

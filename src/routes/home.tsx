@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { ActividadChart } from "@/components/actividad-chart";
 import { ActividadDiaModal } from "@/components/actividad-dia-modal";
+import { Cumpleanios } from "@/components/cumpleanios";
 import { SelectorModal } from "@/components/selector-modal";
 import { PuntualidadChart } from "@/components/puntualidad-chart";
 import { PuntualidadModal } from "@/components/puntualidad-modal";
@@ -48,11 +49,17 @@ export const Route = createFileRoute("/home")({
  *
  * Al irse esa parte, **se fue también la consulta de evaluaciones**: el inicio ya
  * no la pide. Es una llamada menos en cada arranque de la app.
+ *
+ * Desde el 14/10/2026, arriba del tablero va **la tarjeta de cumpleaños**
+ * (`components/cumpleanios.tsx`): felicita a los facilitadores que cumplen hoy
+ * y no ocupa lugar los días que no cumple nadie. Pide el listado de
+ * facilitadores, el mismo (y con la misma caché) que su pantalla.
  */
 function HomePage() {
   return (
     <AppShell>
       <div className="px-5 pt-5">
+        <Cumpleanios />
         <Puntualidad />
       </div>
     </AppShell>
