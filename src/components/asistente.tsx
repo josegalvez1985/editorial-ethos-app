@@ -23,7 +23,6 @@ import {
   preguntar,
   reintentar,
   useAsistente,
-  useAsistenteDisponible,
   type ConsultaIA,
   type MensajeIA,
 } from "@/lib/asistente";
@@ -40,15 +39,12 @@ import { cn } from "@/lib/utils";
  * | Celular y APK (`< lg`) | abajo a la derecha, encima de la barra | hoja casi a pantalla completa |
  * | Escritorio (`≥ lg`) | abajo a la derecha | panel fijo a la derecha, **sin tapar** la pantalla: `AppShell` le hace lugar, y sigue abierto al navegar |
  *
- * Solo aparece con la página de `/asistente` habilitada (`PUEDE_CONSULTAR`):
- * ver {@link useAsistenteDisponible}.
+ * Lo ven todos los que entran: no depende de Roles de páginas (Jose,
+ * 15/10/2026; la primera versión pedía la página `/asistente`).
  */
 export function Asistente() {
-  const disponible = useAsistenteDisponible();
   const { abierto, pendiente } = useAsistente();
   const escritorio = useEscritorio();
-
-  if (!disponible) return null;
 
   return (
     <>

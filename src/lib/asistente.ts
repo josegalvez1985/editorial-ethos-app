@@ -6,8 +6,9 @@
  * solo se manda la pregunta con lo que el backend no sabe —la conversación, la
  * pantalla abierta y el manual— y se muestra la respuesta.
  *
- * - **Quién lo ve:** quien tenga la página de `/asistente` con
- *   `PUEDE_CONSULTAR`. No es una pantalla del menú: `armarMenu` la saltea.
+ * - **Quién lo ve:** todos los que entran (Jose, 15/10/2026). No depende de
+ *   Roles de páginas ni es una pantalla del menú; el gasto lo frena el límite
+ *   de preguntas por día del backend.
  * - **La conversación vive solo en memoria y dura lo que la sesión**: va
  *   atada al token, así que recargar, salir o entrar con otro usuario la
  *   borra. Puede traer datos de cualquier tabla; no se escribe en el disco.
@@ -19,20 +20,6 @@
 import { useSyncExternalStore } from "react";
 
 import { authFetch, getSesion } from "@/lib/api";
-import { usePermisos } from "@/lib/permisos";
-
-export const RUTA_ASISTENTE = "/asistente";
-
-/**
- * Si el usuario tiene el asistente: la página de `/asistente` en
- * `MENU_PAGINAS` con `PUEDE_CONSULTAR`. Explícito y no `puedeRuta`, que deja
- * pasar las rutas que ninguna página controla: mientras no se dé de alta, no
- * lo ve nadie (y el backend respondería 403).
- */
-export function useAsistenteDisponible() {
-  const { paginaDeRuta } = usePermisos();
-  return !!paginaDeRuta(RUTA_ASISTENTE)?.consultar;
-}
 
 /** Una consulta SQL que corrió la IA para responder. */
 export type ConsultaIA = {

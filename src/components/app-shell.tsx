@@ -6,7 +6,7 @@ import { AppHeader } from "@/components/app-header";
 import { Asistente } from "@/components/asistente";
 import { BottomNav } from "@/components/bottom-nav";
 import { SidebarNav } from "@/components/sidebar-nav";
-import { useAsistente, useAsistenteDisponible } from "@/lib/asistente";
+import { useAsistente } from "@/lib/asistente";
 import { RUTAS_LIBRES } from "@/lib/navegacion";
 import { esRutaActiva, usePermisos } from "@/lib/permisos";
 import { useSession } from "@/lib/session";
@@ -71,8 +71,7 @@ export function AppShell({
   const pagina = paginaDeRuta(pathname);
   // El panel del asistente, en la computadora, va al costado y no encima: el
   // contenido se corre para dejarle lugar (ver components/asistente.tsx).
-  const { abierto: panelAbierto } = useAsistente();
-  const asistenteAbierto = useAsistenteDisponible() && panelAbierto;
+  const { abierto: asistenteAbierto } = useAsistente();
   const estado: "ok" | "cargando" | "error" | "sin-acceso" = libre
     ? "ok"
     : cargando

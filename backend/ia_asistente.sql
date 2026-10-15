@@ -21,8 +21,9 @@
 --   - Para el uso del sistema, el sitio manda el "manual": las secciones del
 --     README que describen cada pantalla (src/lib/asistente.ts). Así queda al
 --     día con cada deploy sin volver a correr este script.
---   - Quién lo usa: quien tenga la página de /asistente con PUEDE_CONSULTAR en
---     Roles de páginas. Así se controla quién genera gasto.
+--   - Quién lo usa: CUALQUIER USUARIO CON SESIÓN, sin página ni permiso en
+--     Roles de páginas (Jose, 15/10/2026; la primera versión pedía la página
+--     /asistente). El gasto lo controla LIMITE_DIARIO, por usuario.
 --
 -- QUÉ PUBLICA ESTE SCRIPT
 --
@@ -34,14 +35,14 @@
 --   de los scripts (ver inventarios.sql): `historial` es un array y `manual`
 --   pasa los 32K, y ORDS bindea solo campos escalares y cortos.
 --
--- CORRER DESPUÉS de auth.sql y roles_paginas.sql.
+-- CORRER DESPUÉS de auth.sql.
 --
 --   SQL Workshop -> SQL Scripts -> Upload -> este archivo -> Run
 --
 -- Idempotente: se puede correr las veces que haga falta.
 --
 --------------------------------------------------------------------------------
--- Y DESPUÉS, TRES PASOS A MANO
+-- Y DESPUÉS, DOS PASOS A MANO
 --------------------------------------------------------------------------------
 --
 --   1. LA CLAVE DE LA API. Se crea en https://platform.claude.com (API Keys) y
@@ -61,10 +62,8 @@
 --
 --        BEGIN PKG_IA_ETHOS.probar; END;
 --
---   3. EN EL SITIO: dar de alta la página en Crear páginas (menú principal a
---      elección, por ejemplo Administrador; nombre "Asistente IA"; ruta
---      /asistente) y darle PUEDE_CONSULTAR en Roles de páginas a quien lo vaya
---      a usar. El menú NO la muestra: el botón flotante aparece solo.
+--   No hay nada que dar de alta en Crear páginas ni en Roles de páginas: el
+--   botón le aparece a todo el que entra.
 --
 --------------------------------------------------------------------------------
 -- LAS CONSULTAS (lo que puede leer la IA)
@@ -131,8 +130,7 @@ SET DEFINE OFF
 DECLARE
   l_n PLS_INTEGER;
 BEGIN
-  FOR o IN (SELECT 'PKG_AUTH_ETHOS' AS nombre, 'backend/auth.sql' AS script FROM dual
-            UNION ALL SELECT 'PKG_ROLES_PAGINAS_ETHOS', 'backend/roles_paginas.sql' FROM dual) LOOP
+  FOR o IN (SELECT 'PKG_AUTH_ETHOS' AS nombre, 'backend/auth.sql' AS script FROM dual) LOOP
     SELECT COUNT(*) INTO l_n FROM all_objects
      WHERE object_name = o.nombre AND object_type = 'PACKAGE BODY';
     IF l_n = 0 THEN
@@ -249,7 +247,6 @@ END PKG_IA_ETHOS;
 
 CREATE OR REPLACE PACKAGE BODY PKG_IA_ETHOS AS
 
-  c_ruta      CONSTANT VARCHAR2(30)  := '/asistente';
   -- El workspace, como en auth.sql: APEX_WEB_SERVICE lo necesita fuera de una
   -- sesión de APEX (desde ORDS no hay).
   c_workspace CONSTANT VARCHAR2(64)  := 'FUNDCARAC';
@@ -859,7 +856,6 @@ Cómo responder:
   PROCEDURE preguntar(p_token IN VARCHAR2, p_cuerpo IN CLOB) IS
     l_usuario   VARCHAR2(255) := f_usuario(p_token);
     l_inicio    PLS_INTEGER   := DBMS_UTILITY.GET_TIME;
-    l_pagina    NUMBER;
     l_cuerpo    JSON_OBJECT_T;
     l_pregunta  VARCHAR2(32767);
     l_hist      JSON_ARRAY_T;
@@ -928,19 +924,9 @@ Cómo responder:
       p_error(p_status, p_titulo, p_detalle);
     END fallar;
   BEGIN
-    -- Sesión y permiso: la página de /asistente con PUEDE_CONSULTAR.
+    -- Solo sesión: lo usa cualquiera que entró (Jose, 15/10/2026).
     IF l_usuario IS NULL THEN
       p_error(401, 'Unauthorized', 'Token invalido o expirado');
-      RETURN;
-    END IF;
-    l_pagina := PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta(c_ruta);
-    IF l_pagina IS NULL THEN
-      p_error(403, 'Forbidden', 'El asistente todavía no está en el menú: hay que darlo de alta en '
-              || 'Crear páginas (ruta ' || c_ruta || ') y darle permisos');
-      RETURN;
-    END IF;
-    IF PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, 'C') <> 'S' THEN
-      p_error(403, 'Forbidden', 'No tenés permiso para usar el asistente');
       RETURN;
     END IF;
 
@@ -1371,16 +1357,16 @@ BEGIN
 
   DBMS_OUTPUT.PUT_LINE('       POST   ia/preguntar');
 
+  -- La primera versión pedía la página /asistente: si quedó cargada, sobra.
   BEGIN
-    l_pagina := PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta('/asistente');
+    EXECUTE IMMEDIATE 'SELECT MAX(app_page_id) FROM menu_paginas WHERE ruta = ''/asistente'''
+      INTO l_pagina;
   EXCEPTION
     WHEN OTHERS THEN l_pagina := NULL;
   END;
-  IF l_pagina IS NULL THEN
-    DBMS_OUTPUT.PUT_LINE('[INFO] /asistente todavia no esta en MENU_PAGINAS: darla de alta en Crear');
-    DBMS_OUTPUT.PUT_LINE('       paginas (ruta /asistente) y darle PUEDE_CONSULTAR en Roles de paginas.');
-  ELSE
-    DBMS_OUTPUT.PUT_LINE('[OK]   /asistente es la pagina ' || l_pagina || ' del menu.');
+  IF l_pagina IS NOT NULL THEN
+    DBMS_OUTPUT.PUT_LINE('[INFO] La pagina ' || l_pagina || ' (/asistente) ya no hace falta: el asistente');
+    DBMS_OUTPUT.PUT_LINE('       es para todos. Se puede borrar en Crear paginas.');
   END IF;
 
   SELECT COUNT(*) INTO l_clave FROM ia_config WHERE clave = 'API_KEY' AND valor IS NOT NULL;
