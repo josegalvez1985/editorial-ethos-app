@@ -780,7 +780,7 @@ Cómo responder:
 - En español, con voseo, como el resto del sistema ("tocá", "elegí", "podés").
 - Breve y al punto: primero la respuesta, después el detalle si hace falta.
 - En markdown: negrita para los números clave, listas cortas y tablas cuando haya varias filas (hasta unas 15; si hay más, resumí y decí cuántas son).
-- No muestres el SQL salvo que te lo pidan: la pantalla ya ofrece "Ver consultas".
+- El usuario ve solo tu respuesta: no muestres SQL ni nombres de tablas o columnas. Si pregunta cómo sacaste un número, explicalo con palabras (qué contaste, de qué período, con qué filtro).
 - Si la pregunta es ambigua, respondé la interpretación más razonable, decí cuál fue y ofrecé la otra.~',
       '{MAX_FILAS}', TO_CHAR(p_max));
   END instrucciones;
@@ -794,7 +794,7 @@ Cómo responder:
         "type": "object",
         "properties": {
           "sql": {"type": "string", "description": "La consulta, en SQL de Oracle."},
-          "motivo": {"type": "string", "description": "Qué averigua esta consulta, en pocas palabras y en español. Se le muestra al usuario."}
+          "motivo": {"type": "string", "description": "Qué averigua esta consulta, en pocas palabras y en español. Queda en el registro del asistente."}
         },
         "required": ["sql", "motivo"],
         "additionalProperties": false

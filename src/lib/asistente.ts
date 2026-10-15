@@ -21,20 +21,15 @@ import { useSyncExternalStore } from "react";
 
 import { authFetch, getSesion } from "@/lib/api";
 
-/** Una consulta SQL que corrió la IA para responder. */
-export type ConsultaIA = {
-  motivo: string;
-  sql: string;
-  /** Filas devueltas, o `null` si dio error. */
-  filas: number | null;
-  error: string | null;
-};
-
+/*
+ * El backend devuelve también `consultas` (el SQL que corrió la IA), pero no
+ * se muestra: el usuario ve solo la respuesta (15/10/2026, a pedido). Queda en
+ * IA_CONSULTAS.CONSULTAS para revisarlo desde Oracle.
+ */
 export type MensajeIA = {
   id: string;
   rol: "usuario" | "asistente";
   texto: string;
-  consultas?: ConsultaIA[];
   /** Un fallo (sin respuesta): no se le manda a la IA como historial. */
   error?: boolean;
 };
@@ -149,21 +144,10 @@ export async function preguntar(texto: string, pantalla: string | null) {
       }),
     })) as {
       respuesta?: string;
-      consultas?: Record<string, unknown>[];
       usadas_hoy?: number;
       limite?: number;
     };
-    agregar({
-      id: nuevoId(),
-      rol: "asistente",
-      texto: String(r.respuesta ?? ""),
-      consultas: (r.consultas ?? []).map((c) => ({
-        motivo: String(c.motivo ?? ""),
-        sql: String(c.sql ?? ""),
-        filas: c.filas == null ? null : Number(c.filas),
-        error: c.error == null ? null : String(c.error),
-      })),
-    });
+    agregar({ id: nuevoId(), rol: "asistente", texto: String(r.respuesta ?? "") });
     fijar({ usadasHoy: r.usadas_hoy ?? null, limite: r.limite ?? null });
   } catch (e) {
     agregar({

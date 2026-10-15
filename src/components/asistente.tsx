@@ -3,9 +3,7 @@ import {
   AlertTriangle,
   ArrowUp,
   Check,
-  ChevronDown,
   Copy,
-  Database,
   RotateCcw,
   SquarePen,
   Sparkles,
@@ -23,11 +21,9 @@ import {
   preguntar,
   reintentar,
   useAsistente,
-  type ConsultaIA,
   type MensajeIA,
 } from "@/lib/asistente";
 import { usePermisos } from "@/lib/permisos";
-import { cn } from "@/lib/utils";
 
 /**
  * El asistente con IA (15/10/2026): botón flotante y chat, en todas las
@@ -351,10 +347,11 @@ function Mensaje({
   return (
     <div className="space-y-2">
       <Markdown texto={m.texto} />
-      <div className="flex flex-wrap items-center gap-1.5">
-        <BotonCopiar texto={m.texto} />
-        {!!m.consultas?.length && <Consultas consultas={m.consultas} />}
-      </div>
+      {/*
+        Sin "Ver consultas" (15/10/2026, a pedido): el usuario ve solo la
+        respuesta. El SQL que corrió queda en IA_CONSULTAS.CONSULTAS.
+      */}
+      <BotonCopiar texto={m.texto} />
     </div>
   );
 }
@@ -378,48 +375,6 @@ function BotonCopiar({ texto }: { texto: string }) {
       {copiado ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
       {copiado ? "Copiado" : "Copiar"}
     </button>
-  );
-}
-
-/** Qué consultó para responder: el motivo, cuántas filas y el SQL. */
-function Consultas({ consultas }: { consultas: ConsultaIA[] }) {
-  const [abierto, setAbierto] = useState(false);
-  return (
-    <div className="w-full">
-      <button
-        type="button"
-        onClick={() => setAbierto((a) => !a)}
-        aria-expanded={abierto}
-        className="tap inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11.5px] font-medium text-muted-foreground hover:bg-muted"
-      >
-        <Database className="size-3.5" />
-        Ver consultas ({consultas.length})
-        <ChevronDown className={cn("size-3.5 transition-transform", abierto && "rotate-180")} />
-      </button>
-      {abierto && (
-        <ol className="mt-1.5 space-y-2">
-          {consultas.map((c, i) => (
-            <li key={i} className="rounded-xl border border-border/70 bg-muted/40 p-2.5">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-[12.5px] font-medium">{c.motivo || `Consulta ${i + 1}`}</p>
-                <span
-                  className={cn(
-                    "shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold",
-                    c.error ? "bg-destructive/10 text-destructive" : "bg-primary-soft text-primary",
-                  )}
-                >
-                  {c.error ? "Error" : `${c.filas} ${c.filas === 1 ? "fila" : "filas"}`}
-                </span>
-              </div>
-              <pre className="mt-1.5 overflow-x-auto rounded-lg bg-background px-2.5 py-2 font-mono text-[11px] leading-snug whitespace-pre-wrap text-muted-foreground">
-                {c.sql}
-              </pre>
-              {c.error && <p className="mt-1.5 text-[11.5px] text-destructive">{c.error}</p>}
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
   );
 }
 
