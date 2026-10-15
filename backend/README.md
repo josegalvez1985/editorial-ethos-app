@@ -12,6 +12,7 @@
 | **[`transferencias.sql`](transferencias.sql)** | Transferencias de manuales entre sucursales (`PKG_TRANSFERENCIAS_ETHOS`) | después de `inventarios.sql` |
 | **[`sucursales.sql`](sucursales.sql)** | ABM de sucursales (`PKG_SUCURSALES_ETHOS`) + corrige `SUCURSALES_JNTRG` | independiente |
 | **[`envios_graficas.sql`](envios_graficas.sql)** | Envíos de gráficas a las sucursales, cabecera y detalle: crea `ENVIOS_CABECERA`, `ENVIOS_GRAFICAS` y sus bitácoras si faltan, los dos `_JNTRG` con el usuario de la app y el ABM (`PKG_ENVIOS_GRAFICAS_ETHOS`) | después de `roles_paginas.sql`, `ciudades.sql` y `sucursales.sql` |
+| **[`ia_asistente.sql`](ia_asistente.sql)** | El asistente con IA: crea `IA_CONFIG` e `IA_CONSULTAS` si faltan y `PKG_IA_ETHOS`, que llama a la API de Claude y corre sus consultas en solo lectura (`ia/preguntar`). Después, a mano: la clave de la API y la página `/asistente` | después de `roles_paginas.sql` |
 | **[`auditoria.sql`](auditoria.sql)** | Consulta de las bitácoras `_JN` (`PKG_AUDITORIA_ETHOS`) + `pr_crear_trigger_auditoria` | independiente |
 | **[`auditoria_intervenciones.sql`](auditoria_intervenciones.sql)** | La bitácora `INTERVENCIONES_JN` con todas sus columnas, para la página 58, Auditoría de Intervenciones (`PKG_AUDITORIA_INTERV_ETHOS`, `auditoria-intervenciones`) | independiente |
 | **[`menu_paginas.sql`](menu_paginas.sql)** | Tabla `MENU_PAGINAS`: el menú del sitio, con las páginas del menú de APEX (mismo número, ruta del sitio) y las pantallas nuevas | independiente |
@@ -1143,6 +1144,75 @@ Hasta entonces el GET anda y guardar o borrar responden 403 diciendo eso.
 - La gráfica escrita con otras mayúsculas se guarda como ya está en `ENVIOS_CABECERA`.
 - Cada manual es un entero de 0 en adelante (vacío = 0), al menos uno mayor que 0 por destino,
   y **`CANTIDAD` es la suma de los siete**: la pone el paquete.
+
+## Asistente con IA (`ia_asistente.sql`)
+
+Pedido de Jose el 15/10/2026: una IA a la que preguntarle de todo, sobre el uso del sistema y
+sobre los registros. En el sitio es un botón flotante (`components/asistente.tsx`, montado en
+`AppShell`); no es una pantalla del menú.
+
+| Método | Ruta | Cuerpo / respuesta |
+| --- | --- | --- |
+| POST | `ia/preguntar` | `{pregunta, historial: [{rol: "usuario" \| "asistente", texto}], manual, pantalla, nombre}` → `{respuesta (markdown), consultas: [{motivo, sql, filas, error}], usadas_hoy, limite}`. 503 sin clave, 429 al pasar el límite del día, 502 si la API de Claude falla |
+
+**Cómo se decidió** (Jose, 15/10/2026):
+
+- **Corre en Oracle**, no en el navegador ni en un servidor aparte: la clave de la API no puede
+  llegar al sitio, que es estático. `PKG_IA_ETHOS` llama a la API con `APEX_WEB_SERVICE` y
+  hace las idas y vueltas (la IA pide una consulta, el paquete la corre y le devuelve el
+  resultado, hasta 8 vueltas y 12 consultas por pregunta). La respuesta llega entera, no
+  palabra por palabra.
+- **Modelo: Claude Haiku 5.5** (`claude-haiku-5-5`), el más barato. Está en `IA_CONFIG`
+  (`MODELO`), igual que `ESFUERZO`, `LIMITE_DIARIO` (60) y `MAX_FILAS` (200): se cambian con
+  un `UPDATE`, sin volver a correr el script.
+- **Datos: SQL de solo lectura sobre todas las tablas, sin filtrar por permisos.** Solo quedan
+  afuera las privadas: `IA_*` (la clave) y `ETHOS_TOKENS`. Quien usa el asistente puede ver,
+  preguntando, datos de pantallas que no tiene habilitadas.
+- **Quién lo usa:** la página `/asistente` con `PUEDE_CONSULTAR` en `ROLES_PAGINAS`. Así se
+  controla quién genera gasto.
+
+**Las consultas de la IA** pasan por `validar` y `consultar`:
+
+- Una sola sentencia, que empieza con `SELECT` o `WITH`. Sin `;`, comentarios, `@dblink`,
+  literales `q'...'`, `WITH FUNCTION` ni `FOR UPDATE`.
+- Ningún identificador puede ser código del esquema (paquetes, funciones, procedimientos,
+  tipos, sinónimos, secuencias; salvo `FN_ANIO_LECTIVO_ACTUAL`), del sistema (`DBMS_*`,
+  `UTL_*`, `APEX_*`, `OWA`, `HTP`, las vistas `USER_`/`ALL_`/`DBA_`/`V$`, `XMLQUERY`...) ni una
+  tabla privada. Un nombre de tabla o columna del esquema que empiece igual (`USER_ID`) vale.
+- Corre en **`SET TRANSACTION READ ONLY`**: aunque algo pasara el filtro, Oracle no deja
+  escribir.
+- Devuelve hasta `MAX_FILAS` filas y corta los textos largos; si hay más, avisa (`cortado`)
+  para que la IA agregue. **No hay tope de tiempo** por consulta.
+- Para probar una a mano: `BEGIN PKG_IA_ETHOS.probar_consulta('SELECT ...'); END;`.
+
+**Lo que se le manda a la IA**, en este orden (lo fijo primero, para que se cachee):
+
+1. La herramienta `consultar_sql`.
+2. Las instrucciones y **el esquema**: cada tabla y vista con sus columnas, tipos y
+   comentarios, las claves foráneas y la lista de bitácoras `_JN`. Sale del diccionario y se
+   guarda en la sesión 10 minutos.
+3. **El manual**, que lo manda el sitio: las secciones del [`README`](../README.md) *Módulos
+   y menú*, desde *Cómo se ve el menú* hasta antes de *Reportes: siempre con Excel*, y
+   *Sesión y datos en el dispositivo*, más una guía básica (`lib/asistente.ts`). **Así cada
+   pantalla nueva documentada en el README la conoce el asistente con el deploy**, sin correr
+   nada en Oracle. Si se cambian esos títulos, hay que tocar `armarManual`.
+4. El contexto: usuario, fecha y hora de Paraguay, año lectivo vigente y la pantalla abierta.
+5. La conversación: los últimos 12 mensajes (solo el texto) y la pregunta.
+
+**Lo que cuesta:** cada pregunta queda en `IA_CONSULTAS` con sus tokens; el encabezado del
+script trae la consulta para sacar los dólares por mes. Con Haiku 5.5 y el caché, estimo menos
+de medio centavo de dólar por pregunta (depende del tamaño del esquema y de cuántas consultas
+haga); la consulta de `IA_CONSULTAS` da el número real.
+
+**Para ponerlo en marcha:** correr el script; cargar la clave
+(`BEGIN PKG_IA_ETHOS.fijar_clave('sk-ant-...'); END;` en SQL Commands, **nunca** en un archivo
+del repositorio); si la clave no es de un workspace de la consola de Claude (la API responde
+400 "This API key is not scoped to a workspace", como pasó con la primera el 15/10/2026),
+cargar también el ID del workspace con `BEGIN PKG_IA_ETHOS.fijar_workspace_id('wrkspc_...');
+END;` o crear la clave dentro de un workspace; probar con `BEGIN PKG_IA_ETHOS.probar; END;`;
+dar de alta `/asistente` en
+Crear páginas y darle permisos. Si `probar` da un error de ACL o de certificado, la instancia
+no deja salir a `api.anthropic.com` y el asistente no puede correr en Oracle.
 
 ## Transferencias de manuales (`transferencias.sql`)
 

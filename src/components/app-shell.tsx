@@ -3,11 +3,14 @@ import { Loader2, RotateCcw, ShieldOff } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 
 import { AppHeader } from "@/components/app-header";
+import { Asistente } from "@/components/asistente";
 import { BottomNav } from "@/components/bottom-nav";
 import { SidebarNav } from "@/components/sidebar-nav";
+import { useAsistente, useAsistenteDisponible } from "@/lib/asistente";
 import { RUTAS_LIBRES } from "@/lib/navegacion";
 import { esRutaActiva, usePermisos } from "@/lib/permisos";
 import { useSession } from "@/lib/session";
+import { cn } from "@/lib/utils";
 
 /**
  * Marco de las pantallas con sesión. **Dos layouts, un solo componente:**
@@ -66,6 +69,10 @@ export function AppShell({
   const { paginaDeRuta, puedeRuta, cargando, error, reintentar } = usePermisos();
   const libre = RUTAS_LIBRES.some((r) => esRutaActiva(pathname, r));
   const pagina = paginaDeRuta(pathname);
+  // El panel del asistente, en la computadora, va al costado y no encima: el
+  // contenido se corre para dejarle lugar (ver components/asistente.tsx).
+  const { abierto: panelAbierto } = useAsistente();
+  const asistenteAbierto = useAsistenteDisponible() && panelAbierto;
   const estado: "ok" | "cargando" | "error" | "sin-acceso" = libre
     ? "ok"
     : cargando
@@ -105,7 +112,12 @@ export function AppShell({
         `min-w-0`: sin esto, una tabla ancha dentro de un hijo flex estira la
         columna y empuja la sidebar fuera de la pantalla en vez de scrollear.
       */}
-      <div className="flex min-h-dvh w-full min-w-0 flex-1 flex-col bg-background lg:bg-muted/40">
+      <div
+        className={cn(
+          "flex min-h-dvh w-full min-w-0 flex-1 flex-col bg-background lg:bg-muted/40",
+          asistenteAbierto && "lg:mr-[420px]",
+        )}
+      >
         <AppHeader />
 
         {/*
@@ -162,6 +174,8 @@ export function AppShell({
 
         {nav ? <BottomNav /> : null}
       </div>
+
+      <Asistente />
     </div>
   );
 }

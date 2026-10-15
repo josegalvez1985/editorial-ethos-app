@@ -129,6 +129,7 @@ import {
 } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 
+import { RUTA_ASISTENTE } from "@/lib/asistente";
 import {
   esRutaActiva,
   RUTA_PAGINAS,
@@ -318,6 +319,9 @@ export const PANTALLAS: Record<string, { descripcion: string }> = {
   "/consulta-transferencias": { descripcion: "Envíos entre sucursales por ruta y manual, con PDF" },
   "/auditoria": { descripcion: "Consultas de auditoría" },
   "/usuarios": { descripcion: "Activar y bloquear cuentas" },
+  // No es una pantalla del menú (15/10/2026): es el botón flotante del
+  // asistente con IA. Su página solo da el permiso; ver `armarMenu`.
+  [RUTA_ASISTENTE]: { descripcion: "Asistente con IA: el botón flotante de todas las pantallas" },
 };
 
 /**
@@ -473,7 +477,17 @@ export function armarMenu({ paginas, admin }: MiMenu): GrupoNav[] {
     // /permisos está en la base como la página 2 de APEX (Roles de Usuarios):
     // va con su ítem fijo, al principio de Administrador (`vePermisos`), no
     // acá con el nombre de APEX.
-    if (!p.consultar || p.ruta === RUTA_PERMISOS || p.ruta === RUTA_PAGINAS) continue;
+    //
+    // /asistente tampoco: su página existe para dar el permiso del botón
+    // flotante (components/asistente.tsx), no hay pantalla a la que ir.
+    if (
+      !p.consultar ||
+      p.ruta === RUTA_PERMISOS ||
+      p.ruta === RUTA_PAGINAS ||
+      p.ruta === RUTA_ASISTENTE
+    ) {
+      continue;
+    }
     const pantalla = PANTALLAS[p.ruta];
     const items = grupos.get(p.menuPrincipal) ?? [];
     items.push({
