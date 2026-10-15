@@ -1165,6 +1165,9 @@ sobre los registros. En el sitio es un botón flotante (`components/asistente.ts
 - **Modelo: Claude Haiku 5.5** (`claude-haiku-5-5`), el más barato. Está en `IA_CONFIG`
   (`MODELO`), igual que `ESFUERZO`, `LIMITE_DIARIO` (60) y `MAX_FILAS` (200): se cambian con
   un `UPDATE`, sin volver a correr el script.
+- **Solo consultas, siempre** (Jose lo confirmó el 15/10/2026): la IA no inserta, modifica ni
+  borra nada. No agregarle herramientas que escriban; si piden cargar o cambiar algo, explica
+  en qué pantalla se hace.
 - **Datos: SQL de solo lectura sobre todas las tablas, sin filtrar por permisos.** Solo quedan
   afuera las privadas: `IA_*` (la clave) y `ETHOS_TOKENS`. Quien usa el asistente puede ver,
   preguntando, datos de pantallas que no tiene habilitadas.

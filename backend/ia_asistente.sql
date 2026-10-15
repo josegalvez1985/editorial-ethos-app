@@ -21,6 +21,9 @@
 --   - Para el uso del sistema, el sitio manda el "manual": las secciones del
 --     README que describen cada pantalla (src/lib/asistente.ts). Así queda al
 --     día con cada deploy sin volver a correr este script.
+--   - SOLO CONSULTAS, SIEMPRE (Jose, 15/10/2026): la IA no inserta, modifica
+--     ni borra nada, y no hay que darle herramientas que lo hagan. Si piden
+--     cargar o cambiar algo, explica en qué pantalla se hace.
 --   - Quién lo usa: CUALQUIER USUARIO CON SESIÓN, sin página ni permiso en
 --     Roles de páginas (Jose, 15/10/2026; la primera versión pedía la página
 --     /asistente). El gasto lo controla LIMITE_DIARIO, por usuario.
