@@ -12,7 +12,7 @@
  */
 
 import { authFetch } from "@/lib/api";
-import type { ValorLista } from "@/lib/utils";
+import { nombreTabla, type ValorLista } from "@/lib/utils";
 
 export type Uso = { tabla: string; cantidad: number };
 
@@ -248,7 +248,7 @@ export async function eliminarFacilitador(id: number): Promise<void> {
 /** "en 12 postulaciones y 3 evaluaciones", o `null` si no se usa. */
 export function textoUsos(u: Uso[]): string | null {
   if (!u.length) return null;
-  const partes = u.map((x) => `${x.cantidad} ${x.tabla.toLowerCase().replace(/_/g, " ")}`);
+  const partes = u.map((x) => `${x.cantidad} ${nombreTabla(x.tabla, x.cantidad)}`);
   const ultimo = partes.pop();
   return `en ${partes.length ? `${partes.join(", ")} y ${ultimo}` : ultimo}`;
 }

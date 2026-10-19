@@ -44,8 +44,10 @@ export const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
  * lista guardada con la forma vieja (sin `fecha` ni `lineas`) hacía reventar el
  * listado ("Cannot read properties of undefined (reading 'slice')").
  * Y el mismo día otra vez, cuando cada destino ganó `comentario`.
+ * El 19/10/2026 cada docente ganó `ubicaciones` (institución, ciudad y año): una
+ * lista vieja sin ese campo hacía reventar el diálogo de Docentes.
  */
-export const CACHE_BUSTER = "envios-comentario-v1";
+export const CACHE_BUSTER = "docentes-ubicaciones-v1";
 
 /** En SSR no hay `localStorage`: un persister que no hace nada. */
 const enMemoria: Persister = {

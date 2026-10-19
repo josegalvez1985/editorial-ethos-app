@@ -1,6 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { ChevronRight, IdCard, Loader2, Lock, Phone, Plus, Presentation } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+  ChevronDown,
+  ChevronRight,
+  History,
+  IdCard,
+  Loader2,
+  Lock,
+  MapPin,
+  Phone,
+  Plus,
+  Presentation,
+  School,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -21,11 +33,12 @@ import {
   listarDocentes,
   type DatosDocente,
   type Docente,
+  type UbicacionDocente,
 } from "@/lib/docentes";
 import { textoUsos } from "@/lib/facilitadores";
 import { usePermisos } from "@/lib/permisos";
 import { keysPreHorarios } from "@/lib/pre-horarios";
-import { normalizar } from "@/lib/utils";
+import { cn, normalizar } from "@/lib/utils";
 
 export const Route = createFileRoute("/docentes/")({
   head: () => ({
@@ -66,6 +79,8 @@ const iniciales = (nombre: string) => {
  * - **Avisa de una CI o un nombre repetido** antes de guardar, sin
  *   impedirlo (APEX no lo controlaba y puede haber datos viejos así).
  * - Guardar refresca también la lista de docentes de Pre-horarios.
+ * - **El diálogo dice dónde está** (19/10/2026, a pedido): institución y
+ *   ciudad del año lectivo actual, y a pedido las de los años anteriores.
  */
 function DocentesPage() {
   const { puedeRuta } = usePermisos();
@@ -207,6 +222,7 @@ function DocentesPage() {
           key={abierto === "nuevo" ? "nuevo" : abierto.id}
           docente={abierto === "nuevo" ? null : abierto}
           todos={items}
+          anioActual={data?.anioActual ?? String(new Date().getFullYear())}
           onCerrar={() => setAbierto(null)}
         />
       )}
@@ -269,14 +285,138 @@ function Tarjeta({ d, onAbrir }: { d: Docente; onAbrir: () => void }) {
   );
 }
 
+const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+
+/**
+ * En qué institución está el docente, con su ciudad (19/10/2026, a pedido de
+ * Jose): sale de sus pre-horarios y postulaciones. Arranca en el año lectivo
+ * actual; los otros años se abren con un botón, agrupados del más nuevo al
+ * más viejo. Cada institución lleva a su ficha.
+ */
+function DondeEsta({
+  ubicaciones,
+  anioActual,
+}: {
+  ubicaciones: UbicacionDocente[];
+  anioActual: string;
+}) {
+  const [verOtros, setVerOtros] = useState(false);
+  const actuales = ubicaciones.filter((u) => u.anio === anioActual);
+  // Ya vienen ordenadas por año (nuevo primero): se agrupan sin reordenar.
+  const otros: { anio: string; filas: UbicacionDocente[] }[] = [];
+  for (const u of ubicaciones) {
+    if (u.anio === anioActual) continue;
+    const ultimo = otros[otros.length - 1];
+    if (ultimo?.anio === u.anio) ultimo.filas.push(u);
+    else otros.push({ anio: u.anio, filas: [u] });
+  }
+  // Un pre-horario del año que viene no es "anterior": el botón lo dice.
+  const soloAnteriores = otros.every((o) => !o.anio || o.anio < anioActual);
+  const queOtros = soloAnteriores ? "años anteriores" : "otros años";
+
+  return (
+    <section aria-label="Dónde está" className="space-y-2">
+      <h3 className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+        <School className="size-3.5" />
+        Año lectivo {anioActual}
+      </h3>
+      {actuales.length ? (
+        <ul className="space-y-1.5">
+          {actuales.map((u) => (
+            <FilaUbicacion key={`${u.anio}-${u.idInstitucion}`} u={u} />
+          ))}
+        </ul>
+      ) : (
+        <p className="rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          En {anioActual} no figura en ninguna institución.
+        </p>
+      )}
+
+      {otros.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setVerOtros((v) => !v)}
+          aria-expanded={verOtros}
+          className="tap inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-primary hover:bg-primary-soft"
+        >
+          <History className="size-3.5" />
+          {verOtros ? `Ocultar ${queOtros}` : `Ver ${queOtros} (${otros.length})`}
+          <ChevronDown className={cn("size-3.5 transition-transform", verOtros && "rotate-180")} />
+        </button>
+      )}
+
+      {verOtros &&
+        otros.map((o) => (
+          <div key={o.anio || "sin-anio"} className="space-y-1.5">
+            <p className="text-[11px] font-semibold text-muted-foreground tabular-nums">
+              {o.anio || "Sin año"}
+            </p>
+            <ul className="space-y-1.5">
+              {o.filas.map((u) => (
+                <FilaUbicacion key={`${u.anio}-${u.idInstitucion}`} u={u} />
+              ))}
+            </ul>
+          </div>
+        ))}
+    </section>
+  );
+}
+
+function FilaUbicacion({ u }: { u: UbicacionDocente }) {
+  const cuantos = [
+    u.preHorarios ? plural(u.preHorarios, "pre-horario", "pre-horarios") : "",
+    u.postulaciones ? plural(u.postulaciones, "postulación", "postulaciones") : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const contenido = (
+    <>
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary-soft text-primary">
+        <School className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] leading-snug font-semibold">
+          {u.institucion || "Institución sin nombre"}
+        </span>
+        <span className="flex min-w-0 items-center gap-1 text-[11.5px] text-muted-foreground">
+          <MapPin className="size-3 shrink-0" />
+          <span className="truncate">
+            {u.ciudad || "Sin ciudad"}
+            {cuantos ? ` · ${cuantos}` : ""}
+          </span>
+        </span>
+      </span>
+    </>
+  );
+  const clase = "flex items-center gap-2.5 rounded-xl border border-border/60 bg-card p-2";
+  return (
+    <li>
+      {u.idInstitucion != null ? (
+        <Link
+          to="/instituciones/$id"
+          params={{ id: String(u.idInstitucion) }}
+          className={cn("tap hover:border-primary/40", clase)}
+        >
+          {contenido}
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+      ) : (
+        <div className={clase}>{contenido}</div>
+      )}
+    </li>
+  );
+}
+
 /** El modal 42 de APEX (Crear Docente): alta, edición y baja. */
 function EditorDocente({
   docente,
   todos,
+  anioActual,
   onCerrar,
 }: {
   docente: Docente | null;
   todos: Docente[];
+  anioActual: string;
   onCerrar: () => void;
 }) {
   const qc = useQueryClient();
@@ -364,6 +504,10 @@ function EditorDocente({
                 : "Todavía no se usa en ningún pre-horario ni postulación."}
           </DialogDescription>
         </DialogHeader>
+
+        {!!docente?.ubicaciones.length && (
+          <DondeEsta ubicaciones={docente.ubicaciones} anioActual={anioActual} />
+        )}
 
         <form
           onSubmit={(e) => {

@@ -392,7 +392,7 @@ Docente), que en el sitio es el diálogo de `/docentes`, con los permisos de la 
 
 | Método | Ruta | Exige | Qué hace |
 | --- | --- | --- | --- |
-| GET | `docentes` | sesión | Todos por nombre, con `es_activo` (S / N: `ACTIVO` empieza con S), `usos` y `tablas` |
+| GET | `docentes` | sesión | Todos por nombre, con `es_activo` (S / N: `ACTIVO` empieza con S), `usos` y `tablas`; aparte `anio_actual` y `ubicaciones` (ver abajo) |
 | POST | `docentes` | insertar en la página de `/docentes` | `{nombre_apellido, nro_ci, nro_telefono, activo}` → `{id_docente}` |
 | PUT | `docentes/:id` | actualizar | Lo mismo |
 | DELETE | `docentes/:id` | borrar | **409** si lo usa un pre-horario o una postulación (con o sin FK) |
@@ -403,6 +403,12 @@ Docente), que en el sitio es el diálogo de `/docentes`, con los permisos de la 
   pantalla avisa antes de guardar, igual que con un nombre repetido.
 - El teléfono del docente es el que Pre-horarios propone al elegirlo (la acción dinámica de
   la 43). Guardar refresca también `pre-horarios/opciones`.
+- **Dónde está cada docente** (19/10/2026, a pedido): `ubicaciones` trae una fila por docente +
+  año + institución, juntando `PRE_HORARIOS` y `POSTULACIONES`, con la ciudad de la institución
+  y cuántos de cada uno hay (`{id_docente, anio, id_institucion, institucion, ciudad,
+  pre_horarios, postulaciones}`). `anio_actual` es `FN_ANIO_LECTIVO_ACTUAL`, llamada por
+  `EXECUTE IMMEDIATE`: sin `anios_lectivos.sql` el paquete compila igual y usa el año
+  calendario. El diálogo abre en el año actual y muestra los anteriores a pedido.
 
 ## Índices (`indices.sql`)
 

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import type { Opcion } from "@/lib/evaluaciones";
 import { usePermisos } from "@/lib/permisos";
-import { campo, normalizar } from "@/lib/utils";
+import { campo, nombreTabla, normalizar } from "@/lib/utils";
 
 /**
  * Las tablas de la forma (ID, NOMBRE) del Núcleo de Datos —Países— y las de
@@ -68,13 +68,10 @@ export type PadreCatalogo = {
 
 const totalUsos = (i: ItemCatalogo) => i.usos.reduce((s, u) => s + u.cantidad, 0);
 
-/** "CIUDADES_BARRIOS" → "ciudades barrios": para "en 3 ciudades barrios". */
-const nombreTabla = (tabla: string) => tabla.toLowerCase().replace(/_/g, " ");
-
-/** "en 17 departamentos y 3 facilitadores", o `null` si no se usa. */
+/** "en 17 departamentos y 1 facilitador", o `null` si no se usa. */
 function textoUsos(i: ItemCatalogo): string | null {
   if (!i.usos.length) return null;
-  const partes = i.usos.map((u) => `${u.cantidad} ${nombreTabla(u.tabla)}`);
+  const partes = i.usos.map((u) => `${u.cantidad} ${nombreTabla(u.tabla, u.cantidad)}`);
   const ultimo = partes.pop();
   return `en ${partes.length ? `${partes.join(", ")} y ${ultimo}` : ultimo}`;
 }
@@ -563,7 +560,7 @@ function EditorCatalogo({
           {/* Qué tablas lo pueden usar: contexto para quien administra. */}
           {tablas.length > 0 && (
             <p className="text-[11px] leading-snug text-muted-foreground">
-              Pueden usarlo: {tablas.map(nombreTabla).join(", ")}.
+              Pueden usarlo: {tablas.map((t) => nombreTabla(t, 0)).join(", ")}.
             </p>
           )}
         </form>

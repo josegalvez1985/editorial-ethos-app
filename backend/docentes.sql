@@ -17,7 +17,9 @@
 --
 -- QUE PUBLICA ESTE SCRIPT
 --
---   GET     docentes          todos, por nombre, con en que tablas se usa cada uno
+--   GET     docentes          todos, por nombre, con en que tablas se usa cada uno,
+--                             y donde esta cada uno: institucion, ciudad y anio
+--                             (ver "DONDE ESTA")
 --   POST    docentes          {nombre_apellido, nro_ci, nro_telefono, activo} -> {id_docente}
 --   PUT     docentes/:id      {nombre_apellido, nro_ci, nro_telefono, activo}
 --   DELETE  docentes/:id      solo si nada lo usa
@@ -39,6 +41,23 @@
 -- POSTULACIONES.ID_DOCENTE aunque no tengan FK, y el DELETE frena por esos
 -- tambien. Un docente en uso no se borra: se marca inactivo (deja de
 -- ofrecerse, pero lo cargado queda).
+--
+--------------------------------------------------------------------------------
+-- DONDE ESTA (19/10/2026)
+--------------------------------------------------------------------------------
+--
+-- Jose pidio que el dialogo del docente diga en que institucion esta, con su
+-- ciudad y el anio: el lectivo actual de entrada y, a pedido, los anteriores.
+-- El GET devuelve aparte del listado:
+--
+--   anio_actual   FN_ANIO_LECTIVO_ACTUAL (si no existe, el anio calendario)
+--   ubicaciones   una fila por docente + anio + institucion, juntando
+--                 PRE_HORARIOS y POSTULACIONES (las dos tienen ID_INSTITUCION
+--                 y ANIO), con la ciudad de la institucion y cuantos
+--                 pre-horarios y postulaciones hay en cada una.
+--
+-- La funcion se llama por EXECUTE IMMEDIATE (como ia_asistente.sql): si falta
+-- anios_lectivos.sql el paquete compila igual y Docentes sigue andando.
 --
 --------------------------------------------------------------------------------
 -- PERMISOS
@@ -247,6 +266,16 @@ CREATE OR REPLACE PACKAGE BODY PKG_DOCENTES_ETHOS AS
     END LOOP;
   END cargar_hijas;
 
+  -- El anio lectivo actual. Dinamico: ver "DONDE ESTA".
+  FUNCTION f_anio_actual RETURN VARCHAR2 IS
+    l_anio VARCHAR2(16);
+  BEGIN
+    EXECUTE IMMEDIATE 'SELECT TO_CHAR(FN_ANIO_LECTIVO_ACTUAL()) FROM dual' INTO l_anio;
+    RETURN NVL(l_anio, TO_CHAR(SYSDATE, 'YYYY'));
+  EXCEPTION
+    WHEN OTHERS THEN RETURN TO_CHAR(SYSDATE, 'YYYY');
+  END f_anio_actual;
+
   /* ---------------------------------------------------------------------- */
   /* LISTAR                                                                 */
   /* ---------------------------------------------------------------------- */
@@ -288,6 +317,36 @@ CREATE OR REPLACE PACKAGE BODY PKG_DOCENTES_ETHOS AS
         END IF;
       END LOOP;
       APEX_JSON.CLOSE_ARRAY;
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+
+    -- Donde esta cada docente, por anio e institucion. Ver "DONDE ESTA".
+    APEX_JSON.WRITE('anio_actual', f_anio_actual);
+    APEX_JSON.OPEN_ARRAY('ubicaciones');
+    FOR u IN (SELECT a.id_docente, a.anio, a.id_institucion,
+                     i.nombre AS institucion, c.nombre AS ciudad,
+                     SUM(a.ph) AS pre_horarios, SUM(a.po) AS postulaciones
+                FROM (SELECT id_docente, TO_CHAR(anio) AS anio, id_institucion,
+                             1 AS ph, 0 AS po
+                        FROM pre_horarios
+                       WHERE id_docente IS NOT NULL
+                      UNION ALL
+                      SELECT id_docente, TO_CHAR(anio), id_institucion, 0, 1
+                        FROM postulaciones
+                       WHERE id_docente IS NOT NULL) a
+                LEFT JOIN instituciones i ON i.id_institucion = a.id_institucion
+                LEFT JOIN ciudades c      ON c.id_ciudad = i.id_ciudad
+               GROUP BY a.id_docente, a.anio, a.id_institucion, i.nombre, c.nombre
+               ORDER BY a.id_docente, a.anio DESC NULLS LAST, UPPER(i.nombre)) LOOP
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id_docente',     u.id_docente);
+      APEX_JSON.WRITE('anio',           u.anio, TRUE);
+      APEX_JSON.WRITE('id_institucion', u.id_institucion, TRUE);
+      APEX_JSON.WRITE('institucion',    u.institucion, TRUE);
+      APEX_JSON.WRITE('ciudad',         u.ciudad, TRUE);
+      APEX_JSON.WRITE('pre_horarios',   u.pre_horarios);
+      APEX_JSON.WRITE('postulaciones',  u.postulaciones);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;
