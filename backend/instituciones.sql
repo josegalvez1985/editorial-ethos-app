@@ -398,32 +398,36 @@ CREATE OR REPLACE PACKAGE BODY PKG_INSTITUCIONES_ETHOS AS
   -- texto (ver evaluaciones_facilitadores.sql, lov_directores): el DESC es
   -- alfabetico, que para anios de 4 cifras alcanza.
   ------------------------------------------------------------------------------
+  ------------------------------------------------------------------------------
+  -- ORA-01555 "snapshot too old" (22/10/2026): el listado empezo a fallar con
+  -- eso en oracleapex.com, que es compartido (el UNDO es de todos). Antes el
+  -- cursor quedaba ABIERTO mientras se escribia el JSON fila por fila, y Oracle
+  -- tenia que sostener la foto de los datos todo ese tiempo. Ahora:
+  --
+  --   1. se trae TODO de una vez (BULK COLLECT) y recien despues se escribe;
+  --   2. si igual da ORA-01555, se vuelve a intentar (hasta 3 veces) antes de
+  --      responder el error. Todavia no se escribio nada, asi que se puede.
+  --
+  -- La consulta es la misma: no cambian tablas, columnas ni la respuesta.
+  ------------------------------------------------------------------------------
   PROCEDURE listar(p_token IN VARCHAR2) IS
     l_anio VARCHAR2(16) := f_anio;
-  BEGIN
-    IF NOT exigir(p_token, 'C') THEN RETURN; END IF;
-
-    abrir_json;
-    APEX_JSON.OPEN_OBJECT;
-    APEX_JSON.WRITE('success', TRUE);
-    APEX_JSON.WRITE('anio', l_anio);
-    APEX_JSON.OPEN_ARRAY('data');
-    FOR r IN (
+    CURSOR c_lista(p_anio VARCHAR2) IS
         WITH ph AS (
                SELECT id_institucion, COUNT(*) AS total,
                       SUM(CASE WHEN UPPER(TRIM(estado)) = 'SI' THEN 1 ELSE 0 END) AS confirmados
                  FROM pre_horarios
-                WHERE anio = l_anio
+                WHERE anio = p_anio
                 GROUP BY id_institucion),
              po AS (
                SELECT id_institucion, COUNT(*) AS n
                  FROM postulaciones
-                WHERE anio = l_anio AND NVL(estado, 'Activo') <> 'Inactivo'
+                WHERE anio = p_anio AND NVL(estado, 'Activo') <> 'Inactivo'
                 GROUP BY id_institucion),
              ho AS (
                SELECT id_institucion, COUNT(*) AS n
                  FROM horario_instituciones
-                WHERE anio = l_anio
+                WHERE anio = p_anio
                 GROUP BY id_institucion),
              au AS (
                SELECT id_institucion, COUNT(*) AS n
@@ -470,8 +474,34 @@ CREATE OR REPLACE PACKAGE BODY PKG_INSTITUCIONES_ETHOS AS
           LEFT JOIN ho ON ho.id_institucion = i.id_institucion
           LEFT JOIN ph ON ph.id_institucion = i.id_institucion
           LEFT JOIN po ON po.id_institucion = i.id_institucion
-         ORDER BY UPPER(i.nombre)
-    ) LOOP
+         ORDER BY UPPER(i.nombre);
+    TYPE t_lista IS TABLE OF c_lista%ROWTYPE;
+    l_filas t_lista;
+    r       c_lista%ROWTYPE;
+  BEGIN
+    IF NOT exigir(p_token, 'C') THEN RETURN; END IF;
+
+    FOR intento IN 1 .. 3 LOOP
+      BEGIN
+        OPEN c_lista(l_anio);
+        FETCH c_lista BULK COLLECT INTO l_filas;
+        CLOSE c_lista;
+        EXIT;
+      EXCEPTION
+        WHEN OTHERS THEN
+          IF c_lista%ISOPEN THEN CLOSE c_lista; END IF;
+          -- Solo el ORA-01555 se reintenta; cualquier otro error, de una.
+          IF SQLCODE <> -1555 OR intento = 3 THEN RAISE; END IF;
+      END;
+    END LOOP;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('anio', l_anio);
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR i IN 1 .. l_filas.COUNT LOOP
+      r := l_filas(i);
       APEX_JSON.OPEN_OBJECT;
       APEX_JSON.WRITE('id_institucion',    r.id_institucion);
       APEX_JSON.WRITE('nombre',            r.nombre);

@@ -70,7 +70,17 @@ export type ColumnaGrilla = {
    */
   grupo?: string;
   subtitulo?: string;
+  /**
+   * Para `lista`: una opción "+ Nueva materia…" al principio, para dar de alta
+   * lo que no está (22/10/2026, Materia y Docente de Pre-horarios). Elegirla no
+   * cambia la celda: llama a `onNuevo`, que abre su alta y, si se crea, lo
+   * elige con `elegir(valor)`.
+   */
+  nuevo?: { texto: string; onNuevo: (elegir: (valor: string) => void) => void };
 };
+
+/** El valor de la opción "+ Nuevo…" de una lista: nunca llega a la fila. */
+const VALOR_NUEVO = "__nuevo__";
 
 export type FilaGrilla = {
   id: number;
@@ -83,22 +93,9 @@ export type FilaGrilla = {
 
 type Nueva = { tmp: number; datos: Record<string, string> };
 
-export function GrillaEditable({
-  columnas,
-  filas,
-  editable,
-  nueva,
-  alCambiar,
-  validar,
-  guardarFila,
-  eliminarFila,
-  onGuardado,
-  extra,
-  vacio = "Sin datos",
-}: {
-  columnas: ColumnaGrilla[];
+/** Lo que define cómo se editan y guardan las filas (sin cómo se dibujan). */
+export type OpcionesEdicion = {
   filas: FilaGrilla[];
-  editable: boolean;
   /** Los valores por defecto de una fila nueva. */
   nueva: () => Record<string, string>;
   /** Para cambios encadenados (el docente pisa el teléfono, como en APEX). */
@@ -113,18 +110,32 @@ export function GrillaEditable({
   eliminarFila: (id: number) => Promise<unknown>;
   /** Después de guardar: refrescar las listas. Se espera antes de limpiar. */
   onGuardado: () => Promise<unknown> | void;
-  /** Lo que va entre la barra y la grilla; `agregar` suma una fila nueva. */
-  extra?: (agregar: (datos: Record<string, string>) => void) => ReactNode;
-  vacio?: string;
-}) {
+};
+
+export type EdicionGrilla = ReturnType<typeof useEdicionGrilla>;
+
+/**
+ * El estado de edición de la grilla: lo cambiado, lo nuevo, lo tachado, los
+ * errores y el Guardar. Separado del dibujo el 22/10/2026 para que
+ * Pre-horarios lo comparta entre sus dos vistas (la grilla de la 43 y la
+ * planilla con el formato del Formulario N° 1): al pasar de una a la otra no
+ * se pierde nada sin guardar.
+ */
+export function useEdicionGrilla({
+  filas,
+  nueva,
+  alCambiar,
+  validar,
+  guardarFila,
+  eliminarFila,
+  onGuardado,
+}: OpcionesEdicion) {
   const [cambios, setCambios] = useState<Map<number, Record<string, string>>>(new Map());
   const [nuevas, setNuevas] = useState<Nueva[]>([]);
   const [borrar, setBorrar] = useState<Set<number>>(new Set());
   const [errores, setErrores] = useState<Map<number, string>>(new Map());
-  const [buscar, setBuscar] = useState("");
   const [guardando, setGuardando] = useState(false);
   const tmp = useRef(-1);
-  const tabla = useRef<HTMLTableElement>(null);
 
   const porId = useMemo(() => new Map(filas.map((f) => [f.id, f])), [filas]);
   const pendientes = cambios.size + nuevas.length + borrar.size;
@@ -134,8 +145,14 @@ export function GrillaEditable({
     setNuevas((x) => [{ tmp: t, datos: { ...nueva(), ...datos } }, ...x]);
   };
 
-  /** `id` < 0: una fila nueva. */
-  const cambiar = (id: number, clave: string, valor: string) => {
+  /**
+   * Varios campos de una vez (`id` < 0: una fila nueva). La planilla de
+   * Pre-horarios lo usa porque una celda suya puede tocar dos datos: escribir
+   * en la columna 4° pone el grado Y la cantidad.
+   */
+  const fijar = (id: number, parcial: Record<string, string>) => {
+    const encadenar = (datos: Record<string, string>) =>
+      alCambiar ? Object.entries(parcial).reduce((d, [k, v]) => alCambiar(k, v, d), datos) : datos;
     setErrores((e) => {
       if (!e.has(id)) return e;
       const n = new Map(e);
@@ -144,18 +161,13 @@ export function GrillaEditable({
     });
     if (id < 0) {
       setNuevas((x) =>
-        x.map((f) => {
-          if (f.tmp !== id) return f;
-          const datos = { ...f.datos, [clave]: valor };
-          return { ...f, datos: alCambiar ? alCambiar(clave, valor, datos) : datos };
-        }),
+        x.map((f) => (f.tmp !== id ? f : { ...f, datos: encadenar({ ...f.datos, ...parcial }) })),
       );
       return;
     }
     const original = porId.get(id)?.datos ?? {};
     setCambios((m) => {
-      const actual = { ...original, ...m.get(id), [clave]: valor };
-      const datos = alCambiar ? alCambiar(clave, valor, actual) : actual;
+      const datos = encadenar({ ...original, ...m.get(id), ...parcial });
       // Se guarda solo lo que difiere del original.
       const dif = Object.fromEntries(
         Object.entries(datos).filter(([k, v]) => (original[k] ?? "") !== v),
@@ -256,6 +268,72 @@ export function GrillaEditable({
       );
     else toast.success("Cambios guardados");
   };
+
+  return {
+    nuevas,
+    borrar,
+    errores,
+    guardando,
+    pendientes,
+    agregar,
+    fijar,
+    cambiar: (id: number, clave: string, valor: string) => fijar(id, { [clave]: valor }),
+    alternarBorrado,
+    deshacer,
+    datosDe,
+    guardar,
+  };
+}
+
+export function GrillaEditable({
+  columnas,
+  filas,
+  editable,
+  nueva,
+  alCambiar,
+  validar,
+  guardarFila,
+  eliminarFila,
+  onGuardado,
+  edicion,
+  extra,
+  vacio = "Sin datos",
+}: OpcionesEdicion & {
+  columnas: ColumnaGrilla[];
+  editable: boolean;
+  /**
+   * El estado de edición, si lo maneja la pantalla (Pre-horarios, para
+   * compartirlo con su planilla). Sin esto, la grilla tiene el suyo.
+   */
+  edicion?: EdicionGrilla;
+  /** Lo que va entre la barra y la grilla; `agregar` suma una fila nueva. */
+  extra?: (agregar: (datos: Record<string, string>) => void) => ReactNode;
+  vacio?: string;
+}) {
+  const propia = useEdicionGrilla({
+    filas,
+    nueva,
+    alCambiar,
+    validar,
+    guardarFila,
+    eliminarFila,
+    onGuardado,
+  });
+  const {
+    nuevas,
+    borrar,
+    errores,
+    guardando,
+    pendientes,
+    agregar,
+    cambiar,
+    alternarBorrado,
+    deshacer,
+    datosDe,
+    guardar,
+  } = edicion ?? propia;
+  const [buscar, setBuscar] = useState("");
+  const tabla = useRef<HTMLTableElement>(null);
 
   const texto = (c: ColumnaGrilla, v: string) =>
     c.tipo === "lista" ? (c.opciones?.find((o) => o.valor === v)?.mostrar ?? v) : v;
@@ -631,12 +709,12 @@ function estiloCelda(c: ColumnaGrilla, v: string) {
  * ver la mayor cantidad de datos de un pantallazo): 12 px, poco relleno y
  * filas de 28 px. La columna de acciones (borrar y copiar) mide esto.
  */
-const ANCHO_ACCIONES = 50;
+export const ANCHO_ACCIONES = 50;
 
-const claseEntrada =
+export const claseEntrada =
   "block h-7 w-full min-w-0 bg-transparent px-1 text-[12px] outline-none focus:bg-background focus:ring-2 focus:ring-primary/50 focus:ring-inset";
 
-function Celda({
+export function Celda({
   c,
   valor,
   celda,
@@ -747,7 +825,10 @@ function CeldaLista({
       ref={sel}
       data-celda={celda}
       value={valor}
-      onChange={(e) => onCambio(e.target.value)}
+      onChange={(e) => {
+        if (e.target.value === VALOR_NUEVO) c.nuevo?.onNuevo(onCambio);
+        else onCambio(e.target.value);
+      }}
       onBlur={() => setActiva(false)}
       aria-label={c.titulo}
       // Con color por valor, la celda no se blanquea al enfocarla: se vería
@@ -756,6 +837,11 @@ function CeldaLista({
       style={color ? { color: color.tinta, fontWeight: 600 } : undefined}
     >
       <option value=""></option>
+      {c.nuevo && (
+        <option value={VALOR_NUEVO} style={{ fontWeight: 700 }}>
+          + {c.nuevo.texto}
+        </option>
+      )}
       {!conocida && <option value={valor}>{valor}</option>}
       {ops.map((o) => {
         const co = c.colorValor?.(o.valor);

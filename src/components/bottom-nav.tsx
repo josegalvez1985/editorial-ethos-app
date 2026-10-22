@@ -70,7 +70,11 @@ export function BottomNav() {
 
   return (
     <>
-      <nav className="glass fixed inset-x-0 bottom-0 z-40 border-t border-border/60 pb-safe select-none-touch lg:hidden">
+      <nav
+        // El botón del asistente lo mide para no quedar tapado (asistente.tsx).
+        data-barra-inferior
+        className="glass fixed inset-x-0 bottom-0 z-40 border-t border-border/60 pb-safe select-none-touch lg:hidden"
+      >
         <div className="mx-auto flex max-w-[480px] items-stretch px-2">
           <Link
             to={BARRA.inicio.to}

@@ -581,6 +581,9 @@ function dibujar(p: Pintor, f: Formulario, alto: number | null): number {
 export async function generarFormularioPdf(f: Formulario): Promise<Blob> {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "legal" });
+  // El título que muestra la pestaña del visor ("Form. 1 - …").
+  doc.setProperties({ title: nombreArchivo(f) });
+  doc.viewerPreferences({ DisplayDocTitle: true });
   const margen = 8;
   const anchoHoja = doc.internal.pageSize.getWidth();
   const altoHoja = doc.internal.pageSize.getHeight();
@@ -613,14 +616,18 @@ export async function generarFormularioImagen(f: Formulario): Promise<Blob> {
   );
 }
 
-/** "postulacion-colegio-nacional-2026": para el nombre del archivo. */
+/**
+ * "Form. 1 - Colegio Nacional - 2026": el nombre del archivo y el título del
+ * PDF (el de la pestaña). Jose pidió el 22/10/2026 que el PDF y la imagen se
+ * llamen "Form. 1", en Postulaciones y en Pre-horarios; antes era
+ * "postulacion-colegio-nacional-2026". Se sacan solo los caracteres que
+ * Windows y Android no aceptan en un nombre de archivo.
+ */
 export function nombreArchivo(f: Pick<Formulario, "nombre" | "anio">): string {
-  const base = f.nombre
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 50);
-  return `postulacion-${base || "institucion"}-${f.anio}`;
+  const nombre = f.nombre
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  return ["Form. 1", nombre, f.anio].filter(Boolean).join(" - ");
 }

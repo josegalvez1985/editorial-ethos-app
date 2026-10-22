@@ -9,7 +9,14 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 import { toast } from "sonner";
 
 import { Markdown } from "@/components/markdown";
@@ -32,8 +39,8 @@ import { usePermisos } from "@/lib/permisos";
  *
  * | | Botón | Chat |
  * | --- | --- | --- |
- * | Celular y APK (`< lg`) | abajo a la derecha, encima de la barra | hoja casi a pantalla completa |
- * | Escritorio (`≥ lg`) | abajo a la derecha | panel fijo a la derecha, **sin tapar** la pantalla: `AppShell` le hace lugar, y sigue abierto al navegar |
+ * | Celular y APK (`< lg`) | abajo a la derecha, encima de la barra (se puede arrastrar) | hoja casi a pantalla completa |
+ * | Escritorio (`≥ lg`) | abajo a la derecha (se puede arrastrar) | panel fijo a la derecha, **sin tapar** la pantalla: `AppShell` le hace lugar, y sigue abierto al navegar |
  *
  * Lo ven todos los que entran: no depende de Roles de páginas (Jose,
  * 15/10/2026; la primera versión pedía la página `/asistente`).
@@ -41,19 +48,23 @@ import { usePermisos } from "@/lib/permisos";
 export function Asistente() {
   const { abierto, pendiente } = useAsistente();
   const escritorio = useEscritorio();
+  const movible = useBotonMovible(escritorio);
 
   return (
     <>
       {!(escritorio && abierto) && (
         <button
           type="button"
+          {...movible.eventos}
           onClick={() => {
+            if (movible.recienMovido()) return; // fue un arrastre, no un toque
             void cargarManual(); // que esté listo para la primera pregunta
             abrirAsistente(true);
           }}
           aria-label="Abrir el asistente"
-          title="Asistente"
-          className="tap bg-hero-gradient fixed right-4 bottom-[calc(5.75rem+env(safe-area-inset-bottom))] z-40 grid size-14 place-items-center rounded-full text-on-brand shadow-elegant lg:right-6 lg:bottom-6"
+          title="Asistente · arrastralo para moverlo"
+          style={movible.pos ?? undefined}
+          className="tap bg-hero-gradient fixed right-4 bottom-[calc(5.75rem+env(safe-area-inset-bottom))] z-40 grid size-14 touch-none place-items-center rounded-full text-on-brand shadow-elegant select-none lg:right-6 lg:bottom-6"
         >
           <Sparkles className="size-6" />
           {pendiente && (
@@ -87,6 +98,118 @@ export function Asistente() {
       )}
     </>
   );
+}
+
+/**
+ * El botón se puede ARRASTRAR (22/10/2026, pedido de Jose: a veces quedaba
+ * encima de algo de la pantalla). Se mantiene apretado y se suelta donde no
+ * moleste; un toque sin mover sigue abriendo el chat. La posición se recuerda
+ * en este navegador, una para el celular y otra para la computadora (las
+ * pantallas no se parecen), y nunca queda fuera de la pantalla, bajo la
+ * cabecera ni tapado por la barra de abajo del celular.
+ */
+type PosBoton = { right: number; bottom: number };
+
+const TAM_BOTON = 56;
+const MARGEN_BOTON = 8;
+/** Lo que hay que mover el dedo para que cuente como arrastre y no como toque. */
+const UMBRAL_ARRASTRE = 6;
+const claveBoton = (escritorio: boolean) =>
+  `ethos-asistente-boton-${escritorio ? "web" : "celular"}`;
+
+/** Dentro de la pantalla, entre la cabecera (64 px) y la barra de abajo. */
+function limitarBoton({ right, bottom }: PosBoton): PosBoton {
+  const barra = document.querySelector("[data-barra-inferior]")?.getBoundingClientRect();
+  const piso = (barra && barra.height > 0 ? barra.height : 0) + MARGEN_BOTON;
+  const techo = window.innerHeight - TAM_BOTON - 64 - MARGEN_BOTON;
+  const derecha = window.innerWidth - TAM_BOTON - MARGEN_BOTON;
+  return {
+    right: Math.round(Math.min(Math.max(right, MARGEN_BOTON), Math.max(derecha, MARGEN_BOTON))),
+    bottom: Math.round(Math.min(Math.max(bottom, piso), Math.max(techo, piso))),
+  };
+}
+
+function useBotonMovible(escritorio: boolean) {
+  // null = el lugar de siempre (las clases del botón).
+  const [pos, setPos] = useState<PosBoton | null>(null);
+  const arrastre = useRef<{ x: number; y: number; desde: PosBoton; movio: boolean } | null>(null);
+  const movido = useRef(false);
+
+  // Se lee en un efecto: en el prerender no hay `localStorage`.
+  useEffect(() => {
+    let guardada: PosBoton | null = null;
+    try {
+      const v = JSON.parse(localStorage.getItem(claveBoton(escritorio)) ?? "null");
+      if (typeof v?.right === "number" && typeof v?.bottom === "number") guardada = v;
+    } catch {
+      /* sin storage o dato roto: el lugar de siempre */
+    }
+    setPos(guardada && limitarBoton(guardada));
+  }, [escritorio]);
+
+  // Si la ventana se achica (o se gira el celular), que no quede afuera.
+  useEffect(() => {
+    const ajustar = () => setPos((p) => p && limitarBoton(p));
+    window.addEventListener("resize", ajustar);
+    return () => window.removeEventListener("resize", ajustar);
+  }, []);
+
+  const destino = (e: PointerEvent<HTMLButtonElement>) => {
+    const a = arrastre.current!;
+    return limitarBoton({
+      right: a.desde.right - (e.clientX - a.x),
+      bottom: a.desde.bottom - (e.clientY - a.y),
+    });
+  };
+
+  const eventos = {
+    onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
+      if (e.button !== 0) return;
+      movido.current = false;
+      const r = e.currentTarget.getBoundingClientRect();
+      arrastre.current = {
+        x: e.clientX,
+        y: e.clientY,
+        desde: { right: window.innerWidth - r.right, bottom: window.innerHeight - r.bottom },
+        movio: false,
+      };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    onPointerMove: (e: PointerEvent<HTMLButtonElement>) => {
+      const a = arrastre.current;
+      if (!a) return;
+      if (!a.movio && Math.hypot(e.clientX - a.x, e.clientY - a.y) < UMBRAL_ARRASTRE) return;
+      a.movio = true;
+      setPos(destino(e));
+    },
+    onPointerUp: (e: PointerEvent<HTMLButtonElement>) => {
+      const a = arrastre.current;
+      if (!a) return;
+      if (a.movio) {
+        const final = destino(e);
+        setPos(final);
+        movido.current = true;
+        try {
+          localStorage.setItem(claveBoton(escritorio), JSON.stringify(final));
+        } catch {
+          /* se pierde la posición al recargar, no el arrastre */
+        }
+      }
+      arrastre.current = null;
+    },
+    onPointerCancel: () => {
+      arrastre.current = null;
+    },
+  };
+
+  /** Si el clic que llega es el final de un arrastre (y lo consume). */
+  const recienMovido = () => {
+    const m = movido.current;
+    movido.current = false;
+    return m;
+  };
+
+  return { pos, eventos, recienMovido };
 }
 
 /** `≥ lg`, el mismo corte que la sidebar. */

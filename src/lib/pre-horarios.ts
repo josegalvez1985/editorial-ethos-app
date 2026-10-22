@@ -13,6 +13,7 @@
  */
 
 import { authFetch } from "@/lib/api";
+import { DIAS, GRADOS, MANUALES, type Detalle, type Formulario } from "@/lib/postulaciones";
 import type { ValorLista } from "@/lib/utils";
 
 export type PreHorario = {
@@ -177,6 +178,52 @@ export async function guardarPreHorario(
 /** Baja. El trigger borra su postulación; 409 si está bloqueado. */
 export async function eliminarPreHorario(id: number): Promise<void> {
   await authFetch(`pre-horarios/${id}`, { method: "DELETE" });
+}
+
+/**
+ * El Formulario N° 1 con los PRE-HORARIOS en el detalle (22/10/2026, pedido de
+ * Jose): el mismo PDF e imagen de la pestaña Postulaciones, para imprimirlo
+ * antes de confirmar. Sin endpoint nuevo: la institución, las autoridades y el
+ * horario salen de `postulaciones/formulario` (`f`) y acá solo se cambia el
+ * detalle. Entran todos, confirmados o no. Cada pre-horario es una fila: su
+ * cantidad en la columna de su grado y de su manual, y las horas en su día
+ * (lo mismo que hace el trigger al confirmarlo). El N° vuelve a 1 en cada
+ * turno, como en el impreso.
+ */
+export function formularioConPreHorarios(f: Formulario, items: PreHorario[]): Formulario {
+  const orden = (p: PreHorario) =>
+    `${p.turno ?? 9}-${DIAS.findIndex((d) => d.valor === p.dia) + 1 || 9}-${p.desde}`;
+  const porTurno = new Map<number | null, number>();
+  const detalle = [...items]
+    .sort((a, b) => orden(a).localeCompare(orden(b)))
+    .map((p) => {
+      const nro = (porTurno.get(p.turno) ?? 0) + 1;
+      porTurno.set(p.turno, nro);
+      const cant = p.cantidad ?? 0;
+      return {
+        id: p.id,
+        nroItem: nro,
+        turno: p.turno,
+        seccion: p.seccion,
+        grados: Object.fromEntries(
+          GRADOS.map((g) => [g.clave, g.valor === p.grado ? cant : 0]),
+        ) as Detalle["grados"],
+        manuales: Object.fromEntries(
+          MANUALES.map((m) => [m.clave, m.valor === p.manual ? cant : 0]),
+        ) as Detalle["manuales"],
+        dias: Object.fromEntries(
+          DIAS.map((d) => [
+            d.clave,
+            d.valor === p.dia ? { desde: p.desde, hasta: p.hasta } : { desde: "", hasta: "" },
+          ]),
+        ) as Detalle["dias"],
+        materia: p.materia,
+        docente: p.docente,
+        telefono: p.telefono || p.docenteTelefono,
+        enfasis: p.enfasis,
+      };
+    });
+  return { ...f, detalle };
 }
 
 export const keysPreHorarios = {

@@ -84,7 +84,8 @@ const RUTA = "/instituciones";
  *   el botón "Horario IE" del 21.
  * - **Pre-horarios** y **Postulaciones**: grillas editables iguales a los IG
  *   de la 43 y la 38 (`<PreHorariosInstitucion>`, `<PostulacionesInstitucion>`);
- *   Postulaciones lleva además el PDF y la imagen del formulario. Eran los
+ *   las dos llevan el PDF y la imagen del formulario (Pre-horarios, desde el
+ *   22/10/2026, con sus datos y además la vista Planilla). Eran los
  *   botones "Pre Postulación" y "Postulaciones" del 21.
  *
  * `$id` es el número, o `nueva` para el alta. Las pestañas de listas
@@ -236,6 +237,7 @@ function Ficha({
           <PreHorariosInstitucion
             idInstitucion={idNum}
             idFacilitadorInstitucion={ficha?.id_facilitador ?? null}
+            nombreInstitucion={ficha?.nombre ?? ""}
           />
         </div>
       )}

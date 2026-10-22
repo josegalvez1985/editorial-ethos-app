@@ -86,9 +86,12 @@ export function PostulacionesInstitucion({
   });
   const consultas = [lista, opciones, estados, facilitadores];
 
-  if (consultas.some((c) => c.isLoading)) return <Cargando />;
-  const fallo = consultas.find((c) => c.isError);
-  if (fallo) return <Fallo error={fallo.error} texto="No se pudieron cargar" />;
+  // Por los datos, no por `isLoading` (22/10/2026): con un reintento en pausa
+  // no hay datos ni error y la pantalla se rompía. Ver Pre-horarios.
+  if (consultas.some((c) => !c.data)) {
+    const fallo = consultas.find((c) => !c.data && c.isError);
+    return fallo ? <Fallo error={fallo.error} texto="No se pudieron cargar" /> : <Cargando />;
+  }
 
   const op = opciones.data!;
   const { items, anioActual, anios } = lista.data!;
