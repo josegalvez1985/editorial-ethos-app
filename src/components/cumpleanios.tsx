@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Cake, PartyPopper, X } from "lucide-react";
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 
 import {
   cumplenHoy,
@@ -150,21 +150,21 @@ function Avatar({ nombre, grande }: { nombre: string; grande?: boolean }) {
 
 /*
  * El confeti: papelitos fijos (no al azar, para que no salten entre renders)
- * con los colores del logo y un dorado. Solo decoración.
+ * con los colores del logo y un dorado. Solo decoración. Quietos desde el
+ * 22/10/2026: antes flotaban y giraban, y Jose pidió sacarlo porque titilaba.
  */
-const PAPELITOS: { x: string; y: string; w: number; h: number; c: string; g: number; d: number }[] =
-  [
-    { x: "62%", y: "12%", w: 6, h: 10, c: "#e41420", g: 20, d: 0 },
-    { x: "74%", y: "30%", w: 5, h: 5, c: "#ffffff", g: 0, d: 1.2 },
-    { x: "83%", y: "10%", w: 7, h: 4, c: "#f5c542", g: -30, d: 0.6 },
-    { x: "92%", y: "38%", w: 5, h: 9, c: "#7095cc", g: 45, d: 2.1 },
-    { x: "56%", y: "78%", w: 6, h: 6, c: "#f5c542", g: 0, d: 1.6 },
-    { x: "70%", y: "64%", w: 4, h: 8, c: "#ffffff", g: -15, d: 0.3 },
-    { x: "88%", y: "72%", w: 7, h: 4, c: "#e41420", g: 60, d: 2.6 },
-    { x: "46%", y: "8%", w: 4, h: 4, c: "#7095cc", g: 0, d: 3.1 },
-    { x: "96%", y: "16%", w: 4, h: 7, c: "#f5c542", g: 10, d: 1.9 },
-    { x: "40%", y: "88%", w: 5, h: 3, c: "#ffffff", g: -40, d: 0.9 },
-  ];
+const PAPELITOS: { x: string; y: string; w: number; h: number; c: string; g: number }[] = [
+  { x: "62%", y: "12%", w: 6, h: 10, c: "#e41420", g: 20 },
+  { x: "74%", y: "30%", w: 5, h: 5, c: "#ffffff", g: 0 },
+  { x: "83%", y: "10%", w: 7, h: 4, c: "#f5c542", g: -30 },
+  { x: "92%", y: "38%", w: 5, h: 9, c: "#7095cc", g: 45 },
+  { x: "56%", y: "78%", w: 6, h: 6, c: "#f5c542", g: 0 },
+  { x: "70%", y: "64%", w: 4, h: 8, c: "#ffffff", g: -15 },
+  { x: "88%", y: "72%", w: 7, h: 4, c: "#e41420", g: 60 },
+  { x: "46%", y: "8%", w: 4, h: 4, c: "#7095cc", g: 0 },
+  { x: "96%", y: "16%", w: 4, h: 7, c: "#f5c542", g: 10 },
+  { x: "40%", y: "88%", w: 5, h: 3, c: "#ffffff", g: -40 },
+];
 
 function Confeti() {
   return (
@@ -172,19 +172,16 @@ function Confeti() {
       {PAPELITOS.map((p, i) => (
         <span
           key={i}
-          className="absolute animate-confeti rounded-[2px] opacity-80"
-          style={
-            {
-              left: p.x,
-              top: p.y,
-              width: p.w,
-              height: p.h,
-              backgroundColor: p.c,
-              borderRadius: p.w === p.h ? "9999px" : undefined,
-              animationDelay: `${p.d}s`,
-              "--giro": `${p.g}deg`,
-            } as CSSProperties
-          }
+          className="absolute rounded-[2px] opacity-80"
+          style={{
+            left: p.x,
+            top: p.y,
+            width: p.w,
+            height: p.h,
+            backgroundColor: p.c,
+            borderRadius: p.w === p.h ? "9999px" : undefined,
+            transform: `rotate(${p.g}deg)`,
+          }}
         />
       ))}
     </span>

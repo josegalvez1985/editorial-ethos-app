@@ -1350,23 +1350,3 @@
   user-select: none;
   -webkit-user-select: none;
 }
-
-/**
- * El confeti de la tarjeta de cumpleaños del Inicio (14/10/2026,
- * `components/cumpleanios.tsx`): cada papelito flota y gira apenas. El giro de
- * partida va en `--giro`. Con "reducir movimiento" queda quieto (ver la regla de
- * `prefers-reduced-motion` más arriba).
- */
-@theme {
-  --animate-confeti: confeti 6s ease-in-out infinite;
-
-  @keyframes confeti {
-    0%,
-    100% {
-      transform: translateY(0) rotate(var(--giro, 0deg));
-    }
-    50% {
-      transform: translateY(-7px) rotate(calc(var(--giro, 0deg) + 25deg));
-    }
-  }
-}
