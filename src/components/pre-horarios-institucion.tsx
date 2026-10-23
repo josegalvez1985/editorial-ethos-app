@@ -12,6 +12,7 @@ import {
   type FilaGrilla,
   type OpcionesEdicion,
 } from "@/components/grilla-editable";
+import { HorarioInstitucion } from "@/components/horario-institucion";
 import { PlanillaPreHorarios } from "@/components/planilla-pre-horarios";
 import { keysFacilitadores, listarFacilitadores } from "@/lib/facilitadores";
 import {
@@ -135,6 +136,11 @@ export function PreHorariosInstitucion({
  *
  * Arriba, el PDF y la imagen del Formulario N° 1 con los pre-horarios
  * (`formularioConPreHorarios`), con lo guardado.
+ *
+ * Abajo (23/10/2026, pedido de Jose), el horario de la institución: el mismo
+ * `<HorarioInstitucion>` de la pestaña Horario, para cargar los dos sin cambiar
+ * de pestaña. Comparten la caché, así que lo de una se ve en la otra; y es el
+ * "HORARIO INSTITUCIÓN" que imprime el formulario.
  */
 function PreHorariosCargados({
   idInstitucion,
@@ -384,7 +390,8 @@ function PreHorariosCargados({
             type="button"
             disabled={generando != null || !items.length}
             onClick={() => imprimir("pdf")}
-            title={items.length ? "El Formulario N° 1 con estos pre-horarios" : vacio}
+            aria-label="Form. 1 en PDF"
+            title={items.length ? "El Formulario N° 1 en PDF, con estos pre-horarios" : vacio}
             className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-primary-foreground shadow-soft disabled:opacity-60"
           >
             {generando === "pdf" ? (
@@ -392,13 +399,14 @@ function PreHorariosCargados({
             ) : (
               <FileDown className="size-4" />
             )}
-            PDF
+            Form. 1
           </button>
           <button
             type="button"
             disabled={generando != null || !items.length}
             onClick={() => imprimir("png")}
-            title={items.length ? "El Formulario N° 1 con estos pre-horarios" : vacio}
+            aria-label="Form. 1 en imagen"
+            title={items.length ? "El Formulario N° 1 en imagen, con estos pre-horarios" : vacio}
             className="flex h-10 items-center gap-1.5 rounded-xl bg-primary-soft px-3.5 text-sm font-semibold text-primary disabled:opacity-60"
           >
             {generando === "png" ? (
@@ -406,7 +414,7 @@ function PreHorariosCargados({
             ) : (
               <ImageDown className="size-4" />
             )}
-            Imagen
+            Form. 1
           </button>
         </div>
       </div>
@@ -436,6 +444,16 @@ function PreHorariosCargados({
           extra={() => desdeOtroAnio}
         />
       )}
+
+      <section className="mt-6 space-y-3 border-t border-border/60 pt-5">
+        <div>
+          <h2 className="font-display text-lg font-bold">Horario de la institución</h2>
+          <p className="text-[12px] text-muted-foreground">
+            Los bloques de cada turno. Es el de la pestaña Horario y el que sale en el formulario.
+          </p>
+        </div>
+        <HorarioInstitucion idInstitucion={idInstitucion} anioInicial={anio} />
+      </section>
 
       {alta && <AltaRapidaPreHorario alta={alta} op={op} onCerrar={() => setAlta(null)} />}
     </div>

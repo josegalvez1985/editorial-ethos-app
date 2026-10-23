@@ -236,6 +236,8 @@ export function PostulacionesInstitucion({
             type="button"
             disabled={generando != null}
             onClick={() => imprimir("pdf")}
+            aria-label="Form. 1 en PDF"
+            title="El Formulario N° 1 en PDF"
             className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-primary-foreground shadow-soft disabled:opacity-60"
           >
             {generando === "pdf" ? (
@@ -243,12 +245,14 @@ export function PostulacionesInstitucion({
             ) : (
               <FileDown className="size-4" />
             )}
-            PDF
+            Form. 1
           </button>
           <button
             type="button"
             disabled={generando != null}
             onClick={() => imprimir("png")}
+            aria-label="Form. 1 en imagen"
+            title="El Formulario N° 1 en imagen"
             className="flex h-10 items-center gap-1.5 rounded-xl bg-primary-soft px-3.5 text-sm font-semibold text-primary disabled:opacity-60"
           >
             {generando === "png" ? (
@@ -256,7 +260,7 @@ export function PostulacionesInstitucion({
             ) : (
               <ImageDown className="size-4" />
             )}
-            Imagen
+            Form. 1
           </button>
         </div>
       </div>
