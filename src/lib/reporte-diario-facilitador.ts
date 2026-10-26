@@ -113,13 +113,16 @@ export type Formulario2 = {
 };
 
 /**
- * **Por ahora las columnas de la 1° a la 4° intervención salen en blanco**
- * (pedido de Jose el 26/10/2026), y con ellas el TOTAL de cada fila y los
- * totales de 1/0 del pie: un 0 ahí diría "no se dio", y es "no se muestra".
- * Con `false` ni se piden las intervenciones. Para llenarlas, pasar a `true`:
- * las reglas del encabezado siguen armadas y probadas.
+ * Si se llenan las columnas de la 1° a la 4° intervención, el TOTAL de cada
+ * fila y los totales de 1/0 del pie con las intervenciones del período (las
+ * reglas del encabezado). Con `false` salen en blanco, para completar a mano,
+ * y ni se piden las intervenciones: un 0 ahí diría "no se dio", y sería "no se
+ * muestra".
+ *
+ * Estuvo en `false` unas horas el 26/10/2026 (a pedido) y volvió a `true` el
+ * mismo día: el reporte es de un mes completo con sus intervenciones.
  */
-export const CON_INTERVENCIONES = false;
+export const CON_INTERVENCIONES = true;
 
 /** La coordinación nacional que imprime la cabecera (la misma del Form. 1). */
 export const COORDINACION = { nombre: "Cecilia Rafael", telefono: "0983 196085" };

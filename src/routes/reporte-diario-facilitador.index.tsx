@@ -51,6 +51,23 @@ const plural = (n: number, uno: string, varios: string) =>
   `${numero.format(n)} ${n === 1 ? uno : varios}`;
 const ddmmyyyy = (f: string) => f.split("-").reverse().join("/");
 
+/** "2026-10" → del "2026-10-01" al "2026-10-31". */
+function mesCompleto(mes: string) {
+  const [a, m] = mes.split("-").map(Number);
+  const ultimo = new Date(Date.UTC(a, m, 0)).getUTCDate();
+  return { desde: `${mes}-01`, hasta: `${mes}-${String(ultimo).padStart(2, "0")}` };
+}
+
+/** El mes (`YYYY-MM`) si `desde`–`hasta` es un mes completo; si no, "". */
+function mesDe(desde: string, hasta: string) {
+  const mes = desde.slice(0, 7);
+  return /^\d{4}-\d{2}$/.test(mes) &&
+    mesCompleto(mes).desde === desde &&
+    mesCompleto(mes).hasta === hasta
+    ? mes
+    : "";
+}
+
 /**
  * Reporte diario del facilitador (`/reporte-diario-facilitador`), el Form. 2 —
  * "Formulario N° 2 - Reporte diario del facilitador" (26/10/2026,
@@ -62,8 +79,10 @@ const ddmmyyyy = (f: string) => f.split("-").reverse().join("/");
  * Los datos y sus reglas están en `lib/reporte-diario-facilitador.ts`; el dibujo, en
  * `lib/planilla-reporte-diario.ts`. No tiene backend propio.
  *
- * - **Fechas:** entra con la etapa en curso (si la hay); "Buscar etapa" llena
- *   las fechas con una de la tabla `ETAPAS`.
+ * - **Fechas:** el reporte es normalmente de **un mes completo** (Jose,
+ *   26/10/2026): entra con el mes en curso, del 1 al último día, y se cambia
+ *   con "Mes" o los atajos. Las fechas sueltas y "Buscar etapa" (que las llena
+ *   con una de la tabla `ETAPAS`) quedan para los casos especiales.
  * - **La línea de la etapa** se arma con las fechas ("ETAPA: 20 ABRIL - 13
  *   MAYO", "3ª ETAPA: …" si se eligió una) y se puede escribir a mano.
  * - **Facilitador e institución** se filtran entre sí: cada lista muestra los
@@ -71,21 +90,37 @@ const ddmmyyyy = (f: string) => f.split("-").reverse().join("/");
  * - **La vista previa** es la misma imagen que se descarga.
  */
 function ReporteDiarioPage() {
-  const hoy = hoyISO();
-  const [desde, setDesde] = useState(`${hoy.slice(0, 8)}01`);
-  const [hasta, setHasta] = useState(hoy);
+  const mesActual = hoyISO().slice(0, 7);
+  // De entrada, el mes en curso completo.
+  const [desde, setDesde] = useState(() => mesCompleto(mesActual).desde);
+  const [hasta, setHasta] = useState(() => mesCompleto(mesActual).hasta);
   /** El número de la etapa elegida en "Buscar etapa"; se pierde al tocar las fechas. */
   const [nroEtapa, setNroEtapa] = useState<number | null>(null);
   /** La línea escrita a mano; `null` = la armada con las fechas. */
   const [etapaManual, setEtapaManual] = useState<string | null>(null);
   const [idFac, setIdFac] = useState("");
   const [idInst, setIdInst] = useState("");
-  const [tocoFechas, setTocoFechas] = useState(false);
 
   const valido = rangoValido({ desde, hasta });
   const anio = desde.slice(0, 4);
+  /** El mes elegido (`YYYY-MM`) si las fechas son un mes completo; si no, "". */
+  const mes = mesDe(desde, hasta);
 
-  /* ---- Etapas: la en curso de entrada, y "Buscar etapa" ------------------- */
+  /** Un mes completo, del 1 al último día. */
+  const elegirMes = (m: string) => {
+    if (!/^\d{4}-\d{2}$/.test(m)) return;
+    const r = mesCompleto(m);
+    setDesde(r.desde);
+    setHasta(r.hasta);
+    setNroEtapa(null);
+    setEtapaManual(null);
+  };
+  const mesAnterior = (() => {
+    const [a, m] = mesActual.split("-").map(Number);
+    return m === 1 ? `${a - 1}-12` : `${a}-${String(m - 1).padStart(2, "0")}`;
+  })();
+
+  /* ---- "Buscar etapa": para los casos especiales -------------------------- */
 
   const etapas = useQuery({ queryKey: keysEtapas.todo, queryFn: listarEtapas });
   const numeradas = useMemo(() => numerarEtapas(etapas.data ?? []), [etapas.data]);
@@ -97,24 +132,11 @@ function ReporteDiarioPage() {
     setHasta(e.fin);
     setNroEtapa(e.n);
     setEtapaManual(null);
-    setTocoFechas(true);
   };
-
-  // De entrada, la etapa en curso (si la hay y no se tocaron las fechas).
-  useEffect(() => {
-    if (tocoFechas) return;
-    const enCurso = numeradas.find((e) => e.inicio <= hoy && hoy <= e.fin);
-    if (enCurso) {
-      setDesde(enCurso.inicio);
-      setHasta(enCurso.fin);
-      setNroEtapa(enCurso.n);
-    }
-  }, [numeradas, tocoFechas, hoy]);
 
   const cambiarFecha = (cual: "desde" | "hasta", v: string) => {
     (cual === "desde" ? setDesde : setHasta)(v);
     setNroEtapa(null);
-    setTocoFechas(true);
   };
 
   const etapaAuto = textoEtapa(desde, hasta, nroEtapa);
@@ -319,6 +341,41 @@ function ReporteDiarioPage() {
 
         {/* ── Parámetros ───────────────────────────────────────────────── */}
         <section className="mb-4 space-y-3 rounded-2xl border border-border/60 bg-card p-4 shadow-soft">
+          {/* El período de siempre: un mes completo. */}
+          <div className="flex flex-wrap items-end gap-2">
+            <div role="tablist" aria-label="Mes" className="flex flex-wrap gap-2">
+              {(
+                [
+                  [mesActual, "Este mes"],
+                  [mesAnterior, "Mes anterior"],
+                ] as const
+              ).map(([m, texto]) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="tab"
+                  aria-selected={mes === m}
+                  onClick={() => elegirMes(m)}
+                  className={`h-11 rounded-full border px-3.5 text-sm font-medium ${
+                    mes === m
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border/80 bg-card hover:border-primary/40"
+                  }`}
+                >
+                  {texto}
+                </button>
+              ))}
+            </div>
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium">Mes</span>
+              <input
+                type="month"
+                value={mes}
+                onChange={(e) => elegirMes(e.target.value)}
+                className="h-11 rounded-xl border border-input bg-background px-3"
+              />
+            </label>
+          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label className="block text-sm">
               <span className="mb-1 block font-medium">Fecha desde</span>
