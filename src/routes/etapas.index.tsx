@@ -14,7 +14,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { eliminarEtapa, guardarEtapa, keysEtapas, listarEtapas, type Etapa } from "@/lib/etapas";
+import {
+  eliminarEtapa,
+  guardarEtapa,
+  keysEtapas,
+  listarEtapas,
+  nombreEtapa,
+  numerarEtapas,
+  type Etapa,
+  type Numerada,
+} from "@/lib/etapas";
 import { textoUsos } from "@/lib/facilitadores";
 import { cuandoEs, diaISO, diasEntre, fechaCorta, hoyISO, sumarDias } from "@/lib/fechas";
 import { usePermisos } from "@/lib/permisos";
@@ -34,20 +43,8 @@ const MESES = ["E", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
 
 const anioDe = (f: string) => Number(f.slice(0, 4));
 
-/** Una etapa con su número dentro del año ("2ª etapa 2026"). */
-type Numerada = Etapa & { n: number; anio: number };
-
-function numerar(etapas: Etapa[]): Numerada[] {
-  const porAnio = new Map<number, number>();
-  return etapas.map((e) => {
-    const anio = anioDe(e.inicio);
-    const n = (porAnio.get(anio) ?? 0) + 1;
-    porAnio.set(anio, n);
-    return { ...e, n, anio };
-  });
-}
-
-const nombre = (e: Numerada) => `${e.n}ª etapa ${e.anio}`;
+const numerar = numerarEtapas;
+const nombre = nombreEtapa;
 
 /** "16 semanas" o "12 días". */
 function duracion(inicio: string, fin: string) {

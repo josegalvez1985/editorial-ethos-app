@@ -52,6 +52,25 @@ export async function eliminarEtapa(id: number): Promise<void> {
   await authFetch(`etapas/${id}`, { method: "DELETE" });
 }
 
+/** Una etapa con su número dentro del año ("2ª etapa 2026"). */
+export type Numerada = Etapa & { n: number; anio: number };
+
+/**
+ * Las numera por año en el orden en que vienen (por fecha de inicio). La usan
+ * Etapas y el Form. 2 ("3ª ETAPA: …").
+ */
+export function numerarEtapas(etapas: Etapa[]): Numerada[] {
+  const porAnio = new Map<number, number>();
+  return etapas.map((e) => {
+    const anio = Number(e.inicio.slice(0, 4));
+    const n = (porAnio.get(anio) ?? 0) + 1;
+    porAnio.set(anio, n);
+    return { ...e, n, anio };
+  });
+}
+
+export const nombreEtapa = (e: Numerada) => `${e.n}ª etapa ${e.anio}`;
+
 export const keysEtapas = {
   todo: ["etapas"] as const,
 };

@@ -1,12 +1,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileDown, ImageDown, Loader2 } from "lucide-react";
+import { FileDown, FileSpreadsheet, ImageDown, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { Cargando, Fallo, SoloLectura } from "@/components/admin-ui";
+import { Form3Institucion } from "@/components/form-3-institucion";
 import { GrillaEditable, type ColumnaGrilla, type FilaGrilla } from "@/components/grilla-editable";
 import { keysFacilitadores, listarFacilitadores } from "@/lib/facilitadores";
 import {
+  descargarFormularioExcel,
   generarFormularioImagen,
   generarFormularioPdf,
   nombreArchivo,
@@ -62,7 +64,7 @@ export function PostulacionesInstitucion({
   const puede =
     puedeRuta("/instituciones", "actualizar") || puedeRuta("/postulaciones", "actualizar");
   const [anio, setAnio] = useState<string | null>(null);
-  const [generando, setGenerando] = useState<"pdf" | "png" | null>(null);
+  const [generando, setGenerando] = useState<"pdf" | "png" | "xlsx" | null>(null);
 
   // Sin año: el backend usa el lectivo actual y dice cuál es.
   const lista = useQuery({
@@ -189,18 +191,25 @@ export function PostulacionesInstitucion({
       : undefined,
   }));
 
-  /** Sin `await` antes: la pestaña se abre dentro del clic (ver pdf-base.ts). */
-  const imprimir = (tipo: "pdf" | "png") => {
+  /**
+   * Sin `await` antes: la pestaña se abre dentro del clic (ver pdf-base.ts).
+   * El Excel no abre pestaña: se descarga (26/10/2026, con el formato del PDF).
+   */
+  const imprimir = (tipo: "pdf" | "png" | "xlsx") => {
     setGenerando(tipo);
     const archivo = nombreArchivo({ nombre: nombreInstitucion, anio: elegido });
-    abrirPdfEnPestana(
-      () =>
-        obtenerFormulario(idInstitucion, elegido).then((f) =>
-          tipo === "pdf" ? generarFormularioPdf(f) : generarFormularioImagen(f),
-        ),
-      `${archivo}.${tipo}`,
-      tipo === "pdf" ? "el PDF" : "la imagen",
-    )
+    const trabajo =
+      tipo === "xlsx"
+        ? obtenerFormulario(idInstitucion, elegido).then(descargarFormularioExcel)
+        : abrirPdfEnPestana(
+            () =>
+              obtenerFormulario(idInstitucion, elegido).then((f) =>
+                tipo === "pdf" ? generarFormularioPdf(f) : generarFormularioImagen(f),
+              ),
+            `${archivo}.${tipo}`,
+            tipo === "pdf" ? "el PDF" : "la imagen",
+          );
+    trabajo
       .catch((e) => toast.error(e instanceof Error ? e.message : "No se pudo generar"))
       .finally(() => setGenerando(null));
   };
@@ -262,6 +271,23 @@ export function PostulacionesInstitucion({
             )}
             Form. 1
           </button>
+          <button
+            type="button"
+            disabled={generando != null}
+            onClick={() => imprimir("xlsx")}
+            aria-label="Form. 1 en Excel"
+            title="El Formulario N° 1 en Excel, con el mismo formato que el PDF"
+            className="flex h-10 items-center gap-1.5 rounded-xl border border-primary/40 bg-card px-3.5 text-sm font-semibold text-primary shadow-soft hover:bg-primary-soft disabled:opacity-60"
+          >
+            {generando === "xlsx" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="size-4" />
+            )}
+            Form. 1
+          </button>
+          {/* El Form. 3: la agenda del facilitador, del año actual (26/10/2026). */}
+          <Form3Institucion origen="postulaciones" idInstitucion={idInstitucion} />
         </div>
       </div>
 

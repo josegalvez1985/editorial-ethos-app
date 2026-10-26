@@ -232,7 +232,7 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Núcleo de Datos | **Departamentos**: los de cada país, filtrados y agrupados por país; alta, modificación y baja (solo si nada lo usa). Páginas 6 y 7 (modal) de APEX | `/departamentos` | `departamentos.sql` |
 | Núcleo de Datos | **Ciudades**: las de cada departamento, filtradas y agrupadas por departamento; el país sale del departamento. Alta, modificación y baja (solo si nada la usa). Páginas 8 y 9 (modal) de APEX | `/ciudades` | `ciudades.sql` |
 | Núcleo de Datos | **Barrios**: los de cada ciudad, filtrados y agrupados por ciudad; departamento y país salen de la ciudad. Alta, modificación y baja (solo si nada lo usa). Páginas 10 y 11 (modal) de APEX | `/barrios` | `barrios.sql` |
-| Núcleo de Datos | **Instituciones**: listado con cómo va el año lectivo en cada una (horario, pre-horarios confirmados, postulaciones) y "Limpiar filtros", y la ficha con pestañas: **Datos** (con "asignar el facilitador a los pre-horarios"), **Autoridades** (directores y coordinadores, con alta de persona ahí mismo), **Horario** (por año, con "copiar el del año anterior"), **Pre-horarios** (con la vista Planilla en el formato del Formulario N° 1 y su PDF e imagen) y **Postulaciones** (grillas editables iguales a los IG de la 43 y la 38, con la lupa, todas las filas a la vista, los manuales en su color, los días agrupados en Desde/Hasta y las horas escritas con un clic, con "horarios de otro año", postulaciones por año y el Formulario N° 1 en **PDF e imagen**). Páginas 16, 21, 33, 35, 38, 43, 46 y 60 de APEX | `/instituciones` | `instituciones.sql`, `instituciones_directores.sql`, `instituciones_coordinadores.sql`, `horario_instituciones.sql`, `pre_horarios.sql`, `postulaciones.sql`, `directores.sql`, `coordinadores.sql` |
+| Núcleo de Datos | **Instituciones**: listado con cómo va el año lectivo en cada una (horario, pre-horarios confirmados, postulaciones) y "Limpiar filtros", y la ficha con pestañas: **Datos** (con "asignar el facilitador a los pre-horarios"), **Autoridades** (directores y coordinadores, con alta de persona ahí mismo), **Horario** (por año, con "copiar el del año anterior"), **Pre-horarios** (con la vista Planilla en el formato del Formulario N° 1 y su PDF, imagen y Excel, y el Form. 3 del facilitador) y **Postulaciones** (grillas editables iguales a los IG de la 43 y la 38, con la lupa, todas las filas a la vista, los manuales en su color, los días agrupados en Desde/Hasta y las horas escritas con un clic, con "horarios de otro año", postulaciones por año y el Formulario N° 1 en **PDF, imagen y Excel**, y el **Form. 3** (agenda semanal) de su facilitador). Páginas 16, 21, 33, 35, 38, 43, 46 y 60 de APEX | `/instituciones` | `instituciones.sql`, `instituciones_directores.sql`, `instituciones_coordinadores.sql`, `horario_instituciones.sql`, `pre_horarios.sql`, `postulaciones.sql`, `directores.sql`, `coordinadores.sql` |
 | Núcleo de Datos | **Docentes**: activos e inactivos en pastillas, buscador por nombre, CI o teléfono, aviso de CI o nombre repetido; uno en uso no se borra, se marca inactivo. El diálogo dice **dónde está**: institución y ciudad del año lectivo actual, con un botón para ver los años anteriores, y cada institución lleva a su ficha (19/10/2026). Páginas 41 y 42 (modal) de APEX | `/docentes` | `docentes.sql` |
 | Núcleo de Datos | **Materias** y **Énfasis**: alta, modificación y baja (solo si nada los usa, contando pre-horarios y postulaciones). Páginas 17/18 y 26/27 (modales) de APEX | `/materias`, `/enfasis` | `materias.sql`, `enfasis.sql` |
 | Núcleo de Datos | **Índices**: los de cada manual, agrupados y en orden, con pastillas por manual y buscador; el alta propone el número siguiente y "Agregar y seguir" carga un índice entero de corrido. No repite un número dentro del manual; uno en uso no se borra ni cambia de manual. Estado activo por índice, y el botón **Manuales** abre un panel con un interruptor por manual: inactivarlo inactiva todos sus índices y activarlo los activa a todos (los nuevos heredan el estado del manual). Páginas 28 y 29 (modal) de APEX | `/indices` | `indices.sql` |
@@ -265,6 +265,8 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Operaciones | **Transferencias de manuales**: envío entre sucursales (cabecera y detalle), repartido por **facilitador e institución**: cada línea dice a qué facilitador y en qué institución van los manuales (obligatorios; las líneas viejas figuran como "Sin asignar"). Al recibir, mueve las existencias. Una recibida se revierte (vuelve a pendiente) o se elimina, devolviendo las existencias. **La cantidad se sugiere** (13/10/2026) con lo que el facilitador postuló en esa institución (postulaciones activas del año lectivo actual): la tarjeta nueva se llena sola y cada línea dice lo postulado; los manuales del catálogo se cruzan con las columnas de `POSTULACIONES` por el nombre. **Cada transferencia tiene su PDF y su Excel** (13/10/2026, en `/transferencias/$id`): el PDF con el logo se abre en una pestaña nueva, con los datos y el estado, el total por manual, el detalle por facilitador e institución y las firmas de quien entrega y quien recibe; el Excel es un `.xlsx` **con el mismo formato que el PDF** (logo, colores, celdas unidas, listo para imprimir en A4), armado con `exceljs`, que se carga recién al tocar el botón. Los dos salen de lo guardado | `/transferencias` | `transferencias.sql`; la sugerencia usa `postulaciones/todas` de `postulaciones.sql`, sin SQL propio |
 | Operaciones | **Envíos de Gráficas** (pantalla nueva, 13/10/2026, no viene de APEX): **cabecera y detalle** como Transferencias. Cada envío es una gráfica y una fecha, con sus **destinos** (departamento, ciudad, sucursal y cuántos manuales de cada uno). Cada destino tiene además un **comentario** (`COMENTARIO`, hasta 2000). El listado: los totales de lo filtrado por manual (con sus colores); filtros en pastillas por año, sucursal y gráfica con cuántos envíos, buscador (también en los comentarios) y Restablecer; tarjetas con la fecha, los destinos y los manuales. **Sin PDF ni Excel generales** (13/10/2026: salen solo por envío). **Los paquetes:** cada cantidad se divide en paquetes de 100, 50 y 25 y lo que sobra va suelto (no se guarda, se calcula): en el formulario debajo de cada manual y por destino, y en el comprobante. El alta y la edición en su pantalla (`/envios-graficas/nuevo` y `/envios-graficas/$id`): la gráfica con las ya usadas como sugerencia, la fecha y una tarjeta por destino (la ciudad se busca sin elegir antes el departamento; el total en vivo); el pie fijo dice qué falta. **Cada destino sugiere sus cantidades**: la suma de cada manual en las postulaciones activas del año lectivo actual de las instituciones de esa ciudad (el criterio de Cantidad de Manuales), con el detalle por institución y un aviso si ese año ya se mandó algo a esa ciudad en otro envío; se cargan solas con los campos vacíos y nunca pisan lo escrito. Cada envío tiene su **comprobante en PDF y en Excel con el mismo formato** (en `/envios-graficas/$id`): por manual, destinos (cada uno con su comentario debajo), **armado de paquetes** por destino y manual, y una firma para la gráfica y una por sucursal | `/envios-graficas` | `envios_graficas.sql` (crea las tablas si faltan); la sugerencia usa `postulaciones/todas` de `postulaciones.sql`, sin SQL propio |
 | Reportes y Consultas | **Agendas**: el horario semanal, con **Excel** de todo lo filtrado (junta las páginas del backend) | `/agendas` | `agendas.sql` |
+| Reportes y Consultas | **Reporte diario del facilitador** (el Form. 2; pantalla nueva, 26/10/2026, no viene de APEX): para un facilitador en una institución y un rango de fechas, la planilla oficial con sus clases (una por postulación activa y día, las secciones juntas, por turno con subtotal) y las columnas de la 1° a la 4° intervención y el TOTAL **en blanco por ahora** (26/10/2026, a pedido; armadas para llenarse con las del rango: ver `CON_INTERVENCIONES`). Fechas desde/hasta (entra con la etapa en curso), **Buscar etapa** (llena las fechas desde `ETAPAS`), la línea roja de la etapa editable, Facilitador e Institución filtrados entre sí; la vista previa es la misma imagen que se descarga, y avisa si una postulación no tiene horario. Sale en **PDF, imagen y Excel** con el mismo formato. Recuperaciones y título de las autoridades, también en blanco. Ver *Reportes armados sobre `V_POSTULACIONES`* | `/reporte-diario-facilitador` | sin SQL propio: `postulaciones.sql`, `intervenciones_crud.sql` y `facilitadores.sql` |
+| Reportes y Consultas | **Agenda semanal del facilitador** (el Form. 3; pantalla nueva, 26/10/2026, no viene de APEX): la semana de un facilitador en un año lectivo, con el formato de la planilla oficial: mañana y tarde, cada clase (curso/grado, nombre completo de la institución y Cant.) en su día y su hora, las postulaciones del mismo horario e institución juntas ("7° A+B", "8°&9°") contando 1, subtotales TM y TT y el TOTAL, y en rojo sus **horarios bloqueados** de ese año. Año lectivo en pastillas y facilitador con buscador; la vista previa es la misma imagen que se descarga, y avisa de las postulaciones de la noche o sin horario, que no salen. Sale en **PDF, imagen y Excel** con el mismo formato. Ver *Reportes armados sobre `V_POSTULACIONES`* | `/agenda-semanal-facilitador` | sin SQL propio: `postulaciones.sql` y `facilitadores_dias_bloqueos.sql` |
 | Reportes y Consultas | **Consulta de inventarios**: dos vistas en pastillas (12/10/2026). **Último conteo** (la que abre, la página 76 de APEX): el último conteo de cada manual en cada sucursal, con las facetas Sucursal y Manual, buscador, Sucursal / Manual / Fecha / Cantidad Física con el total al pie, orden y filtro por columna y **Excel**; sin la columna Título de APEX, que repetía cada conteo una vez por índice del manual. **Historial**: los conteos pendientes y cerrados de un período por sucursal, gráfico comparativo entre inventarios, PDF con el logo y **Excel** | `/consulta-inventarios` | `inventarios.sql` (sin cambios: las dos vistas leen `inventarios/historial`) |
 | Reportes y Consultas | **Monitoreo de Facilitadores**: las evaluaciones de los facilitadores ítem por ítem (una fila de `EVALUACIONES_FACILITADORES` por ítem). Año (el en curso de entrada, o "Todos los años"), las facetas Facilitador e Institución con cuántas filas, buscador y Restablecer; un resumen (filas, facilitadores, instituciones, sin cerrar); el reporte de APEX con sus 14 columnas (Nombre Apellido, que abre la evaluación, Institución, Ciudad, fechas, Evaluado Por, Área, Evaluación, Calificación y Escala Descripción de `ESCALAS_EVALUACIONES`, aspectos, Observación Admin, Cerrado), por fecha, 50 por página, orden y filtro por columna y **Excel**. Página 87 de APEX | `/monitoreo-facilitadores` | `evaluaciones_facilitadores.sql` y `escalas_evaluaciones.sql` (sin SQL propio) |
 | Reportes y Consultas | **Historial de Inventarios de Manuales**: todos los conteos de cada sucursal (la página 77 de APEX), con las facetas Sucursal y Manual, buscador, Sucursal / Manual / Fecha / Cantidad Física con el total al pie, 50 por página, orden y filtro por columna y **Excel**; sin la columna Título de APEX (el mismo error que la 76). Es el mismo componente que el Último conteo de la 76 (`reporte-conteos.tsx`), en modo `todos`; un aviso lleva al Historial con gráfico y PDF de Consulta de inventarios | `/historial-inventarios` | `inventarios.sql` (sin cambios: `inventarios/historial`) |
@@ -529,6 +531,76 @@ institución): no usa ese encabezado, copia el formulario oficial que generaba A
 colores de los manuales, declaración y firma—. Se dibuja una sola vez en
 [`src/lib/formulario-postulacion.ts`](src/lib/formulario-postulacion.ts) y sale en **PDF**
 (oficio apaisado, paginado) y en **imagen PNG** del mismo dibujo, así no se desincronizan.
+Desde el 26/10/2026 también en **Excel con el mismo formato** (`descargarFormularioExcel`, en
+el mismo archivo), en las dos pestañas: las columnas de la tabla del PDF, bandas, colores,
+subtotales, declaración y firma, en oficio apaisado. No sale del mismo dibujo —Excel necesita
+una grilla y el PDF dibuja en posiciones libres—: **si cambia el diseño del PDF, hay que
+cambiar también el Excel**.
+
+**El Formulario N° 2 (Reporte diario del facilitador, 26/10/2026)** es una pantalla propia,
+`/reporte-diario-facilitador`, en Reportes y Consultas. Copia la planilla que se llenaba en
+Excel y se arma como **una grilla de celdas** en
+[`src/lib/planilla-reporte-diario.ts`](src/lib/planilla-reporte-diario.ts), de la que salen el
+PDF (oficio apaisado, una hoja), la imagen y el Excel: los tres no se pueden desincronizar. El
+motor de la grilla y de las tres salidas es uno solo,
+[`src/lib/planilla-celdas.ts`](src/lib/planilla-celdas.ts) (`nuevaPlanilla`, `planillaPdf`,
+`planillaImagen`, `planillaExcel`), que comparten el Form. 2 y el Form. 3: un formulario nuevo
+con el mismo estilo arma solo su grilla. Los datos y sus reglas, en
+[`src/lib/reporte-diario-facilitador.ts`](src/lib/reporte-diario-facilitador.ts). No tiene SQL
+propio: lee `postulaciones/formulario` (cabecera), `postulaciones/todas` (las clases),
+`intervenciones-crud` (las intervenciones) y `GET facilitadores` (el teléfono), todos con solo
+sesión. Las reglas acordadas con Jose:
+
+- **Una fila por postulación activa** del facilitador en la institución (del año de la fecha
+  desde) y por día con horario, en bloques por turno con su subtotal (TM, TT, TN). Las que solo
+  cambian de sección (mismo turno, día, hora, grado y manual) son **una clase con un renglón por
+  sección**.
+- **Por ahora, las columnas de la 1° a la 4°, el TOTAL y los 1/0 del pie salen en blanco**
+  (26/10/2026, a pedido) y ni se piden las intervenciones: `CON_INTERVENCIONES = false` en
+  `reporte-diario-facilitador.ts`. Con `true` se llenan con esta regla, ya armada y probada:
+- **Las intervenciones de la 1° a la 4°** son las de la clase en el rango, en orden de fecha,
+  una por día (de varias el mismo día, la última). Si hay más de cuatro salen las primeras
+  cuatro y la pantalla avisa. **1/0** = se desarrolló o no; si no, el motivo va en *FIRMA PROF. /
+  \*JUSTIF.* **TOTAL** = las desarrolladas.
+- **Recuperaciones y TÍTULO de las autoridades salen en blanco**: la base no distingue una
+  recuperación, y ninguna tabla de autoridades tiene el título.
+- **La línea de la etapa** se arma con las fechas ("ETAPA: 20 ABRIL - 13 MAYO"); **Buscar
+  etapa** llena las fechas con una de `ETAPAS` ("3ª ETAPA: …") y también se puede escribir. La
+  pantalla entra con la etapa en curso.
+- Los archivos se llaman **"Form. 2 - Institución - Facilitador - 20-04-2026 al 13-05-2026"**.
+
+**El Formulario N° 3 (Agenda semanal del facilitador, 26/10/2026)** es otra pantalla propia,
+`/agenda-semanal-facilitador`, en Reportes y Consultas: la semana de un facilitador en un año
+lectivo, con el mismo motor
+([`planilla-agenda-semanal.ts`](src/lib/planilla-agenda-semanal.ts) arma la grilla;
+[`agenda-semanal-facilitador.ts`](src/lib/agenda-semanal-facilitador.ts), los datos). No tiene
+SQL propio ni consulta nada aparte: se arma en el navegador con `postulaciones/todas` del año y
+`GET facilitadores-bloqueos`. Las reglas acordadas con Jose:
+
+- **Parámetros: facilitador y año lectivo** (entra con el actual).
+- **Solo MAÑANA y TARDE**, por el turno de la postulación (sin turno, por la hora: antes de las
+  12:00, mañana). Las de la noche no salen y la pantalla dice cuántas.
+- **Las filas salen de las clases:** las horas de inicio y de fin de todas sus clases del turno,
+  en orden; cada clase va en la fila de su hora de inicio.
+- **Una celda por institución, día y hora:** las postulaciones que coinciden se juntan ("7° A+B",
+  "8°&9°", "7°,8°&9°") y cuentan **1** en Cant. TM, TT y TOTAL suman esas Cant.
+- **Rojo = horario bloqueado** del facilitador ese año (el modal de Facilitadores): la fila cuya
+  hora cae dentro de una franja.
+- **Nombre IE completo** (la base no tiene uno corto): los largos salen con letra más chica.
+- **"REUNIÓN DE FACILITADORES"** y lo que no está en la base se completa a mano.
+- Los archivos se llaman **"Form. 3 - Facilitador - año"**.
+
+**El Form. 3 también sale desde la ficha de una institución** (26/10/2026), en las pestañas
+**Pre-horarios** y **Postulaciones**, al lado del Form. 1: los mismos tres botones (PDF, imagen y
+Excel), en [`form-3-institucion.tsx`](src/components/form-3-institucion.tsx). Lo acordado:
+
+- **Es la agenda del facilitador**, entera (con sus otras instituciones). Si a la institución van
+  varios, un diálogo pregunta de cuál; si va uno, sale directo.
+- **Siempre del año lectivo actual**, aunque la pestaña muestre otro año.
+- **Cada pestaña, de su tabla:** Pre-horarios arma la agenda con los **pre-horarios** del
+  facilitador (todos, confirmados o no, como su Form. 1), con `GET pre-horarios/facilitador`
+  —**nuevo en `pre_horarios.sql`: correr el script antes de publicar**—; Postulaciones, con sus
+  postulaciones activas (`postulaciones/todas`, como `/agenda-semanal-facilitador`).
 
 En **Auditoría**, la vista *Movimientos* tiene un buscador que mira en todos los campos de
 cada tabla, y tocar un movimiento abre la historia del registro con **todos sus campos** y los
@@ -576,13 +648,13 @@ la cantidad en la columna del grado, un toque en el manual y las horas en la col
 cada fila sigue siendo un pre-horario (un grado, un manual, un día), así que esas columnas se
 excluyen dentro de la fila. Las dos vistas comparten el estado de edición (`useEdicionGrilla`,
 en `grilla-editable.tsx`), así que cambiar de vista no pierde lo que no se guardó. La pestaña
-también imprime el Formulario N° 1 en PDF e imagen con los pre-horarios guardados
+también imprime el Formulario N° 1 en PDF, imagen y Excel con los pre-horarios guardados
 (`formularioConPreHorarios`, en `lib/pre-horarios.ts`). Las filas de cada turno van en orden ascendente
 por día y hora, y una fila se reacomoda al dejarla (no mientras se escribe la hora).
 Las listas de Materia y Docente tienen al principio **"+ Nueva materia…" / "+ Nuevo docente…"**
 (a quien puede insertar en `/materias` o `/docentes`): un alta rápida que queda elegida en la
 fila ([`alta-rapida-pre-horario.tsx`](src/components/alta-rapida-pre-horario.tsx)), con los mismos
-endpoints. El PDF y la imagen del formulario, de las dos pestañas, se llaman **"Form. 1 -
+endpoints. El PDF, la imagen y el Excel del formulario, de las dos pestañas, se llaman **"Form. 1 -
 Institución - año"** (archivo y título del PDF, 22/10/2026).
 
 **Las planillas con lupa** (09/10/2026): esa grilla y la de Postulaciones de Operaciones

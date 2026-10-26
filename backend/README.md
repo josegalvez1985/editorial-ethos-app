@@ -696,6 +696,7 @@ Orden para correrlos: `directores.sql` y `coordinadores.sql`, después `instituc
 | GET | `horario-instituciones?id_institucion=` | sesión | Los bloques de TODOS los años, con `anio_actual` |
 | POST | `horario-instituciones/copiar` | insertar (como las autoridades) | `{id_institucion, desde}`: copia ese año al lectivo actual; **409** si el actual ya tiene bloques |
 | GET | `pre-horarios?id_institucion=&anio=` | sesión | Los del año (sin `anio`, el actual), con `id_postulacion` y sus `usos` (> 0 = bloqueado) |
+| GET | `pre-horarios/facilitador?id_facilitador=&anio=` | sesión | Los de UN facilitador en TODAS sus instituciones (sin `anio`, el actual), con la institución: solo turno, grado, sección, día, horas y si está confirmado. Lo usa el Form. 3 (la agenda semanal del facilitador) desde la pestaña Pre-horarios de una institución (26/10/2026). **Hay que volver a correr `pre_horarios.sql`** antes de publicar ese botón |
 | GET | `pre-horarios/opciones` | sesión | Turnos y "confirmado" (listas de APEX), materias, énfasis y docentes (con `es_activo`) |
 | POST/PUT/DELETE | `pre-horarios[/:id]` | actualizar en `/instituciones` | Una clase por vez; **409** si está bloqueado o no es del año actual |
 | POST | `pre-horarios/confirmar` | actualizar en `/instituciones` | `{id_institucion, ids, estado}`: confirma varios; saltea bloqueados e incompletos. Hoy el sitio no lo usa (la grilla confirma fila por fila, como la 43) |

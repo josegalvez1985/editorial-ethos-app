@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as HomeRouteImport } from './routes/home'
+import { Route as AgendaSemanalFacilitadorIndexRouteImport } from './routes/agenda-semanal-facilitador.index'
 import { Route as AgendasIndexRouteImport } from './routes/agendas.index'
 import { Route as AniosLectivosIndexRouteImport } from './routes/anios-lectivos.index'
 import { Route as AreasEvaluacionIndexRouteImport } from './routes/areas-evaluacion.index'
@@ -65,6 +66,7 @@ import { Route as PaginasIndexRouteImport } from './routes/paginas.index'
 import { Route as PaisesIndexRouteImport } from './routes/paises.index'
 import { Route as PermisosIndexRouteImport } from './routes/permisos.index'
 import { Route as PostulacionesIndexRouteImport } from './routes/postulaciones.index'
+import { Route as ReporteDiarioFacilitadorIndexRouteImport } from './routes/reporte-diario-facilitador.index'
 import { Route as ResumenIntervencionesIndexRouteImport } from './routes/resumen-intervenciones.index'
 import { Route as SucursalesIndexRouteImport } from './routes/sucursales.index'
 import { Route as TotalesFacilitadorIndexRouteImport } from './routes/totales-facilitador.index'
@@ -89,6 +91,12 @@ const HomeRoute = HomeRouteImport.update({
   path: '/home',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AgendaSemanalFacilitadorIndexRoute =
+  AgendaSemanalFacilitadorIndexRouteImport.update({
+    id: '/agenda-semanal-facilitador/',
+    path: '/agenda-semanal-facilitador/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AgendasIndexRoute = AgendasIndexRouteImport.update({
   id: '/agendas/',
   path: '/agendas/',
@@ -370,6 +378,12 @@ const PostulacionesIndexRoute = PostulacionesIndexRouteImport.update({
   path: '/postulaciones/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReporteDiarioFacilitadorIndexRoute =
+  ReporteDiarioFacilitadorIndexRouteImport.update({
+    id: '/reporte-diario-facilitador/',
+    path: '/reporte-diario-facilitador/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ResumenIntervencionesIndexRoute =
   ResumenIntervencionesIndexRouteImport.update({
     id: '/resumen-intervenciones/',
@@ -426,6 +440,7 @@ export interface FileRoutesByFullPath {
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
+  '/agenda-semanal-facilitador/': typeof AgendaSemanalFacilitadorIndexRoute
   '/agendas/': typeof AgendasIndexRoute
   '/anios-lectivos/': typeof AniosLectivosIndexRoute
   '/areas-evaluacion/': typeof AreasEvaluacionIndexRoute
@@ -471,6 +486,7 @@ export interface FileRoutesByFullPath {
   '/paises/': typeof PaisesIndexRoute
   '/permisos/': typeof PermisosIndexRoute
   '/postulaciones/': typeof PostulacionesIndexRoute
+  '/reporte-diario-facilitador/': typeof ReporteDiarioFacilitadorIndexRoute
   '/resumen-intervenciones/': typeof ResumenIntervencionesIndexRoute
   '/sucursales/': typeof SucursalesIndexRoute
   '/totales-facilitador/': typeof TotalesFacilitadorIndexRoute
@@ -492,6 +508,7 @@ export interface FileRoutesByTo {
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
+  '/agenda-semanal-facilitador': typeof AgendaSemanalFacilitadorIndexRoute
   '/agendas': typeof AgendasIndexRoute
   '/anios-lectivos': typeof AniosLectivosIndexRoute
   '/areas-evaluacion': typeof AreasEvaluacionIndexRoute
@@ -537,6 +554,7 @@ export interface FileRoutesByTo {
   '/paises': typeof PaisesIndexRoute
   '/permisos': typeof PermisosIndexRoute
   '/postulaciones': typeof PostulacionesIndexRoute
+  '/reporte-diario-facilitador': typeof ReporteDiarioFacilitadorIndexRoute
   '/resumen-intervenciones': typeof ResumenIntervencionesIndexRoute
   '/sucursales': typeof SucursalesIndexRoute
   '/totales-facilitador': typeof TotalesFacilitadorIndexRoute
@@ -559,6 +577,7 @@ export interface FileRoutesById {
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
+  '/agenda-semanal-facilitador/': typeof AgendaSemanalFacilitadorIndexRoute
   '/agendas/': typeof AgendasIndexRoute
   '/anios-lectivos/': typeof AniosLectivosIndexRoute
   '/areas-evaluacion/': typeof AreasEvaluacionIndexRoute
@@ -604,6 +623,7 @@ export interface FileRoutesById {
   '/paises/': typeof PaisesIndexRoute
   '/permisos/': typeof PermisosIndexRoute
   '/postulaciones/': typeof PostulacionesIndexRoute
+  '/reporte-diario-facilitador/': typeof ReporteDiarioFacilitadorIndexRoute
   '/resumen-intervenciones/': typeof ResumenIntervencionesIndexRoute
   '/sucursales/': typeof SucursalesIndexRoute
   '/totales-facilitador/': typeof TotalesFacilitadorIndexRoute
@@ -627,6 +647,7 @@ export interface FileRouteTypes {
     | '/intervenciones/nueva'
     | '/transferencias/$id'
     | '/transferencias/nueva'
+    | '/agenda-semanal-facilitador/'
     | '/agendas/'
     | '/anios-lectivos/'
     | '/areas-evaluacion/'
@@ -672,6 +693,7 @@ export interface FileRouteTypes {
     | '/paises/'
     | '/permisos/'
     | '/postulaciones/'
+    | '/reporte-diario-facilitador/'
     | '/resumen-intervenciones/'
     | '/sucursales/'
     | '/totales-facilitador/'
@@ -693,6 +715,7 @@ export interface FileRouteTypes {
     | '/intervenciones/nueva'
     | '/transferencias/$id'
     | '/transferencias/nueva'
+    | '/agenda-semanal-facilitador'
     | '/agendas'
     | '/anios-lectivos'
     | '/areas-evaluacion'
@@ -738,6 +761,7 @@ export interface FileRouteTypes {
     | '/paises'
     | '/permisos'
     | '/postulaciones'
+    | '/reporte-diario-facilitador'
     | '/resumen-intervenciones'
     | '/sucursales'
     | '/totales-facilitador'
@@ -759,6 +783,7 @@ export interface FileRouteTypes {
     | '/intervenciones/nueva'
     | '/transferencias/$id'
     | '/transferencias/nueva'
+    | '/agenda-semanal-facilitador/'
     | '/agendas/'
     | '/anios-lectivos/'
     | '/areas-evaluacion/'
@@ -804,6 +829,7 @@ export interface FileRouteTypes {
     | '/paises/'
     | '/permisos/'
     | '/postulaciones/'
+    | '/reporte-diario-facilitador/'
     | '/resumen-intervenciones/'
     | '/sucursales/'
     | '/totales-facilitador/'
@@ -826,6 +852,7 @@ export interface RootRouteChildren {
   IntervencionesNuevaRoute: typeof IntervencionesNuevaRoute
   TransferenciasIdRoute: typeof TransferenciasIdRoute
   TransferenciasNuevaRoute: typeof TransferenciasNuevaRoute
+  AgendaSemanalFacilitadorIndexRoute: typeof AgendaSemanalFacilitadorIndexRoute
   AgendasIndexRoute: typeof AgendasIndexRoute
   AniosLectivosIndexRoute: typeof AniosLectivosIndexRoute
   AreasEvaluacionIndexRoute: typeof AreasEvaluacionIndexRoute
@@ -871,6 +898,7 @@ export interface RootRouteChildren {
   PaisesIndexRoute: typeof PaisesIndexRoute
   PermisosIndexRoute: typeof PermisosIndexRoute
   PostulacionesIndexRoute: typeof PostulacionesIndexRoute
+  ReporteDiarioFacilitadorIndexRoute: typeof ReporteDiarioFacilitadorIndexRoute
   ResumenIntervencionesIndexRoute: typeof ResumenIntervencionesIndexRoute
   SucursalesIndexRoute: typeof SucursalesIndexRoute
   TotalesFacilitadorIndexRoute: typeof TotalesFacilitadorIndexRoute
@@ -900,6 +928,13 @@ declare module '@tanstack/react-router' {
       path: '/home'
       fullPath: '/home'
       preLoaderRoute: typeof HomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agenda-semanal-facilitador/': {
+      id: '/agenda-semanal-facilitador/'
+      path: '/agenda-semanal-facilitador'
+      fullPath: '/agenda-semanal-facilitador/'
+      preLoaderRoute: typeof AgendaSemanalFacilitadorIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/agendas/': {
@@ -1273,6 +1308,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PostulacionesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reporte-diario-facilitador/': {
+      id: '/reporte-diario-facilitador/'
+      path: '/reporte-diario-facilitador'
+      fullPath: '/reporte-diario-facilitador/'
+      preLoaderRoute: typeof ReporteDiarioFacilitadorIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/resumen-intervenciones/': {
       id: '/resumen-intervenciones/'
       path: '/resumen-intervenciones'
@@ -1346,6 +1388,7 @@ const rootRouteChildren: RootRouteChildren = {
   IntervencionesNuevaRoute: IntervencionesNuevaRoute,
   TransferenciasIdRoute: TransferenciasIdRoute,
   TransferenciasNuevaRoute: TransferenciasNuevaRoute,
+  AgendaSemanalFacilitadorIndexRoute: AgendaSemanalFacilitadorIndexRoute,
   AgendasIndexRoute: AgendasIndexRoute,
   AniosLectivosIndexRoute: AniosLectivosIndexRoute,
   AreasEvaluacionIndexRoute: AreasEvaluacionIndexRoute,
@@ -1392,6 +1435,7 @@ const rootRouteChildren: RootRouteChildren = {
   PaisesIndexRoute: PaisesIndexRoute,
   PermisosIndexRoute: PermisosIndexRoute,
   PostulacionesIndexRoute: PostulacionesIndexRoute,
+  ReporteDiarioFacilitadorIndexRoute: ReporteDiarioFacilitadorIndexRoute,
   ResumenIntervencionesIndexRoute: ResumenIntervencionesIndexRoute,
   SucursalesIndexRoute: SucursalesIndexRoute,
   TotalesFacilitadorIndexRoute: TotalesFacilitadorIndexRoute,

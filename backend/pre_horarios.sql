@@ -15,6 +15,10 @@
 --
 --   GET     pre-horarios?id_institucion=&anio=  los de una institucion y anio
 --                                               (sin anio: el lectivo actual)
+--   GET     pre-horarios/facilitador?id_facilitador=&anio=
+--                                               los de un facilitador en todas
+--                                               sus instituciones (Form. 3,
+--                                               26/10/2026)
 --   GET     pre-horarios/opciones               turnos y "confirmado" (listas
 --                                               de APEX), materias, enfasis y
 --                                               docentes
@@ -163,6 +167,11 @@ CREATE OR REPLACE PACKAGE PKG_PRE_HORARIOS_ETHOS AS
 
   -- Los de una institucion y anio (sin p_anio: el lectivo actual).
   PROCEDURE listar(p_token IN VARCHAR2, p_id_institucion IN VARCHAR2, p_anio IN VARCHAR2);
+
+  -- Los de UN facilitador en TODAS sus instituciones, de un anio (sin p_anio:
+  -- el lectivo actual). Para el Form. 3 (su agenda semanal) desde la pestana
+  -- Pre-horarios de una institucion (26/10/2026).
+  PROCEDURE de_facilitador(p_token IN VARCHAR2, p_id_facilitador IN VARCHAR2, p_anio IN VARCHAR2);
 
   PROCEDURE opciones(p_token IN VARCHAR2);
 
@@ -465,6 +474,59 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRE_HORARIOS_ETHOS AS
     WHEN OTHERS THEN
       p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
   END listar;
+
+  /* ---------------------------------------------------------------------- */
+  /* DE UN FACILITADOR (el Form. 3)                                         */
+  /* ---------------------------------------------------------------------- */
+
+  -- Solo lo que necesita la agenda: institucion, turno, grado, seccion, dia y
+  -- horas, y si esta confirmado. Pide solo sesion, como listar.
+  PROCEDURE de_facilitador(p_token IN VARCHAR2, p_id_facilitador IN VARCHAR2, p_anio IN VARCHAR2) IS
+    l_fac  NUMBER := f_numero(p_id_facilitador);
+    l_anio VARCHAR2(16) := NVL(TRIM(p_anio), f_anio);
+  BEGIN
+    IF NOT exigir(p_token, 'C') THEN RETURN; END IF;
+    IF l_fac IS NULL THEN
+      p_error(400, 'Bad Request', 'El facilitador es obligatorio'); RETURN;
+    END IF;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('anio', l_anio);
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (
+        SELECT ph.id_pre_horario, ph.id_institucion, i.nombre AS institucion,
+               ph.turno, ph.grado, ph.seccion, ph.dia,
+               TO_CHAR(ph.hora_desde, 'HH24:MI') AS hora_desde,
+               TO_CHAR(ph.hora_hasta, 'HH24:MI') AS hora_hasta,
+               ph.estado
+          FROM pre_horarios ph
+          JOIN instituciones i ON i.id_institucion = ph.id_institucion
+         WHERE ph.id_facilitador = l_fac
+           AND (ph.anio = l_anio OR (l_anio IS NULL AND ph.anio IS NULL))
+         ORDER BY INSTR(c_dias, ',' || ph.dia || ','), TO_CHAR(ph.hora_desde, 'HH24:MI'),
+                  i.nombre, ph.grado, ph.seccion
+    ) LOOP
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id',             r.id_pre_horario);
+      APEX_JSON.WRITE('id_institucion', r.id_institucion);
+      APEX_JSON.WRITE('institucion',    r.institucion);
+      APEX_JSON.WRITE('turno',          r.turno);
+      APEX_JSON.WRITE('grado',          r.grado);
+      APEX_JSON.WRITE('seccion',        r.seccion);
+      APEX_JSON.WRITE('dia',            r.dia);
+      APEX_JSON.WRITE('hora_desde',     r.hora_desde);
+      APEX_JSON.WRITE('hora_hasta',     r.hora_hasta);
+      APEX_JSON.WRITE('estado',         r.estado);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+  END de_facilitador;
 
   /* ---------------------------------------------------------------------- */
   /* OPCIONES                                                               */
@@ -894,6 +956,7 @@ DECLARE
 BEGIN
   FOR r IN (SELECT 'pre-horarios' AS p FROM dual
             UNION ALL SELECT 'pre-horarios/opciones' FROM dual
+            UNION ALL SELECT 'pre-horarios/facilitador' FROM dual
             UNION ALL SELECT 'pre-horarios/confirmar' FROM dual
             UNION ALL SELECT 'pre-horarios/:id' FROM dual) LOOP
     FOR m IN (SELECT 'GET' AS v FROM dual UNION ALL SELECT 'POST' FROM dual
@@ -909,6 +972,8 @@ BEGIN
   -- Las literales antes que :id, como en facilitadores.sql.
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'pre-horarios/opciones',
                        p_priority => 2, p_etag_type => 'NONE');
+  ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'pre-horarios/facilitador',
+                       p_priority => 2, p_etag_type => 'NONE');
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'pre-horarios/confirmar',
                        p_priority => 2, p_etag_type => 'NONE');
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'pre-horarios/:id',
@@ -920,6 +985,10 @@ BEGIN
 
   handler('pre-horarios/opciones', 'GET', '
     PKG_PRE_HORARIOS_ETHOS.OPCIONES(p_token => l_token);');
+
+  handler('pre-horarios/facilitador', 'GET', '
+    PKG_PRE_HORARIOS_ETHOS.DE_FACILITADOR(
+        p_token => l_token, p_id_facilitador => :id_facilitador, p_anio => :anio);');
 
   handler('pre-horarios', 'POST', '
     PKG_PRE_HORARIOS_ETHOS.GUARDAR(p_token => l_token, p_id => NULL,' || c_campos);
@@ -969,6 +1038,7 @@ END;
 BEGIN
   preflight('pre-horarios');
   preflight('pre-horarios/opciones');
+  preflight('pre-horarios/facilitador');
   preflight('pre-horarios/confirmar');
   preflight('pre-horarios/:id');
   COMMIT;
@@ -994,6 +1064,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('[OK]   PKG_PRE_HORARIOS_ETHOS compilado.');
     DBMS_OUTPUT.PUT_LINE('       GET    pre-horarios?id_institucion=&anio=');
     DBMS_OUTPUT.PUT_LINE('       GET    pre-horarios/opciones');
+    DBMS_OUTPUT.PUT_LINE('       GET    pre-horarios/facilitador?id_facilitador=&anio=');
     DBMS_OUTPUT.PUT_LINE('       POST   pre-horarios');
     DBMS_OUTPUT.PUT_LINE('       PUT    pre-horarios/:id');
     DBMS_OUTPUT.PUT_LINE('       DELETE pre-horarios/:id');

@@ -313,6 +313,12 @@ export const PANTALLAS: Record<string, { descripcion: string }> = {
   "/inventario": { descripcion: "Conteo de manuales por sucursal" },
   "/transferencias": { descripcion: "Envío de manuales entre sucursales" },
   "/envios-graficas": { descripcion: "Lo que cada gráfica mandó a cada sucursal, por manual" },
+  "/reporte-diario-facilitador": {
+    descripcion: "El reporte diario del facilitador en una institución, en PDF, imagen y Excel",
+  },
+  "/agenda-semanal-facilitador": {
+    descripcion: "La semana de un facilitador por turno, en PDF, imagen y Excel",
+  },
   "/agendas": { descripcion: "Horario semanal de los facilitadores" },
   "/consulta-inventarios": { descripcion: "Conteos pendientes y cerrados, con PDF" },
   "/consulta-transferencias": { descripcion: "Envíos entre sucursales por ruta y manual, con PDF" },

@@ -1,5 +1,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, FileDown, History, ImageDown, Loader2, Rows3, Sheet } from "lucide-react";
+import {
+  ChevronDown,
+  FileDown,
+  FileSpreadsheet,
+  History,
+  ImageDown,
+  Loader2,
+  Rows3,
+  Sheet,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -12,10 +21,12 @@ import {
   type FilaGrilla,
   type OpcionesEdicion,
 } from "@/components/grilla-editable";
+import { Form3Institucion } from "@/components/form-3-institucion";
 import { HorarioInstitucion } from "@/components/horario-institucion";
 import { PlanillaPreHorarios } from "@/components/planilla-pre-horarios";
 import { keysFacilitadores, listarFacilitadores } from "@/lib/facilitadores";
 import {
+  descargarFormularioExcel,
   generarFormularioImagen,
   generarFormularioPdf,
   nombreArchivo,
@@ -161,7 +172,7 @@ function PreHorariosCargados({
   const { puedeRuta } = usePermisos();
   const puede = puedeRuta("/instituciones", "actualizar");
   const [vista, setVista] = useVista();
-  const [generando, setGenerando] = useState<"pdf" | "png" | null>(null);
+  const [generando, setGenerando] = useState<"pdf" | "png" | "xlsx" | null>(null);
   const [alta, setAlta] = useState<AltaPendiente | null>(null);
 
   const { anio, anioActual, items } = lista;
@@ -330,18 +341,25 @@ function PreHorariosCargados({
    * El Formulario N° 1 con los pre-horarios GUARDADOS. Sin `await` antes: la
    * pestaña se abre dentro del clic (ver pdf-base.ts).
    */
-  const imprimir = (tipo: "pdf" | "png") => {
+  const imprimir = (tipo: "pdf" | "png" | "xlsx") => {
     if (edicion.pendientes) toast.info("Sale con lo guardado: hay cambios sin guardar.");
     setGenerando(tipo);
     const archivo = nombreArchivo({ nombre: nombreInstitucion, anio });
-    abrirPdfEnPestana(
-      () =>
-        obtenerFormulario(idInstitucion, anio)
-          .then((f) => formularioConPreHorarios(f, items))
-          .then((f) => (tipo === "pdf" ? generarFormularioPdf(f) : generarFormularioImagen(f))),
-      `${archivo}.${tipo}`,
-      tipo === "pdf" ? "el PDF" : "la imagen",
-    )
+    const formulario = () =>
+      obtenerFormulario(idInstitucion, anio).then((f) => formularioConPreHorarios(f, items));
+    // El Excel no abre pestaña: se descarga (26/10/2026, con el formato del PDF).
+    const trabajo =
+      tipo === "xlsx"
+        ? formulario().then(descargarFormularioExcel)
+        : abrirPdfEnPestana(
+            () =>
+              formulario().then((f) =>
+                tipo === "pdf" ? generarFormularioPdf(f) : generarFormularioImagen(f),
+              ),
+            `${archivo}.${tipo}`,
+            tipo === "pdf" ? "el PDF" : "la imagen",
+          );
+    trabajo
       .catch((e) => toast.error(e instanceof Error ? e.message : "No se pudo generar"))
       .finally(() => setGenerando(null));
   };
@@ -416,6 +434,27 @@ function PreHorariosCargados({
             )}
             Form. 1
           </button>
+          <button
+            type="button"
+            disabled={generando != null || !items.length}
+            onClick={() => imprimir("xlsx")}
+            aria-label="Form. 1 en Excel"
+            title={
+              items.length
+                ? "El Formulario N° 1 en Excel, con estos pre-horarios y el formato del PDF"
+                : vacio
+            }
+            className="flex h-10 items-center gap-1.5 rounded-xl border border-primary/40 bg-card px-3.5 text-sm font-semibold text-primary shadow-soft hover:bg-primary-soft disabled:opacity-60"
+          >
+            {generando === "xlsx" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="size-4" />
+            )}
+            Form. 1
+          </button>
+          {/* El Form. 3: la agenda del facilitador, del año actual (26/10/2026). */}
+          <Form3Institucion origen="pre-horarios" idInstitucion={idInstitucion} />
         </div>
       </div>
 

@@ -33,6 +33,7 @@
 import type { jsPDF } from "jspdf";
 
 import { nombreTurno } from "@/lib/evaluaciones";
+import { argbHex, bajarLibro, relleno } from "@/lib/excel-base";
 import { t } from "@/lib/pdf-base";
 import {
   DIAS,
@@ -614,6 +615,317 @@ export async function generarFormularioImagen(f: Formulario): Promise<Blob> {
   return new Promise((ok, mal) =>
     canvas.toBlob((b) => (b ? ok(b) : mal(new Error("No se pudo generar la imagen"))), "image/png"),
   );
+}
+
+/**
+ * El Excel con el MISMO formato que el PDF (pedido el 26/10/2026, en las dos
+ * pestañas): las columnas de la tabla son las de {@link COLS} (unidades / 7 =
+ * ancho en caracteres), las bandas, los colores de los manuales, el subtotal
+ * por turno en amarillo, el total en celeste, la declaración y la firma. Lo
+ * que en el PDF es texto suelto (los datos de la institución, la declaración)
+ * va en celdas unidas de lado a lado. Oficio apaisado, ajustado al ancho.
+ *
+ * No sale del pintor de {@link dibujar}: aquel dibuja en posiciones libres y
+ * Excel necesita una grilla. Si cambia el diseño del PDF, cambiar también acá.
+ */
+export async function descargarFormularioExcel(f: Formulario): Promise<void> {
+  const mod = await import("exceljs");
+  // exceljs es CommonJS: según el empaquetador llega como `default` o suelto.
+  const ExcelJS = (mod as unknown as { default?: typeof mod }).default ?? mod;
+  const archivo = nombreArchivo(f);
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Juventud con Valores";
+  wb.title = archivo;
+  const ws = wb.addWorksheet("Form. 1", {
+    views: [{ showGridLines: false }],
+    pageSetup: {
+      paperSize: 5, // oficio (legal)
+      orientation: "landscape",
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      horizontalCentered: true,
+      margins: { left: 0.3, right: 0.3, top: 0.3, bottom: 0.3, header: 0.1, footer: 0.1 },
+    },
+  });
+  ws.columns = COLS.map((c) => ({ width: c.ancho / 7 }));
+
+  const NC = COLS.length;
+  const col = (clave: string) => COLS.findIndex((c) => c.clave === clave) + 1;
+  const borde = { style: "thin" as const, color: { argb: argbHex(C.borde) } };
+  const fuente = (tam: number, negrita = false, color = C.negro) => ({
+    name: "Arial",
+    size: Math.round(tam * 0.75 * 2) / 2,
+    bold: negrita,
+    color: { argb: argbHex(color) },
+  });
+  /** El texto con ** en negrita, como rich text. */
+  const rico = (s: string, tam: number) => ({
+    richText: s
+      .split("**")
+      .map((texto, i) => ({ text: texto, font: fuente(tam, i % 2 === 1) }))
+      .filter((x) => x.text),
+  });
+
+  let r = 0;
+  const fila = (alto: number) => {
+    r += 1;
+    ws.getRow(r).height = alto * 0.75;
+    return r;
+  };
+  type E = {
+    fondo?: string;
+    color?: string;
+    negrita?: boolean;
+    tam?: number;
+    alinear?: "left" | "center" | "right";
+    ajustar?: boolean;
+    conBorde?: boolean;
+  };
+  /** Una celda de `c1` a `c2` (números de columna) y de `fr` a `hastaFila`, con su estilo. */
+  const celda = (
+    fr: number,
+    c1: number,
+    c2: number,
+    valor: string | number | { richText: unknown[] },
+    e: E = {},
+    hastaFila = fr,
+  ) => {
+    if (c2 > c1 || hastaFila > fr) ws.mergeCells(fr, c1, hastaFila, c2);
+    const x = ws.getCell(fr, c1);
+    x.value = valor as never;
+    x.font = fuente(e.tam ?? T.tabla, e.negrita, e.color);
+    x.alignment = {
+      horizontal: e.alinear ?? "center",
+      vertical: "middle",
+      wrapText: !!e.ajustar,
+    };
+    for (let k = c1; k <= c2; k++) {
+      const y = ws.getCell(fr, k);
+      if (e.fondo) y.fill = relleno(argbHex(e.fondo));
+      if (e.conBorde) y.border = { top: borde, left: borde, bottom: borde, right: borde };
+    }
+  };
+  const tabla = (fr: number, desde: string, hasta: string, valor: string | number, e: E = {}) =>
+    celda(fr, col(desde), col(hasta), valor, { conBorde: true, ...e });
+
+  /* ---- Encabezado --------------------------------------------------------- */
+
+  celda(fila(92), 1, NC, `LA EDITORIAL ETHOS - JUVENTUD CON VALORES - EDICIÓN ${f.anio}`, {
+    fondo: C.navy,
+    color: C.blanco,
+    negrita: true,
+    tam: T.banda,
+  });
+  fila(10);
+  celda(
+    fila(55),
+    1,
+    NC,
+    "FORMULARIO N°1 - POSTULACIÓN ANUAL DE INSTITUCIONES EDUCATIVAS (IEs) - ANEXO ACUERDO DE COOPERACIÓN INTERINSTITUCIONAL",
+    { fondo: C.amarillo, negrita: true, tam: T.banda },
+  );
+
+  // Las etiquetas hasta el 9° grado y los datos desde el 1° de la Media: el
+  // x = 414 del PDF cae entre esas columnas.
+  const XD = col("g1m");
+  /** La etiqueta de la izquierda, de `fr` a `hastaFila` (al lado de varios renglones). */
+  const etiqueta = (fr: number, s: string, hastaFila = fr) =>
+    celda(fr, 1, XD - 1, s, { negrita: true, tam: T.dato, alinear: "left" }, hastaFila);
+  const dato = (fr: number, s: string, tam = T.dato) =>
+    celda(fr, XD, NC, s, { tam, alinear: "left" });
+
+  fila(12);
+  let fr = fila(44);
+  etiqueta(fr, "DATOS INSTITUCIÓN:");
+  dato(fr, `NOMBRE: ${f.nombre}   |   DIRECCIÓN: ${f.direccion}`);
+  fr = fila(44);
+  dato(fr, `DPTO: ${f.departamento}   |   CIUDAD: ${f.ciudad}   |   BARRIO: ${f.barrio}`);
+  for (let k = 1; k <= NC; k++)
+    ws.getCell(fr, k).border = { bottom: { style: "medium", color: { argb: argbHex(C.negro) } } };
+
+  fila(12);
+  const autoridades = f.autoridades.map((a) =>
+    [
+      `${a.cargo ? `${a.cargo.toUpperCase()}: ` : ""}${a.nombre}`,
+      a.ci && `CI: ${a.ci}`,
+      a.telefono && `CEL: ${a.telefono}`,
+    ]
+      .filter(Boolean)
+      .join("   |   "),
+  );
+  const primera = r + 1;
+  for (const a of autoridades.length ? autoridades : [""]) dato(fila(26), a, 20);
+  if (autoridades.length < 2) fila(26);
+  etiqueta(primera, "DATOS PRINCIPALES AUTORIDADES:", r);
+  ws.getCell(primera, 1).alignment = { vertical: "top", wrapText: true };
+
+  if (f.horarios.length) {
+    fila(14);
+    const porTurno = new Map<string, string[]>();
+    for (const h of f.horarios) {
+      const k = (nombreTurno(h.turno) ?? "Sin turno").toUpperCase();
+      porTurno.set(k, [...(porTurno.get(k) ?? []), `${h.inicio}-${h.fin}`]);
+    }
+    const desde = r + 1;
+    for (const [turno, bloques] of porTurno)
+      dato(fila(26), `${turno}: ${bloques.join("  ·  ")}`, 20);
+    etiqueta(desde, "HORARIO INSTITUCIÓN:", r);
+    ws.getCell(desde, 1).alignment = { vertical: "top" };
+  }
+
+  /* ---- Detalle ------------------------------------------------------------ */
+
+  fila(30);
+  celda(fila(54), 1, NC, "DETALLE DE POSTULACIONES", {
+    fondo: C.navy,
+    color: C.blanco,
+    negrita: true,
+    tam: T.banda,
+  });
+  fila(8);
+
+  const ult = COLS[COLS.length - 1].clave;
+  const encabezado = (titulo: string) => {
+    celda(fila(FILA), 1, NC, titulo, {
+      fondo: C.turno,
+      color: C.blanco,
+      negrita: true,
+      alinear: "left",
+      conBorde: true,
+    });
+    const azul = { fondo: C.azul, color: C.blanco, negrita: true };
+    let x = fila(FILA);
+    tabla(x, "n", "n", "N", azul);
+    tabla(x, "g2", "enf", "CANTIDAD DE ALUMNO POR GRADO Y CURSO", azul);
+    tabla(x, "ser", "liderazgo", "CANTIDAD DE ALUMNO POR MANUAL", azul);
+    tabla(x, "lunes_d", "dur", "HORARIOS", azul);
+    tabla(x, "materia", ult, "DOCENTES RESPONSABLES", azul);
+    const claro = { fondo: C.claro, negrita: true };
+    x = fila(FILA);
+    tabla(x, "n", "n", "", claro);
+    tabla(x, "g2", "g6", "2° CICLO", claro);
+    tabla(x, "g7", "g9", "3° CICLO", claro);
+    tabla(x, "g1m", "g3m", "N. MEDIO", claro);
+    tabla(x, "sec", "sec", "Sec", claro);
+    tabla(x, "enf", "enf", "Énfasis", claro);
+    for (const m of MANUALES)
+      tabla(x, m.clave, m.clave, m.corto, { fondo: m.color, color: m.tinta, negrita: true });
+    for (const d of DIAS) tabla(x, `${d.clave}_d`, `${d.clave}_h`, d.impreso, claro);
+    tabla(x, "dur", "dur", "Dur.", claro);
+    tabla(x, "materia", "materia", "MATERIA", claro);
+    tabla(x, "nombre", "nombre", "NOMBRE", claro);
+    tabla(x, "celular", "celular", "CELULAR", claro);
+    x = fila(FILA);
+    for (const k of ["n", "sec", "enf", "dur", "materia", "nombre", "celular"])
+      tabla(x, k, k, "", claro);
+    for (const g of GRADOS) tabla(x, g.clave, g.clave, g.corto, claro);
+    for (const m of MANUALES) tabla(x, m.clave, m.clave, "", { fondo: m.color });
+    for (const d of DIAS) {
+      tabla(x, `${d.clave}_d`, `${d.clave}_d`, "DE", claro);
+      tabla(x, `${d.clave}_h`, `${d.clave}_h`, "HASTA", claro);
+    }
+  };
+
+  /** Un número, o vacío si es 0 (como el PDF). */
+  const n = (v: number) => v || "";
+  const totales = (filas: Detalle[], fondo: string) => {
+    const x = fila(FILA);
+    tabla(x, "n", "n", "", { fondo });
+    for (const g of GRADOS)
+      tabla(x, g.clave, g.clave, n(filas.reduce((a, d) => a + d.grados[g.clave], 0)), {
+        fondo,
+        negrita: true,
+      });
+    tabla(x, "sec", "sec", "", { fondo });
+    tabla(x, "enf", "enf", "", { fondo });
+    for (const m of MANUALES)
+      tabla(x, m.clave, m.clave, n(filas.reduce((a, d) => a + d.manuales[m.clave], 0)), {
+        fondo: m.color,
+        color: m.tinta,
+        negrita: true,
+      });
+    tabla(x, "lunes_d", "dur", "", { fondo });
+    tabla(x, "materia", ult, "", { fondo });
+  };
+
+  const turnos = [...new Set(f.detalle.map((d) => d.turno))].sort((a, b) => (a ?? 99) - (b ?? 99));
+  for (const turno of turnos) {
+    const filas = f.detalle.filter((d) => d.turno === turno);
+    encabezado(`TURNO: ${(nombreTurno(turno) ?? "Sin turno").toUpperCase()}`);
+    for (const d of filas) {
+      const x = fila(FILA);
+      tabla(x, "n", "n", d.nroItem);
+      for (const g of GRADOS) tabla(x, g.clave, g.clave, n(d.grados[g.clave]));
+      tabla(x, "sec", "sec", d.seccion);
+      tabla(x, "enf", "enf", d.enfasis);
+      for (const m of MANUALES)
+        tabla(x, m.clave, m.clave, n(d.manuales[m.clave]), {
+          fondo: m.color,
+          color: m.tinta,
+          negrita: true,
+        });
+      for (const dia of DIAS) {
+        tabla(x, `${dia.clave}_d`, `${dia.clave}_d`, d.dias[dia.clave].desde);
+        tabla(x, `${dia.clave}_h`, `${dia.clave}_h`, d.dias[dia.clave].hasta);
+      }
+      tabla(x, "dur", "dur", duracion(d));
+      tabla(x, "materia", "materia", d.materia);
+      tabla(x, "nombre", "nombre", d.docente);
+      tabla(x, "celular", "celular", d.telefono);
+    }
+    totales(filas, C.subtotal);
+  }
+  if (f.detalle.length) totales(f.detalle, C.total);
+  else
+    celda(fila(FILA * 2), 1, NC, `No hay postulaciones activas para ${f.anio}.`, {
+      tam: T.tabla + 2,
+      color: "#555555",
+      conBorde: true,
+    });
+
+  /* ---- Totales, declaración y firma ---------------------------------------- */
+
+  const alumnos = f.detalle.reduce((a, d) => a + sumaGrados(d), 0);
+  const manuales = f.detalle.reduce((a, d) => a + sumaManuales(d), 0);
+  fila(22);
+  celda(
+    fila(30),
+    1,
+    NC,
+    {
+      richText: [
+        { text: "TOTAL GENERAL DE ALUMNOS: ", font: fuente(T.dato, true) },
+        { text: String(alumnos), font: fuente(T.dato, true, C.verde) },
+        { text: "   |   ", font: fuente(T.dato) },
+        { text: "TOTAL GENERAL DE MANUALES: ", font: fuente(T.dato, true) },
+        { text: String(manuales), font: fuente(T.dato, true, C.verde) },
+      ],
+    },
+    { alinear: "left" },
+  );
+  fila(16);
+  // El alto de la declaración: cuántas líneas ocupa en el ancho del formulario.
+  const lineas = (s: string) => Math.ceil((s.length * T.cuerpo * 0.52) / ANCHO) + 1;
+  const declaracion = DECLARACION.replace("{anio}", f.anio);
+  celda(fila(lineas(declaracion) * 20.5), 1, NC, rico(declaracion, T.cuerpo), {
+    alinear: "left",
+    ajustar: true,
+  });
+  fila(20);
+  celda(fila(22), 1, NC, rico(NOTA, T.cuerpo), { alinear: "left" });
+  celda(fila(22), 1, NC, rico(CONTACTO, T.cuerpo), { alinear: "left" });
+  // La firma: una línea en el centro y el rótulo abajo. El PDF la dibuja de
+  // ANCHO/2 − 130 a ANCHO/2 + 130, que cae en las columnas de lunes y martes.
+  fila(110);
+  const x = fila(24);
+  const [c1, c2] = [col("lunes_d"), col("martes_h")];
+  celda(x, c1, c2, "DIRECTOR/A (firma, fecha y sello)", { negrita: true, tam: T.firma });
+  for (let k = c1; k <= c2; k++)
+    ws.getCell(x, k).border = { top: { style: "thin", color: { argb: argbHex(C.negro) } } };
+
+  await bajarLibro(wb, `${archivo}.xlsx`);
 }
 
 /**
