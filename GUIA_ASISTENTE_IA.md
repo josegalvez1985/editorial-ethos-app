@@ -1898,7 +1898,7 @@ export function reintentar(pantalla: string | null) {
 const GUIA_BASICA = `## Lo básico
 
 - Se entra con el usuario y la contraseña del sistema. El check "Recordar usuario y contraseña" deja la contraseña guardada en ese equipo: no conviene en una computadora compartida.
-- La sesión dura 6 horas. Recargar la página o cerrar la app cierra la sesión y hay que volver a entrar.
+- La sesión dura 6 horas. Recargar la página o cerrar la app cierra la sesión y hay que volver a entrar, salvo que haya otra pestaña abierta con sesión: se la pasa a la nueva.
 - En el celular (y en la app de Android, que es el mismo sitio) la barra de abajo tiene Inicio, Menú (todas las pantallas, agrupadas por menú principal: tocá uno para abrirlo), Perfil (Mi cuenta: tema, color y cerrar sesión) y Salir.
 - En la computadora el menú está a la izquierda, agrupado por menú principal.
 - Cada usuario ve solo las pantallas que tiene habilitadas. Si falta una, hay que pedírsela a quien administra los permisos (Administrador → Roles de páginas).

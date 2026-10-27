@@ -45,11 +45,27 @@ export const Route = createFileRoute("/")({
       // www.ethospy.online mostraba "Iniciar sesión". Las tags viven en __root.
     ],
   }),
+  // `volver`: la pantalla que se abrió sin sesión (pestaña nueva, recarga). La
+  // pone `AppShell`; después del login se va ahí en vez de a Inicio.
+  validateSearch: (s: Record<string, unknown>): { volver?: string } => ({
+    volver: typeof s.volver === "string" ? s.volver : undefined,
+  }),
   component: LoginPage,
 });
 
+/**
+ * Adónde ir al entrar. Solo rutas internas del sitio: un `volver` armado a mano
+ * (`//otro.sitio`, `https://…`) no puede sacar a nadie afuera después del login.
+ */
+function destino(volver: string | undefined) {
+  if (!volver || !volver.startsWith("/") || volver.startsWith("//")) return "/home";
+  if (volver === "/" || volver.startsWith("/?")) return "/home";
+  return volver;
+}
+
 function LoginPage() {
   const navigate = useNavigate();
+  const { volver } = Route.useSearch();
   const { sesion, login } = useSession();
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
@@ -61,9 +77,12 @@ function LoginPage() {
 
   // `replace`: el login no debe quedar en el historial, si no el botón de atrás
   // de la cabecera rebota entre esta pantalla y /home.
+  //
+  // También es por donde entra la sesión que pasa otra pestaña (lib/api.ts):
+  // llega sola, sin pasar por el formulario.
   useEffect(() => {
-    if (sesion) navigate({ to: "/home", replace: true });
-  }, [sesion, navigate]);
+    if (sesion) navigate({ href: destino(volver), replace: true });
+  }, [sesion, navigate, volver]);
 
   // Precarga del usuario recordado. Va en un efecto y NO en el estado inicial
   // por lo mismo que `enApp`: en SSR/prerender no hay `localStorage`, así que
@@ -110,7 +129,7 @@ function LoginPage() {
       // Cada login entra con los menús de la sidebar cerrados (a pedido).
       cerrarGruposMenu();
       toast.success("Bienvenido a Juventud con Valores");
-      navigate({ to: "/home", replace: true });
+      navigate({ href: destino(volver), replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
     } finally {

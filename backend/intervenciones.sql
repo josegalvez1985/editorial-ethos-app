@@ -1264,7 +1264,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
   -- y los meses y vienen las marcaciones de ese periodo; `meses` sale vacio.
   -- p_si_no ('Si' / 'No') deja solo las desarrolladas o las no; sin el, las
   -- dos. Es la misma consulta y el mismo GROUP BY que la 55 de APEX usaba para
-  -- contar, asi que la cuenta por facilitador sale de estas filas.
+  -- contar. El 27/10/2026 la 55 paso a contar con `resumen_periodo` (una por
+  -- clase y dia, la cuenta del pago): este modo por periodo ya no lo usa nadie
+  -- del sitio, pero queda publicado.
   ------------------------------------------------------------------------------
   PROCEDURE realizadas(
       p_token IN VARCHAR2,
@@ -1454,8 +1456,18 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
   -- La consulta de APEX tal cual, con dos cambios que no cambian el resultado:
   --
   --   * UNA POR CLASE Y DIA: de las intervenciones de la misma institucion,
-  --     facilitador, turno, dia, manual e indice, cuenta solo la ultima
-  --     (MAX(id_intervencion)). Es la regla de APEX, y la cuenta del pago.
+  --     facilitador, turno, dia, manual, indice y HORA DE INICIO DE LA CLASE,
+  --     cuenta solo la ultima (la de mayor id_intervencion). Es la cuenta del
+  --     pago, y desde el 27/10/2026 tambien la de Totales por Facilitador (la
+  --     55), que lee este mismo endpoint: las dos no pueden dar distinto.
+  --     Varios cursos con el mismo tema A LA MISMA HORA son una intervencion
+  --     UNIFICADA y cuentan una. Cada curso tiene su fila y su postulacion, asi
+  --     que la postulacion NO puede ir en la regla: la unificada contaria una
+  --     por curso.
+  --     LA HORA DE INICIO ENTRA DESDE EL 27/10/2026. La regla de APEX no la
+  --     miraba, y el mismo tema dado a 4o A (07:30) y a 4o B (09:40) el mismo
+  --     dia se contaba UNA vez: no es unificada, son dos clases. Y una sin
+  --     manual o sin indice no se contaba nunca (NULL = NULL).
   --   * El horario de la clase sale de la POSTULACION, el del dia de la semana
   --     de la marcacion. El dia se saca con TRUNC(fecha) - TRUNC(fecha,'IW')
   --     (0 = lunes) y NO con TO_CHAR(...,'DY'), que depende del idioma y en
@@ -1509,9 +1521,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
     APEX_JSON.WRITE('limite',  l_tope);
     APEX_JSON.OPEN_ARRAY('data');
     FOR r IN (
-        WITH base AS (
-            SELECT i.id_intervencion, i.id_institucion, i.id_facilitador, i.fecha_hora,
-                   i.manual, i.id_indice, i.si_no, i.latitud, i.longitud,
+        WITH clases AS (
+            SELECT i.id_intervencion, i.id_institucion, i.id_facilitador, i.turno,
+                   i.fecha_hora, i.manual, i.id_indice, i.si_no, i.latitud, i.longitud,
                    -- La hora de inicio y de fin de la clase, del dia de la marcacion.
                    CASE TRUNC(i.fecha_hora) - TRUNC(i.fecha_hora, 'IW')
                      WHEN 0 THEN p.lunes_desde     WHEN 1 THEN p.martes_desde
@@ -1527,17 +1539,27 @@ CREATE OR REPLACE PACKAGE BODY PKG_INTERVENCIONES_ETHOS AS
               LEFT JOIN postulaciones p ON p.id_postulacion = i.id_postulacion
              WHERE i.fecha_hora >= l_desde
                AND i.fecha_hora <  l_hasta + 1
-               AND (l_si_no IS NULL OR UPPER(i.si_no) = l_si_no)
-               -- Una por clase y dia: la regla de APEX.
-               AND i.id_intervencion = (
-                     SELECT MAX(a.id_intervencion)
-                       FROM intervenciones a
-                      WHERE a.id_institucion  = i.id_institucion
-                        AND a.id_facilitador  = i.id_facilitador
-                        AND a.turno           = i.turno
-                        AND TRUNC(a.fecha_hora) = TRUNC(i.fecha_hora)
-                        AND a.manual          = i.manual
-                        AND a.id_indice       = i.id_indice)
+        ),
+        marcas AS (
+            -- Una por clase y dia: la ultima de cada una (n = 1). La hora de
+            -- inicio de la clase es lo que separa dos cursos con el mismo tema a
+            -- distinta hora; con la misma hora son una unificada y cuentan una.
+            -- ROW_NUMBER y no el MAX correlacionado de antes: en el PARTITION BY
+            -- dos NULL son iguales, y con `a.manual = i.manual` una intervencion
+            -- sin manual o sin indice no coincidia ni consigo misma y no salia.
+            -- Sin filtrar SI_NO aca: la ultima de la clase decide, como antes.
+            SELECT c.*,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY c.id_institucion, c.id_facilitador, c.turno,
+                                    TRUNC(c.fecha_hora), c.manual, c.id_indice,
+                                    TO_CHAR(c.desde, 'HH24:MI')
+                       ORDER BY c.id_intervencion DESC) AS n
+              FROM clases c
+        ),
+        base AS (
+            SELECT * FROM marcas
+             WHERE n = 1
+               AND (l_si_no IS NULL OR UPPER(si_no) = l_si_no)
         )
         SELECT b.id_intervencion, b.id_institucion, ins.nombre AS institucion,
                b.id_facilitador, f.nombre_apellido AS facilitador,

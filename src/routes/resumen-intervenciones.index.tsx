@@ -123,8 +123,8 @@ function ordenDeEntrada(a: Fila, b: Fila) {
 
 /**
  * Resumen de Intervenciones: la página 53 de APEX. Lo que se le paga a cada
- * facilitador: las intervenciones de un período, una por clase y día (la
- * regla de APEX), con el total de intervenciones y el total del salario a
+ * facilitador: las intervenciones de un período, una por clase y día (ver
+ * `IntervencionResumen`), con el total de intervenciones y el total del salario a
  * razón de un sueldo por intervención. El ícono es el que ya tenía en el menú
  * (`ChartPie`).
  *

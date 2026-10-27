@@ -62,6 +62,115 @@ export function cerrarSesion() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Sesión compartida entre pestañas                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Varias pestañas o ventanas del mismo navegador comparten la sesión (27/10/2026),
+ * **sin escribir el token en el disco**: se lo pasan por `BroadcastChannel`, que
+ * va de memoria a memoria y solo entre pestañas del mismo origen.
+ *
+ * | Mensaje | Quién lo manda | Qué hace quien lo recibe |
+ * | --- | --- | --- |
+ * | `pedir` | una pestaña que arranca | si tiene sesión, la contesta con `sesion` |
+ * | `sesion` | quien contesta, y quien acaba de entrar | la toma si no tiene o si es del mismo usuario |
+ * | `salir` | quien cerró sesión o recibió un 401 | la suelta si tiene ese mismo token |
+ *
+ * Por qué así y no de otra forma:
+ *
+ * - **Hace falta que la otra pestaña esté abierta.** Cerrar todas, o recargar la
+ *   única, sigue pidiendo el login: no hay nada guardado que restaurar.
+ * - **El backend da un solo token por usuario** (`auth.sql`): entrar de nuevo en
+ *   otra pestaña mataba el de esta. Ahora las pestañas usan el mismo token, y
+ *   un login nuevo se reparte a todas las del mismo usuario.
+ * - **Otro usuario no pisa la sesión de una pestaña**: se ignora su `sesion`, y
+ *   su `salir` trae un token que no es el de esta.
+ */
+type MensajePestanas =
+  | { tipo: "pedir" }
+  | { tipo: "sesion"; sesion: Sesion }
+  | { tipo: "salir"; token: string; motivo: MotivoSalida };
+
+/** `logout`: cerró sesión a mano. `vencida`: el backend rechazó el token. */
+export type MotivoSalida = "logout" | "vencida";
+
+let canal: BroadcastChannel | null = null;
+
+/** Avisa al `SessionProvider` que otra pestaña cambió la sesión de esta. */
+let onCambioDeOtraPestana: (s: Sesion | null, motivo?: MotivoSalida) => void = () => {};
+
+export function setOnCambioDeOtraPestana(fn: typeof onCambioDeOtraPestana) {
+  onCambioDeOtraPestana = fn;
+}
+
+function vigente(s: Sesion) {
+  const restante = msHastaExpirar(s.expira);
+  return Boolean(s.token) && (restante === null || restante > 0);
+}
+
+function recibir(m: MensajePestanas) {
+  if (m.tipo === "pedir") {
+    if (sesionActual && vigente(sesionActual)) {
+      avisarPestanas({ tipo: "sesion", sesion: sesionActual });
+    }
+    return;
+  }
+  if (m.tipo === "sesion") {
+    if (!vigente(m.sesion)) return;
+    if (sesionActual && sesionActual.usuario !== m.sesion.usuario) return;
+    if (sesionActual?.token === m.sesion.token) return;
+    guardarSesion(m.sesion);
+    onCambioDeOtraPestana(m.sesion);
+    return;
+  }
+  if (sesionActual?.token !== m.token) return;
+  cerrarSesion();
+  onCambioDeOtraPestana(null, m.motivo);
+}
+
+/** El canal, abierto la primera vez. `null` en SSR o sin `BroadcastChannel`. */
+function getCanal() {
+  if (canal) return canal;
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return null;
+  canal = new BroadcastChannel("ethos-sesion");
+  canal.onmessage = (e: MessageEvent<MensajePestanas>) => recibir(e.data);
+  return canal;
+}
+
+function avisarPestanas(m: MensajePestanas) {
+  getCanal()?.postMessage(m);
+}
+
+/**
+ * Al arrancar: le pregunta a las otras pestañas si tienen sesión y espera hasta
+ * `esperaMs`. Devuelve la que llegó, o `null` si ninguna contestó a tiempo.
+ *
+ * La espera es corta a propósito: es lo que tarda en aparecer el login cuando no
+ * hay otra pestaña. Una pestaña viva contesta en pocos milisegundos; una que el
+ * navegador congeló en el fondo puede no contestar, y ahí toca entrar a mano.
+ */
+export function pedirSesionAOtrasPestanas(esperaMs = 400): Promise<Sesion | null> {
+  const c = getCanal();
+  if (!c) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const fin = setTimeout(() => {
+      c.removeEventListener("message", alLlegar);
+      resolve(sesionActual);
+    }, esperaMs);
+    // `recibir` ya la guardó (se registró antes, con `onmessage`); esto solo
+    // corta la espera apenas llega.
+    function alLlegar() {
+      if (!sesionActual) return;
+      clearTimeout(fin);
+      c!.removeEventListener("message", alLlegar);
+      resolve(sesionActual);
+    }
+    c.addEventListener("message", alLlegar);
+    c.postMessage({ tipo: "pedir" } satisfies MensajePestanas);
+  });
+}
+
+/* -------------------------------------------------------------------------- */
 /* Limpieza de versiones anteriores                                           */
 /* -------------------------------------------------------------------------- */
 
@@ -278,7 +387,9 @@ export function setOnUnauthorized(fn: () => void) {
   onUnauthorized = fn;
 }
 
-function handleUnauthorized() {
+function handleUnauthorized(token: string) {
+  // El token es el mismo en todas las pestañas: si murió acá, murió en todas.
+  avisarPestanas({ tipo: "salir", token, motivo: "vencida" });
   cerrarSesion();
   onUnauthorized();
 }
@@ -317,12 +428,17 @@ export async function login(usuario: string, password: string): Promise<Sesion> 
 
   const sesion = normalizar(data, usuario);
   guardarSesion(sesion);
+  // Las demás pestañas en el login entran solas, y las del mismo usuario cambian
+  // al token nuevo: el backend acaba de desactivar el que tenían.
+  avisarPestanas({ tipo: "sesion", sesion });
   return sesion;
 }
 
 export async function logout(): Promise<void> {
   const s = getSesion();
   if (s) {
+    // Las demás pestañas salen con esta: el token que comparten deja de servir.
+    avisarPestanas({ tipo: "salir", token: s.token, motivo: "logout" });
     // Best-effort: si el server no responde igual limpiamos la sesión local.
     await fetch(url("auth/logout"), {
       method: "POST",
@@ -363,7 +479,7 @@ export async function authFetch(path: string, init: RequestInit = {}) {
   // Este chequeo va ANTES de res.ok: si no, una sesión expirada se reporta como
   // error genérico y el usuario queda trabado sin entender por qué.
   if (esTokenInvalido(res, data)) {
-    handleUnauthorized();
+    handleUnauthorized(s.token);
     throw new Error("Sesión expirada");
   }
   if (!res.ok || data?.success === false) {

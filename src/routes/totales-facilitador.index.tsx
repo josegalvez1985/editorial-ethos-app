@@ -20,9 +20,9 @@ import {
 import { descargarExcel, type ColumnaExcel } from "@/lib/excel";
 import {
   keysIntervenciones,
-  listarRealizadasPeriodo,
+  listarResumenPeriodo,
   SUELDO_INICIAL,
-  type IntervencionRealizada,
+  type IntervencionResumen,
 } from "@/lib/intervenciones";
 import { otroInicial, rangoDe, rangoValido, type Periodo } from "@/lib/periodos";
 import { ordenFecha, useTablaReporte, type ColumnaReporte } from "@/lib/tabla-reporte";
@@ -55,8 +55,8 @@ type Fila = {
   idInstitucion: number;
   institucion: string;
   cantidad: number;
-  /** Las marcaciones que forman la fila: el detalle (la página 78 de APEX). */
-  marcaciones: IntervencionRealizada[];
+  /** Las intervenciones que forman la fila: el detalle (la página 78 de APEX). */
+  marcaciones: IntervencionResumen[];
 };
 
 /** Los colores de las horas, como en Intervenciones Realizadas y el Resumen. */
@@ -70,10 +70,14 @@ const COLOR_HASTA: CSSProperties = { backgroundColor: "#ff9800", color: "#fff" }
  * un sueldo por intervención. El ícono es el que ya tenía en el menú
  * (`Sigma`).
  *
- * Backend: `GET intervenciones/realizadas?desde=&hasta=&si_no=` de
- * `backend/intervenciones.sql`: las marcaciones de la página 52 por período,
- * que es la misma consulta y el mismo agrupado con que contaba la 55 de APEX.
- * La cuenta por facilitador e institución se arma en el navegador.
+ * Backend: `GET intervenciones/resumen-periodo?desde=&hasta=&si_no=` de
+ * `backend/intervenciones.sql`, **el mismo del Resumen de Intervenciones** (la
+ * 53): una por clase y día, la cuenta del pago. La cuenta por facilitador e
+ * institución se arma en el navegador.
+ *
+ * Hasta el 27/10/2026 leía `intervenciones/realizadas`, el agrupado con que
+ * contaba la 55 de APEX (una fila por marcación), y el mismo período daba otro
+ * total que la 53. Ahora salen de las mismas filas y coinciden siempre.
  *
  * Como en APEX:
  *
@@ -108,12 +112,12 @@ function TotalesFacilitadorPage() {
   const valido = rangoValido({ desde, hasta });
 
   const datos = useQuery({
-    queryKey: keysIntervenciones.realizadasPeriodo(desde, hasta, siNo),
-    queryFn: () => listarRealizadasPeriodo(desde, hasta, siNo),
+    queryKey: keysIntervenciones.resumenPeriodo(desde, hasta, siNo),
+    queryFn: () => listarResumenPeriodo(desde, hasta, siNo),
     enabled: valido,
   });
 
-  // El GROUP BY de APEX: facilitador + institución, contando las marcaciones.
+  // El GROUP BY de APEX: facilitador + institución, contando las intervenciones.
   const todas = useMemo<Fila[]>(() => {
     const m = new Map<string, Fila>();
     for (const x of datos.data?.data ?? []) {
@@ -291,7 +295,7 @@ function TotalesFacilitadorPage() {
         {datos.data?.truncado && (
           <p className="mb-3 flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            El período trajo más de {numero.format(datos.data.limite)} marcaciones y se cortó: elegí
+            El período trajo más de {numero.format(datos.data.limite)} intervenciones y se cortó: elegí
             uno más corto para que los totales sean los reales.
           </p>
         )}
@@ -422,7 +426,7 @@ function DialogoDetalle({ fila, onCerrar }: { fila: Fila; onCerrar: () => void }
       ordenFecha(b.fecha).localeCompare(ordenFecha(a.fecha)) ||
       (b.hora ?? "").localeCompare(a.hora ?? ""),
   );
-  const indice = (x: IntervencionRealizada) =>
+  const indice = (x: IntervencionResumen) =>
     x.nro_indice != null ? `${x.nro_indice}${x.indice_titulo ? ` - ${x.indice_titulo}` : ""}` : "";
 
   return (
@@ -439,7 +443,7 @@ function DialogoDetalle({ fila, onCerrar }: { fila: Fila; onCerrar: () => void }
           <table className="w-full min-w-[720px] border-separate border-spacing-0 text-[13px]">
             <thead>
               <tr>
-                {["Fecha", "Hora", "Desde", "Hasta", "Dif. Min.", "Manual", "Índice", "Grado"].map(
+                {["Fecha", "Hora", "Desde", "Hasta", "Dif. Min.", "Manual", "Índice", "Postulaciones"].map(
                   (t) => (
                     <th
                       key={t}
@@ -476,7 +480,7 @@ function DialogoDetalle({ fila, onCerrar }: { fila: Fila; onCerrar: () => void }
                   </Celda>
                   <Celda>{x.manual}</Celda>
                   <Celda>{indice(x)}</Celda>
-                  <Celda>{x.grado}</Celda>
+                  <Celda>{x.postulaciones}</Celda>
                 </tr>
               ))}
             </tbody>

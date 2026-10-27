@@ -362,7 +362,8 @@ para no romperlas al adaptar.
 - **Rojo** = horario bloqueado del facilitador ese año. **Nombre IE** completo.
 - "REUNIÓN DE FACILITADORES" se completa a mano.
 - Desde una institución: **la agenda es la del facilitador entero** (con sus otras instituciones),
-  **siempre del año actual**, y cada pestaña usa su tabla (postulaciones o pre-horarios).
+  **del año que muestra la pestaña** (Postulaciones, el año elegido; Pre-horarios, siempre el
+  actual), y cada pestaña usa su tabla (postulaciones o pre-horarios).
 - Archivo: "Form. 3 - Facilitador - año".
 
 **Textos fijos que pueden cambiar** (están en el código y no en la base):

@@ -5,7 +5,7 @@
 | **[`auth.sql`](auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
 | **[`anios_lectivos.sql`](anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` + el ABM de `/anios-lectivos` (`PKG_ANIOS_LECTIVOS_ETHOS`, `anios-lectivos[/:id]`; el paquete necesita `roles_paginas.sql`: en una instalación nueva, correrlo de nuevo después) | 2º |
 | **[`evaluaciones_facilitadores.sql`](evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos y de la tarjeta de dirección (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
-| **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`); desde el 09/10/2026 también el mapa de la página 25 (`intervenciones/mapa`, `intervenciones/mapa/facilitadores`), el detalle de un día del gráfico de Actividad (`intervenciones/por-dia/detalle`) y desde el 12/10/2026 las páginas 52, Intervenciones Realizadas (`intervenciones/realizadas`), 53, Resumen de Intervenciones (`intervenciones/resumen-periodo`), 55, Totales por Facilitador (`intervenciones/realizadas` por período), y 69, Intervenciones no realizadas (`intervenciones/no-realizadas`) | independiente |
+| **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`); desde el 09/10/2026 también el mapa de la página 25 (`intervenciones/mapa`, `intervenciones/mapa/facilitadores`), el detalle de un día del gráfico de Actividad (`intervenciones/por-dia/detalle`) y desde el 12/10/2026 las páginas 52, Intervenciones Realizadas (`intervenciones/realizadas`), 53, Resumen de Intervenciones (`intervenciones/resumen-periodo`), 55, Totales por Facilitador (`intervenciones/resumen-periodo`, desde el 27/10/2026), y 69, Intervenciones no realizadas (`intervenciones/no-realizadas`) | independiente |
 | **[`intervenciones_crud.sql`](intervenciones_crud.sql)** | Carga manual de intervenciones (`PKG_INTERV_CRUD_ETHOS`) | independiente |
 | **[`agendas.sql`](agendas.sql)** | Horario semanal sobre `V_AGENDA` (`PKG_AGENDAS_ETHOS`) | independiente |
 | **[`inventarios.sql`](inventarios.sql)** | Inventario de manuales por sucursal (`PKG_INVENTARIOS_ETHOS`) + corrige `INVENTARIOS_ACTUALIZAR_EXISTENCIAS` | independiente |
@@ -938,9 +938,19 @@ a correr `intervenciones.sql`** antes de publicar `/resumen-intervenciones`.
 
 Es la consulta de la página 53 de APEX, sobre la **tabla** `INTERVENCIONES` (no la vista):
 
-- **Una por clase y día:** de las de la misma institución, facilitador, turno, día, manual e
-  índice cuenta solo la última (`MAX(id_intervencion)`). Es la regla de APEX y la base del pago:
-  el total de intervenciones son las filas, y el salario, filas × sueldo (lo calcula el front).
+- **Una por clase y día:** de las de la misma institución, facilitador, turno, día, manual,
+  índice y **hora de inicio de la clase** cuenta solo la última (la de mayor `id_intervencion`,
+  con `ROW_NUMBER`). Es la base del pago: el total de intervenciones son las filas, y el salario,
+  filas × sueldo (lo calcula el front). **Desde el 27/10/2026 también la usa Totales por
+  Facilitador (la 55)**, así que las dos pantallas dan lo mismo.
+- **Unificadas:** varios cursos con el mismo tema **a la misma hora** cuentan una. Cada curso
+  tiene su propia fila y su propia postulación, por eso la regla no puede ir por postulación (la
+  unificada contaría una por curso): va por la hora de inicio que la postulación tiene ese día.
+- **La hora de inicio entra en la regla desde el 27/10/2026.** La de APEX no la miraba: el mismo
+  tema dado a 4º A (07:30) y a 4º B (09:40) el mismo día se contaba una vez, y desaparecía del
+  reporte la intervención de uno de los dos grados. No es unificada: son dos clases y se pagan
+  las dos. Con `ROW_NUMBER` también cuentan las que no tienen manual o índice, que con el `MAX`
+  correlacionado de antes (`a.manual = i.manual`) no coincidían ni consigo mismas.
 - **El horario sale de la postulación**, el del día de la semana de la marcación. El día se saca
   con `TRUNC(fecha) - TRUNC(fecha, 'IW')` (0 = lunes) y no con `TO_CHAR(…, 'DY')`, que depende
   del idioma y en español devuelve `MIÉ` con tilde.
@@ -979,8 +989,8 @@ Es la consulta de la página 52 de APEX tal cual, con lo que ya se aprendió en 
 - **Por período (la página 55, Totales por Facilitador, 12/10/2026):** con `?desde=&hasta=`
   (`YYYY-MM-DD`, hasta 366 días) se ignoran `anio` y `meses`, y `?si_no=Si|No` deja solo las
   desarrolladas o las no. Es la misma consulta y el mismo `GROUP BY` con que contaba la 55 de
-  APEX; la cuenta por facilitador e institución la arma el front. **Ojo:** la 53 cuenta con otra
-  regla (una por clase y día), así que sus totales pueden no coincidir con los de la 55.
+  APEX. **Desde el 27/10/2026 la 55 ya no lo usa**: cuenta con `intervenciones/resumen-periodo`,
+  igual que la 53, para que los totales coincidan. El modo por período queda publicado.
 
 ## Agendas (`agendas.sql`)
 

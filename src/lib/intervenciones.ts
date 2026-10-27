@@ -739,9 +739,10 @@ export const SUELDO_INICIAL = 30000;
 
 /**
  * Una intervención que cuenta para el pago: una por clase y día (la última de
- * la misma institución, facilitador, turno, manual e índice), como la contaba
- * APEX. Contrato: `intervenciones/resumen-periodo` en
- * `backend/intervenciones.sql`.
+ * la misma institución, facilitador, turno, manual, índice y hora de inicio de
+ * la clase; varios cursos a la misma hora son una unificada). La usan el
+ * Resumen (53) y Totales por Facilitador (55). Contrato:
+ * `intervenciones/resumen-periodo` en `backend/intervenciones.sql`.
  *
  * `diferencia` en MINUTOS, positivo = llegó antes (la "Dif. Min." de APEX).
  */

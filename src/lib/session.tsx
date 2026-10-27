@@ -19,6 +19,8 @@ import {
   login as apiLogin,
   logout as apiLogout,
   msHastaExpirar,
+  pedirSesionAOtrasPestanas,
+  setOnCambioDeOtraPestana,
   setOnUnauthorized,
   type Sesion,
 } from "@/lib/api";
@@ -29,7 +31,9 @@ import { borrarCachePersistida } from "@/lib/query-persist";
  *
  * **El TOKEN nunca sobrevive a recargar la página ni a cerrar la app.** Vive solo
  * en memoria (ver `lib/api.ts`): no hay "mantener sesión iniciada" y cada arranque
- * pasa por el login.
+ * pasa por el login — **salvo que haya otra pestaña abierta con sesión**, que se
+ * la pasa a la nueva sin tocar el disco (27/10/2026, ver "Sesión compartida entre
+ * pestañas" en `lib/api.ts`).
  *
  * Lo que sí puede sobrevivir, si el usuario tilda el check del login, es **la
  * contraseña** — en `localStorage` y en texto plano, igual en la web que en el
@@ -43,9 +47,8 @@ type Ctx = {
   /** Datos para pintar. `null` = sin sesión. */
   user: { name: string; email: string } | null;
   /**
-   * Se mantiene por compatibilidad con `AppShell`, que lo usa para no pintar la
-   * pantalla antes de saber si hay sesión. Sin persistencia que restaurar, pasa a
-   * `true` apenas monta.
+   * `AppShell` lo usa para no mandar al login antes de saber si hay sesión. Pasa
+   * a `true` cuando las otras pestañas contestaron, o no contestó ninguna.
    */
   ready: boolean;
   login: (usuario: string, password: string) => Promise<void>;
@@ -68,14 +71,39 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const qc = useQueryClient();
 
-  // No hay sesión que restaurar: se arranca siempre en el login. Lo único que se
-  // hace acá es barrer el token y la contraseña que dejaron versiones anteriores
-  // en el disco — quitar el código no borra lo ya escrito en el equipo del
-  // usuario. Ver `limpiarDatosViejos()`.
+  // No hay sesión guardada que restaurar: o la pasa otra pestaña abierta, o se
+  // va al login. También se barre el token y la contraseña que dejaron versiones
+  // anteriores en el disco — quitar el código no borra lo ya escrito en el
+  // equipo del usuario. Ver `limpiarDatosViejos()`.
   useEffect(() => {
     limpiarDatosViejos();
-    setReady(true);
+    let vivo = true;
+    pedirSesionAOtrasPestanas().then((s) => {
+      if (!vivo) return;
+      if (s) setSesion(s);
+      setReady(true);
+    });
+    return () => {
+      vivo = false;
+    };
   }, []);
+
+  // Lo que hacen las otras pestañas: entrar (o renovar el token) se copia acá;
+  // salir también, y con la misma limpieza de la caché que `logout()`.
+  useEffect(() => {
+    setOnCambioDeOtraPestana((s, motivo) => {
+      setSesion(s);
+      if (s) return;
+      qc.clear();
+      borrarCachePersistida();
+      if (motivo === "logout") {
+        toast("Cerraste sesión en otra pestaña", { id: "sesion-caida" });
+      } else {
+        avisar("Volvé a iniciar sesión para continuar.");
+      }
+    });
+    return () => setOnCambioDeOtraPestana(() => {});
+  }, [qc]);
 
   /**
    * Da la sesión por terminada. **La redirección al login no se hace acá**: la

@@ -254,7 +254,7 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Reportes y Consultas | **Consulta de Facilitadores**: de solo lectura (para editar está Facilitadores). La faceta Activo (Sí/No con cuántos; sin dato cuenta como No, como en APEX), el buscador sobre sus datos y Restablecer; un resumen (facilitadores, activos, inactivos, edad promedio); el reporte de APEX con sus 10 columnas visibles (Nombre Completo, que abre la ficha, Nro CI, Nacionalidad, Fecha Nacimiento, Edad, Estado Civil, Con Quién Vive, Hijos, Teléfono, Observación), por nombre, orden y filtro por columna y **Excel**. Página 62 de APEX | `/consulta-facilitadores` | `facilitadores.sql` (sin SQL propio: usa `GET facilitadores`, que desde el 12/10/2026 trae esas columnas) |
 | Reportes y Consultas | **Consulta de Instituciones**: de solo lectura (para editar está Instituciones). La faceta Estado (con cuántas; **sin estado cuenta como Inactiva**, como en APEX), el buscador y Restablecer; un resumen (instituciones, activas, inactivas, sin facilitador); el reporte de APEX con sus 8 columnas visibles (Institución, que abre la ficha, Departamento, Ciudad, Barrio, Dirección, Zona, Facilitador, Comentario), por nombre, orden y filtro por columna y **Excel**. Página 61 de APEX | `/consulta-instituciones` | `instituciones.sql` (sin SQL propio: usa `GET instituciones`, que desde el 12/10/2026 trae el comentario) |
 | Reportes y Consultas | **Auditoría de Intervenciones**: la bitácora `INTERVENCIONES_JN`, quién insertó, modificó o borró cada intervención. Período con atajos (este mes de entrada), Usuario (con el nombre del facilitador) y Operación (Todos / Insertó / Actualizó / Borró, con cuántos), Limpiar Filtros, sin Consultar. El reporte con las 22 columnas de APEX en su orden, la operación en pastilla verde/azul/roja, los ids con su nombre, la **fecha de auditoría en hora de Paraguay** (APEX mostraba UTC), el mapa, la lupa, orden y filtro por columna y **Excel**. Página 58 de APEX | `/auditoria-intervenciones` | `auditoria_intervenciones.sql` |
-| Reportes y Consultas | **Totales por Facilitador**: cuántas intervenciones hizo cada facilitador en cada institución en un período, y su total a razón del sueldo por intervención. Período con atajos, Facilitadores (con "Todos", que en APEX no andaba), Desarrollo Sí/No, Sueldo y Limpiar, sin Consultar; los tres totales con los colores de APEX; el reporte Facilitador / Institución / Cantidad / Total / Detalle (la 78, un diálogo con las marcaciones) con la suma al pie, orden y filtro por columna y **Excel**. Página 55 de APEX | `/totales-facilitador` | `intervenciones.sql` (`intervenciones/realizadas` por período) |
+| Reportes y Consultas | **Totales por Facilitador**: cuántas intervenciones hizo cada facilitador en cada institución en un período, y su total a razón del sueldo por intervención. Período con atajos, Facilitadores (con "Todos", que en APEX no andaba), Desarrollo Sí/No, Sueldo y Limpiar, sin Consultar; los tres totales con los colores de APEX; el reporte Facilitador / Institución / Cantidad / Total / Detalle (la 78, un diálogo con las marcaciones) con la suma al pie, orden y filtro por columna y **Excel**. Página 55 de APEX | `/totales-facilitador` | `intervenciones.sql` (`intervenciones/resumen-periodo`, el mismo del Resumen, desde el 27/10/2026) |
 | Reportes y Consultas | **Resumen de Intervenciones**: lo que se le paga a cada facilitador. Período con atajos (Este mes, Mes anterior, semanas, otro), Institución, Facilitadores (recortados por la institución), Desarrollo Sí/No, **Sueldo por intervención** (30.000 de entrada) y Limpiar, sin botón Consultar. **Total Intervenciones** y **Total Salario** con los colores de APEX. El reporte: una intervención por clase y día (la regla de APEX), las horas en sus colores, Dif. Min. azul/rojo, las postulaciones de la clase, la lupa que las abre (la 54) y el Historial del día (la 56) como diálogos, el mapa, orden y filtro por columna y **Excel**. Página 53 de APEX | `/resumen-intervenciones` | `intervenciones.sql` (`intervenciones/resumen-periodo`) |
 | Reportes y Consultas | **Intervenciones Realizadas**: lo más parecida a APEX. Filtros Año, Mes (pastillas con su cuenta; entra con el mes en curso), Fecha, Facilitador, Institución y ¿Desarrollo?, cada uno con cuántas quedan, buscador, los botones verdes **"Todos los meses"** y **"Todas las fechas"** y Restablecer. El reporte con las columnas de APEX en su orden: el lápiz que abre la intervención (`/intervenciones/$id`, la 51 de APEX), Hora en amarillo, Hora Desde en verde, Hora Hasta en naranja, **Dif. Min.** en rojo (llegó tarde), azul (antes) o gris, con su total al pie, el link al mapa, 50 filas por página con la paginación arriba, la lupa, orden y filtro por columna y **Excel**. Página 52 de APEX | `/consulta-intervenciones` | `intervenciones.sql` (`intervenciones/realizadas`) |
 | Operaciones | **Intervenciones en el Mapa**: período con atajos (Hoy, Esta semana…), facilitador (con cuántas marcaciones tiene) e institución, sin botón "Ver"; resumen con las marcaciones **lejos** de la institución (más de 1 km del punto que se deduce de sus marcaciones); mapa grande (Leaflet + OpenStreetMap) con pines numerados por hora, el recorrido de cada día y cada institución; línea de tiempo por día que vuela el mapa a cada marcación. Página 25 de APEX | `/mapa-intervenciones` | `intervenciones.sql` |
@@ -512,11 +512,18 @@ y cualquier reporte nuevo por fechas) y los tres totales con los colores de APEX
 y el sueldo editable ([`totales-pago.tsx`](src/components/totales-pago.tsx), 30.000 de entrada).
 Los dos consultan solos al cambiar un parámetro, sin el botón Consultar de APEX.
 
-> **Cuentan distinto, como en APEX.** La 53 cuenta **una intervención por clase y día** sobre la
-> tabla `INTERVENCIONES` (la última de la misma institución, facilitador, turno, manual e
-> índice). La 55 cuenta **las marcaciones agrupadas** de `V_HISTORIAL_INTERVENCIONES`, como la 52.
-> Para el mismo facilitador y período los totales pueden no coincidir: se copió la regla de cada
-> página tal cual. Si se decide unificarla, es un cambio en `intervenciones.sql`.
+> **Cuentan igual desde el 27/10/2026.** Las dos leen `intervenciones/resumen-periodo`: **una
+> intervención por clase y día** sobre la tabla `INTERVENCIONES`, la última de la misma
+> institución, facilitador, turno, manual, índice y **hora de inicio de la clase** (la de su
+> postulación, ese día de la semana). Varios cursos con el mismo tema **a la misma hora** son una
+> intervención **unificada** y cuentan una; el mismo tema dado a 4º A a las 07:30 y a 4º B a las
+> 09:40 son **dos** y se pagan las dos.
+>
+> Antes cada una copiaba la regla de su página de APEX. La 53 no miraba la hora de inicio y unía
+> esas dos en una: el 15/09/2026 daba 3 para una facilitadora a la que la 55 le contaba 4. Además dejaba
+> afuera las intervenciones sin manual o sin índice (`NULL = NULL` no coincide). La 55 contaba las
+> marcaciones agrupadas de `V_HISTORIAL_INTERVENCIONES`, como la 52, y ahí una clase marcada dos
+> veces contaba dos.
 
 ### Reportes armados sobre `V_POSTULACIONES`
 
@@ -762,6 +769,13 @@ en [`APK.md`](APK.md); casi nunca hace falta uno nuevo (ver más abajo).
 Vale igual en la web y en el APK, que es el mismo sitio:
 
 - **El token nunca persiste**: vive en memoria y cada arranque pasa por el login.
+- **Varias pestañas o ventanas comparten la sesión** (27/10/2026), sin escribirla en el disco:
+  una pestaña nueva le pide el token a las que ya están abiertas por `BroadcastChannel` (ver
+  *Sesión compartida entre pestañas* en [`src/lib/api.ts`](src/lib/api.ts)). Abrir un ítem en
+  otra pestaña, o recargar una teniendo otra abierta, entra directo a esa pantalla; si no hay
+  ninguna abierta, pasa por el login y después vuelve a la pantalla que se abrió. Entrar, salir o
+  que venza el token pasa en todas a la vez. Distintos navegadores o equipos **no** la
+  comparten, y como `auth.sql` da un solo token por usuario, entrar en uno cierra el otro.
 - **La contraseña sí puede quedar guardada**, con el check "Recordar usuario y contraseña": en
   `localStorage` y **en texto plano** (sin Keystore no hay otro lugar donde ponerla). Es
   opt-in, el login lo advierte en pantalla, y con esa contraseña se rehace el login: nunca se

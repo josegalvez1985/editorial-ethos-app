@@ -1,6 +1,6 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Loader2, RotateCcw, ShieldOff } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { AppHeader } from "@/components/app-header";
 import { Asistente } from "@/components/asistente";
@@ -82,13 +82,26 @@ export function AppShell({
           ? "ok"
           : "sin-acceso";
 
-  // `ready` y no solo `sesion`: al abrir la app el provider todavía está
-  // revalidando el token guardado contra el backend, y disparar acá mandaría al
-  // login a alguien que sí tiene sesión. `replace` para que el botón de atrás no
+  // `ready` y no solo `sesion`: al abrir la app el provider todavía le está
+  // preguntando a las otras pestañas si tienen sesión, y disparar acá mandaría al
+  // login a alguien que sí la tiene. `replace` para que el botón de atrás no
   // rebote entre el login y esta pantalla.
+  //
+  // `volver` solo si esta pantalla NUNCA tuvo sesión: se abrió en una pestaña
+  // nueva o se recargó, y después del login tiene que quedar acá y no en Inicio.
+  // Si la tuvo y la perdió (cerró sesión, venció), el login va a Inicio como
+  // siempre —y no compite con el `navigate` de los botones de Salir—.
+  const href = useRouterState({ select: (s) => s.location.href });
+  const tuvoSesion = useRef(false);
+  if (sesion) tuvoSesion.current = true;
   useEffect(() => {
-    if (ready && !sesion) navigate({ to: "/", replace: true });
-  }, [ready, sesion, navigate]);
+    if (!ready || sesion) return;
+    navigate({
+      to: "/",
+      search: tuvoSesion.current ? {} : { volver: href },
+      replace: true,
+    });
+  }, [ready, sesion, navigate, href]);
 
   // Sin sesión no se pinta nada del contenido. Antes se veía la pantalla entera
   // con el usuario en "Invitado": se llega escribiendo la URL a mano, desde un
