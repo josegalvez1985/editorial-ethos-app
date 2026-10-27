@@ -1,6 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, BookOpen, ChevronLeft, ChevronRight, Eraser } from "lucide-react";
+import {
+  AlertTriangle,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  Eraser,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 import { Cargando, Fallo } from "@/components/admin-ui";
@@ -107,6 +115,9 @@ function TotalesFacilitadorPage() {
   const [sueldo, setSueldo] = useState(String(SUELDO_INICIAL));
   const [pagina, setPagina] = useState(0);
   const [detalleDe, setDetalleDe] = useState<Fila | null>(null);
+  // "Ocultar institución" (27/10/2026): una fila por facilitador, con todas
+  // sus instituciones sumadas.
+  const [porFacilitador, setPorFacilitador] = useState(false);
 
   const { desde, hasta } = rangoDe(periodo, otro);
   const valido = rangoValido({ desde, hasta });
@@ -118,10 +129,13 @@ function TotalesFacilitadorPage() {
   });
 
   // El GROUP BY de APEX: facilitador + institución, contando las intervenciones.
+  // Con la institución oculta, solo por facilitador.
   const todas = useMemo<Fila[]>(() => {
     const m = new Map<string, Fila>();
     for (const x of datos.data?.data ?? []) {
-      const clave = `${x.id_facilitador}|${x.id_institucion}`;
+      const clave = porFacilitador
+        ? String(x.id_facilitador)
+        : `${x.id_facilitador}|${x.id_institucion}`;
       const f = m.get(clave);
       if (f) {
         f.cantidad++;
@@ -143,7 +157,7 @@ function TotalesFacilitadorPage() {
         a.facilitador.localeCompare(b.facilitador, "es") ||
         a.institucion.localeCompare(b.institucion, "es"),
     );
-  }, [datos.data]);
+  }, [datos.data, porFacilitador]);
 
   // Los facilitadores del período, con cuántas intervenciones tiene cada uno.
   const facilitadores = useMemo(() => {
@@ -169,16 +183,26 @@ function TotalesFacilitadorPage() {
 
   const sueldoNum = Number(sueldo.replace(/\D/g, "")) || 0;
   // Las columnas del reporte de APEX, en su orden. Total depende del sueldo.
+  // Sin Institución cuando está oculta: el Excel sale igual que la tabla.
   const columnas = useMemo<ColumnaReporte<Fila>[]>(
     () => [
       { clave: "facilitador", titulo: "Facilitador", valor: (f) => f.facilitador },
-      { clave: "institucion", titulo: "Institución", valor: (f) => f.institucion },
+      ...(porFacilitador
+        ? []
+        : [{ clave: "institucion", titulo: "Institución", valor: (f: Fila) => f.institucion }]),
       { clave: "cantidad", titulo: "Cantidad Intervenciones", valor: (f) => f.cantidad },
       { clave: "total", titulo: "Total", valor: (f) => f.cantidad * sueldoNum },
     ],
-    [sueldoNum],
+    [sueldoNum, porFacilitador],
   );
   const tabla = useTablaReporte(filtradas, columnas);
+
+  const alternarInstitucion = () => {
+    // Un filtro puesto en Institución no tiene que quedar colgado al ocultarla.
+    if (!porFacilitador) tabla.filtrar("institucion", []);
+    setPorFacilitador(!porFacilitador);
+    setPagina(0);
+  };
 
   const cantidad = tabla.visibles.reduce((s, f) => s + f.cantidad, 0);
   const paginas = Math.max(1, Math.ceil(tabla.visibles.length / POR_PAGINA));
@@ -191,6 +215,7 @@ function TotalesFacilitadorPage() {
     setSiNo("Si");
     setIdFac("");
     setSueldo(String(SUELDO_INICIAL));
+    setPorFacilitador(false);
     tabla.limpiar();
     setPagina(0);
   };
@@ -228,7 +253,7 @@ function TotalesFacilitadorPage() {
             }}
             onOtro={setOtro}
           />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <SelectorModal
               label="Facilitadores"
               descripcion="Los que tienen intervenciones en el período"
@@ -278,6 +303,26 @@ function TotalesFacilitadorPage() {
             <div className="flex items-end">
               <button
                 type="button"
+                onClick={alternarInstitucion}
+                aria-pressed={porFacilitador}
+                title={
+                  porFacilitador
+                    ? "Volver a separar cada facilitador por institución"
+                    : "Una fila por facilitador, con todas sus instituciones sumadas"
+                }
+                className={`flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold transition-colors ${
+                  porFacilitador
+                    ? "border-primary bg-primary text-primary-foreground shadow-soft"
+                    : "border-input bg-card hover:border-primary/40"
+                }`}
+              >
+                {porFacilitador ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+                {porFacilitador ? "Mostrar institución" : "Ocultar institución"}
+              </button>
+            </div>
+            <div className="flex items-end">
+              <button
+                type="button"
                 onClick={limpiar}
                 className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-input bg-card text-sm font-semibold hover:border-primary/40"
               >
@@ -295,8 +340,8 @@ function TotalesFacilitadorPage() {
         {datos.data?.truncado && (
           <p className="mb-3 flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            El período trajo más de {numero.format(datos.data.limite)} intervenciones y se cortó: elegí
-            uno más corto para que los totales sean los reales.
+            El período trajo más de {numero.format(datos.data.limite)} intervenciones y se cortó:
+            elegí uno más corto para que los totales sean los reales.
           </p>
         )}
 
@@ -340,7 +385,7 @@ function TotalesFacilitadorPage() {
                         {enPagina.map((f) => (
                           <tr key={f.clave} className="hover:bg-muted/40">
                             <Td>{f.facilitador}</Td>
-                            <Td>{f.institucion}</Td>
+                            {!porFacilitador && <Td>{f.institucion}</Td>}
                             <Td numero>{numero.format(f.cantidad)}</Td>
                             <Td numero>{numero.format(f.cantidad * sueldoNum)}</Td>
                             <td className="border-b border-border/60 text-center">
@@ -361,7 +406,10 @@ function TotalesFacilitadorPage() {
                           de todo lo filtrado. */}
                       <tfoot>
                         <tr className="bg-muted/60 font-semibold">
-                          <td colSpan={2} className="border-r border-border/60 px-3 py-2">
+                          <td
+                            colSpan={porFacilitador ? 1 : 2}
+                            className="border-r border-border/60 px-3 py-2"
+                          >
                             Total
                           </td>
                           <td className="border-r border-border/60 px-3 py-2 text-right tabular-nums">
@@ -406,7 +454,13 @@ function TotalesFacilitadorPage() {
         </section>
       </div>
 
-      {detalleDe && <DialogoDetalle fila={detalleDe} onCerrar={() => setDetalleDe(null)} />}
+      {detalleDe && (
+        <DialogoDetalle
+          fila={detalleDe}
+          conInstitucion={porFacilitador}
+          onCerrar={() => setDetalleDe(null)}
+        />
+      )}
     </AppShell>
   );
 }
@@ -419,8 +473,20 @@ function TotalesFacilitadorPage() {
  * Las intervenciones de un facilitador en una institución en el período (la
  * página 78 de APEX, que recibía institución, facilitador y las dos fechas),
  * de la más nueva a la más vieja.
+ *
+ * Con la institución oculta la fila es el facilitador entero: el detalle trae
+ * las de todas sus instituciones, con una columna que dice de cuál es cada una.
  */
-function DialogoDetalle({ fila, onCerrar }: { fila: Fila; onCerrar: () => void }) {
+function DialogoDetalle({
+  fila,
+  conInstitucion,
+  onCerrar,
+}: {
+  fila: Fila;
+  conInstitucion: boolean;
+  onCerrar: () => void;
+}) {
+  const instituciones = new Set(fila.marcaciones.map((x) => x.id_institucion)).size;
   const marcaciones = [...fila.marcaciones].sort(
     (a, b) =>
       ordenFecha(b.fecha).localeCompare(ordenFecha(a.fecha)) ||
@@ -435,30 +501,42 @@ function DialogoDetalle({ fila, onCerrar }: { fila: Fila; onCerrar: () => void }
         <DialogHeader className="text-left">
           <DialogTitle className="font-display text-xl">Detalle</DialogTitle>
           <DialogDescription className="text-xs">
-            {fila.facilitador} en {fila.institucion} ·{" "}
-            {plural(fila.cantidad, "intervención", "intervenciones")}
+            {fila.facilitador} en{" "}
+            {conInstitucion
+              ? plural(instituciones, "institución", "instituciones")
+              : fila.institucion}{" "}
+            · {plural(fila.cantidad, "intervención", "intervenciones")}
           </DialogDescription>
         </DialogHeader>
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[720px] border-separate border-spacing-0 text-[13px]">
             <thead>
               <tr>
-                {["Fecha", "Hora", "Desde", "Hasta", "Dif. Min.", "Manual", "Índice", "Postulaciones"].map(
-                  (t) => (
-                    <th
-                      key={t}
-                      className="border-r border-b border-border bg-muted px-2 py-1.5 text-left text-xs font-semibold last:border-r-0"
-                    >
-                      {t}
-                    </th>
-                  ),
-                )}
+                {[
+                  "Fecha",
+                  ...(conInstitucion ? ["Institución"] : []),
+                  "Hora",
+                  "Desde",
+                  "Hasta",
+                  "Dif. Min.",
+                  "Manual",
+                  "Índice",
+                  "Postulaciones",
+                ].map((t) => (
+                  <th
+                    key={t}
+                    className="border-r border-b border-border bg-muted px-2 py-1.5 text-left text-xs font-semibold last:border-r-0"
+                  >
+                    {t}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {marcaciones.map((x) => (
                 <tr key={x.id_intervencion}>
                   <Celda>{x.fecha}</Celda>
+                  {conInstitucion && <Celda>{x.institucion}</Celda>}
                   <Celda estilo={COLOR_HORA}>{x.hora}</Celda>
                   <Celda estilo={COLOR_DESDE}>{x.hora_desde}</Celda>
                   <Celda estilo={COLOR_HASTA}>{x.hora_hasta}</Celda>
