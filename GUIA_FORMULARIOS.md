@@ -322,7 +322,7 @@ Tailwind). Sirven de modelo para los parámetros, los avisos y la vista previa.
 | --- | --- |
 | `src/routes/reporte-diario-facilitador.index.tsx` | Form. 2: mes (atajos y selector), fechas, Buscar etapa, línea de la etapa, Facilitador e Institución filtrados entre sí, vista previa, avisos |
 | `src/routes/agenda-semanal-facilitador.index.tsx` | Form. 3: año lectivo en pastillas, facilitador, vista previa, avisos |
-| `src/components/form-3-institucion.tsx` | Form. 3 desde la ficha de una institución: elegir el facilitador si van varios, siempre el año actual |
+| `src/components/form-3-institucion.tsx` | Form. 3 desde la ficha de una institución: elegir el facilitador si van varios, del año que muestra la pestaña |
 | `src/components/postulaciones-institucion.tsx`, `pre-horarios-institucion.tsx` | Los botones del Form. 1 (busca `imprimir`) |
 
 **La vista previa es la misma imagen que se descarga** (`generarForm2Imagen` y

@@ -30,15 +30,18 @@ import { keysPreHorarios, listarPreHorarios } from "@/lib/pre-horarios";
 type Tipo = "pdf" | "png" | "xlsx";
 type Fac = { id: number; nombre: string };
 
-/** `postulaciones/todas` del año lectivo actual (sin `anio`), sin otros filtros. */
-const ACTUAL = {
-  anio: "",
+/**
+ * `postulaciones/todas` de un año, sin otros filtros. Sin `anio`, el lectivo
+ * actual: la misma clave que la primera consulta de `/agenda-semanal-facilitador`.
+ */
+const delAnio = (anio: string) => ({
+  anio,
   idDepartamento: null,
   idCiudad: null,
   idBarrio: null,
   idInstitucion: null,
   turno: null,
-};
+});
 
 /**
  * Los botones del Form. 3 (la agenda semanal del facilitador) en las pestañas
@@ -50,39 +53,45 @@ const ACTUAL = {
  * - **Es la agenda del facilitador**, entera (con sus otras instituciones), de
  *   uno de los que van a esta institución. Si van varios, se elige en un
  *   diálogo; si va uno, sale directo.
- * - **Siempre del año lectivo actual**, aunque la pestaña muestre otro año.
+ * - **Del año que muestra la pestaña** (27/10/2026, pedido de Jose: en
+ *   Postulaciones con 2025 elegido, el título y los registros eran de 2026).
+ *   Pre-horarios no tiene selector: es siempre el año actual. Postulaciones
+ *   pasa su año en `anio` ("" = el actual).
  * - **Cada pestaña, de su tabla:** Pre-horarios con los pre-horarios (todos,
  *   confirmados o no, como su Form. 1; `pre-horarios/facilitador`),
  *   Postulaciones con las postulaciones activas (`postulaciones/todas`).
  *
- * Los facilitadores son los de esta institución en el año actual, en esa
- * misma tabla. Las consultas comparten la caché con la pestaña y con
+ * Los facilitadores son los de esta institución en ese año, en esa misma
+ * tabla. Las consultas comparten la caché con la pestaña y con
  * `/agenda-semanal-facilitador`.
  */
 export function Form3Institucion({
   origen,
   idInstitucion,
+  anio: anioPestana = "",
 }: {
   origen: "pre-horarios" | "postulaciones";
   idInstitucion: number;
+  anio?: string;
 }) {
   const qc = useQueryClient();
+  const filtros = delAnio(anioPestana);
   const preHorarios = useQuery({
     queryKey: keysPreHorarios.institucion(idInstitucion),
     queryFn: () => listarPreHorarios(idInstitucion),
     enabled: origen === "pre-horarios",
   });
   const postulaciones = useQuery({
-    queryKey: keysPostulaciones.todas(ACTUAL),
-    queryFn: () => listarTodasPostulaciones(ACTUAL),
+    queryKey: keysPostulaciones.todas(filtros),
+    queryFn: () => listarTodasPostulaciones(filtros),
     enabled: origen === "postulaciones",
   });
 
+  // El año de los datos: el que respondió el backend (sin `anio`, el actual).
   const anio =
-    (origen === "pre-horarios" ? preHorarios.data?.anioActual : postulaciones.data?.anioActual) ??
-    "";
+    (origen === "pre-horarios" ? preHorarios.data?.anioActual : postulaciones.data?.anio) ?? "";
 
-  /** Los facilitadores de esta institución en el año actual, por nombre. */
+  /** Los facilitadores de esta institución en ese año, por nombre. */
   const facilitadores = useMemo((): Fac[] => {
     const m = new Map<number, string>();
     if (origen === "pre-horarios") {
@@ -110,8 +119,8 @@ export function Form3Institucion({
         ? clasesDePreHorarios(f.id, anio)
         : qc
             .fetchQuery({
-              queryKey: keysPostulaciones.todas(ACTUAL),
-              queryFn: () => listarTodasPostulaciones(ACTUAL),
+              queryKey: keysPostulaciones.todas(filtros),
+              queryFn: () => listarTodasPostulaciones(filtros),
             })
             .then((r) => clasesDePostulaciones(r.items, f.id)),
       qc.fetchQuery({ queryKey: keysBloqueos.todo, queryFn: listarBloqueos }),

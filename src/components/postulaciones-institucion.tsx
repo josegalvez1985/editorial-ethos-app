@@ -286,8 +286,13 @@ export function PostulacionesInstitucion({
             )}
             Form. 1
           </button>
-          {/* El Form. 3: la agenda del facilitador, del año actual (26/10/2026). */}
-          <Form3Institucion origen="postulaciones" idInstitucion={idInstitucion} />
+          {/* El Form. 3: la agenda del facilitador, del año elegido (27/10/2026). */}
+          <Form3Institucion
+            origen="postulaciones"
+            idInstitucion={idInstitucion}
+            anio={elegido === anioActual ? "" : elegido}
+          />
+
         </div>
       </div>
 

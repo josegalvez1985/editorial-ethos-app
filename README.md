@@ -603,7 +603,8 @@ Excel), en [`form-3-institucion.tsx`](src/components/form-3-institucion.tsx). Lo
 
 - **Es la agenda del facilitador**, entera (con sus otras instituciones). Si a la institución van
   varios, un diálogo pregunta de cuál; si va uno, sale directo.
-- **Siempre del año lectivo actual**, aunque la pestaña muestre otro año.
+- **Del año que muestra la pestaña** (27/10/2026): en Postulaciones, el año elegido —título y
+  registros—; Pre-horarios no tiene selector y es siempre el año actual.
 - **Cada pestaña, de su tabla:** Pre-horarios arma la agenda con los **pre-horarios** del
   facilitador (todos, confirmados o no, como su Form. 1), con `GET pre-horarios/facilitador`
   —**nuevo en `pre_horarios.sql`: correr el script antes de publicar**—; Postulaciones, con sus
