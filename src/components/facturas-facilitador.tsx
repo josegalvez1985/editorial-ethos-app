@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Check,
+  Download,
   ExternalLink,
   FileText,
   ImagePlus,
@@ -10,12 +11,13 @@ import {
   Pencil,
   Plus,
   ReceiptText,
+  Trash2,
   X,
 } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import { BotonBorrar, Buscador, Cargando, Fallo, SoloLectura } from "@/components/admin-ui";
+import { BotonBorrar, Buscador, Cargando, Fallo } from "@/components/admin-ui";
 import { EtiquetaCampo, Texto } from "@/components/ficha-ui";
 import { SelectorModal } from "@/components/selector-modal";
 import {
@@ -26,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  descargarArchivoFactura,
   eliminarFactura,
   esPdf,
   formatearNroFactura,
@@ -33,28 +36,35 @@ import {
   keysFacturas,
   listarFacturas,
   miniatura,
+  nombreArchivoFactura,
   porRevisar,
-  RUTA_FACTURAS,
   sePisan,
   subirFotoFactura,
   TIPOS_FOTO,
-  TOPE_FOTO_MB,
+  TOPE_FOTO_KB,
+  TOPE_PDF_MB,
   type Factura,
 } from "@/lib/facturas-facilitadores";
 import { fechaCorta, hoyISO } from "@/lib/fechas";
-import { usePermisos } from "@/lib/permisos";
+import { keysIntervenciones, listarResumenPeriodo } from "@/lib/intervenciones";
+import { rangoValido } from "@/lib/periodos";
 import { campo, normalizar } from "@/lib/utils";
 
 /**
  * Las facturas de los facilitadores: el diálogo de Totales por Facilitador
- * (04/11/2026). No es una página ni tiene permisos propios: usa los de
- * `/totales-facilitador` (insertar, actualizar, borrar).
+ * (04/11/2026). No es una página ni tiene permisos propios: quien llega a
+ * Totales por Facilitador ve, carga, modifica y borra facturas (el backend pide
+ * solo sesión). Antes usaba las banderas insertar/actualizar/borrar de la
+ * página; se sacaron a pedido el mismo día.
  *
  * Un solo diálogo con tres vistas, para no poner un diálogo encima de otro:
  *
- * - **La lista**: las facturas cuyo período toca el del reporte, de un
- *   facilitador o de todos, con su foto, lo facturado y si coincide con lo
- *   que da el reporte hoy. Con todos, arriba los que todavía no facturaron.
+ * - **La lista**: de un facilitador o de todos, con su foto, lo facturado y si
+ *   coincide con lo que da el reporte hoy. Abre con **todas las cargadas**
+ *   (04/11/2026: una factura de un período sin intervenciones no tenía dónde
+ *   verse) y se puede achicar a las que tocan el período del reporte. Con
+ *   todos los facilitadores va agrupada por facilitador, y arriba los del
+ *   reporte que todavía no facturaron el período.
  * - **El formulario**: alta y edición. Propone el período del reporte, la
  *   cantidad del facilitador en el reporte y el sueldo de la pantalla; la foto
  *   o el PDF se sube a Cloudinary al elegirlo.
@@ -77,7 +87,7 @@ export type FacilitadorPeriodo = { id: number; nombre: string; cantidad: number 
 type Vista =
   | { modo: "lista" }
   | { modo: "editar"; factura: Factura | null; idFacilitador: number | null }
-  | { modo: "foto"; url: string; titulo: string };
+  | { modo: "foto"; url: string; titulo: string; archivo: string };
 
 /** `YYYY-MM-DDTHH:MI` → "4 nov 2026 15:30". */
 const fechaHora = (v: string) => (v ? `${fechaCorta(v.slice(0, 10))} ${v.slice(11, 16)}` : "");
@@ -107,12 +117,11 @@ export function DialogoFacturas({
   nueva?: boolean;
   onCerrar: () => void;
 }) {
-  const { puedeRuta } = usePermisos();
-  const puedeAgregar = puedeRuta(RUTA_FACTURAS, "insertar");
-
+  // `todas`: las cargadas, de cualquier período. `periodo`: las que tocan el del reporte.
+  const [alcance, setAlcance] = useState<"todas" | "periodo">("todas");
   const datos = useQuery({
-    queryKey: keysFacturas.periodo(desde, hasta),
-    queryFn: () => listarFacturas({ desde, hasta }),
+    queryKey: alcance === "todas" ? keysFacturas.todas : keysFacturas.periodo(desde, hasta),
+    queryFn: () => listarFacturas(alcance === "todas" ? {} : { desde, hasta }),
   });
   const [vista, setVista] = useState<Vista>(
     nueva ? { modo: "editar", factura: null, idFacilitador } : { modo: "lista" },
@@ -131,9 +140,15 @@ export function DialogoFacturas({
         normalizar(`${f.nroFactura} ${f.facilitador} ${f.timbrado} ${f.observacion}`).includes(q),
       )
     : delFiltro;
+  const grupos = idFacilitador == null ? agruparPorFacilitador(visibles) : null;
 
-  // Los del reporte que no tienen ninguna factura que toque el período.
-  const conFactura = new Set(todas.map((f) => f.idFacilitador));
+  // Los del reporte que no tienen ninguna factura que toque el período (con
+  // "Todas" la lista trae también las de otros períodos: no cuentan).
+  const conFactura = new Set(
+    todas
+      .filter((f) => sePisan({ desde, hasta }, { desde: f.fechaDesde, hasta: f.fechaHasta }))
+      .map((f) => f.idFacilitador),
+  );
   const sinFactura = facilitadores.filter((f) => !conFactura.has(f.id));
   const cantidadDe = (id: number) => facilitadores.find((f) => f.id === id)?.cantidad;
 
@@ -146,11 +161,20 @@ export function DialogoFacturas({
 
   return (
     <Dialog open onOpenChange={(o) => !o && !ocupado && onCerrar()}>
-      <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-2xl overflow-y-auto rounded-2xl">
+      {/* En el formulario y la foto, columna sin scroll propio: scrollea el
+          contenido del Editor y su pie queda fijo. En la lista, scroll normal. */}
+      <DialogContent
+        className={
+          vista.modo === "editar"
+            ? "flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-2xl flex-col overflow-hidden rounded-2xl"
+            : "max-h-[90vh] w-[calc(100vw-2rem)] max-w-2xl overflow-y-auto rounded-2xl"
+        }
+      >
         {vista.modo === "foto" ? (
           <VerFoto
             url={vista.url}
             titulo={vista.titulo}
+            archivo={vista.archivo}
             onVolver={() => setVista({ modo: "lista" })}
           />
         ) : vista.modo === "editar" ? (
@@ -162,7 +186,6 @@ export function DialogoFacturas({
             desde={desde}
             hasta={hasta}
             sueldo={sueldo}
-            cantidadesValidas={cantidadesValidas}
             fotosHabilitadas={datos.data?.fotosHabilitadas ?? false}
             largoObservacion={datos.data?.largoObservacion ?? 2000}
             onOcupado={setOcupado}
@@ -173,9 +196,38 @@ export function DialogoFacturas({
             <DialogHeader className="text-left">
               <DialogTitle className="font-display text-xl">Facturas</DialogTitle>
               <DialogDescription className="text-xs">
-                {nombre ?? "Todos los facilitadores"} · las que tocan del {periodo}
+                {nombre ?? "Todos los facilitadores"} ·{" "}
+                {alcance === "todas" ? "todas las cargadas" : `las que tocan del ${periodo}`}
               </DialogDescription>
             </DialogHeader>
+
+            <div
+              role="radiogroup"
+              aria-label="Qué facturas mostrar"
+              className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1"
+            >
+              {(
+                [
+                  ["todas", "Todas las cargadas"],
+                  ["periodo", `Del período (${periodo})`],
+                ] as const
+              ).map(([valor, texto]) => (
+                <button
+                  key={valor}
+                  type="button"
+                  role="radio"
+                  aria-checked={alcance === valor}
+                  onClick={() => setAlcance(valor)}
+                  className={`min-h-9 rounded-lg px-2 py-1 text-xs font-semibold ${
+                    alcance === valor
+                      ? "bg-card text-foreground shadow-soft"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {texto}
+                </button>
+              ))}
+            </div>
 
             {datos.isLoading ? (
               <Cargando />
@@ -196,14 +248,13 @@ export function DialogoFacturas({
                         <button
                           key={f.id}
                           type="button"
-                          disabled={!puedeAgregar}
                           onClick={() =>
                             setVista({ modo: "editar", factura: null, idFacilitador: f.id })
                           }
-                          title={puedeAgregar ? "Cargar su factura" : undefined}
-                          className="flex items-center gap-1 rounded-full border border-amber-500/40 bg-card px-2.5 py-1 text-xs font-medium enabled:hover:border-primary/50 disabled:cursor-default"
+                          title="Cargar su factura"
+                          className="flex items-center gap-1 rounded-full border border-amber-500/40 bg-card px-2.5 py-1 text-xs font-medium hover:border-primary/50"
                         >
-                          {puedeAgregar && <Plus className="size-3" />}
+                          <Plus className="size-3" />
                           {f.nombre}
                           <span className="text-muted-foreground tabular-nums">
                             · {numero.format(f.cantidad)}
@@ -224,51 +275,78 @@ export function DialogoFacturas({
                       />
                     </div>
                   )}
-                  {puedeAgregar && (
-                    <button
-                      type="button"
-                      onClick={() => setVista({ modo: "editar", factura: null, idFacilitador })}
-                      className="ml-auto flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-primary-foreground shadow-soft"
-                    >
-                      <Plus className="size-4" />
-                      Nueva factura
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setVista({ modo: "editar", factura: null, idFacilitador })}
+                    className="ml-auto flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-primary-foreground shadow-soft"
+                  >
+                    <Plus className="size-4" />
+                    Nueva factura
+                  </button>
                 </div>
 
                 {!visibles.length ? (
                   <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                     {q
                       ? "Ninguna factura coincide con la búsqueda."
-                      : nombre
-                        ? `${nombre} no tiene facturas que toquen este período.`
-                        : "No hay facturas que toquen este período."}
+                      : alcance === "todas"
+                        ? nombre
+                          ? `${nombre} no tiene facturas cargadas.`
+                          : "No hay facturas cargadas."
+                        : nombre
+                          ? `${nombre} no tiene facturas que toquen este período.`
+                          : "No hay facturas que toquen este período."}
                   </p>
                 ) : (
-                  <ul className="space-y-2">
-                    {visibles.map((f) => (
-                      <TarjetaFactura
-                        key={f.id}
-                        factura={f}
-                        conFacilitador={idFacilitador == null}
-                        desde={desde}
-                        hasta={hasta}
-                        cantidadReporte={
-                          cantidadesValidas ? cantidadDe(f.idFacilitador) : undefined
-                        }
-                        onAbrir={() =>
-                          setVista({ modo: "editar", factura: f, idFacilitador: f.idFacilitador })
-                        }
-                        onVerFoto={() =>
-                          setVista({
-                            modo: "foto",
-                            url: f.fotoUrl,
-                            titulo: `Factura ${f.nroFactura}`,
-                          })
-                        }
-                      />
-                    ))}
-                  </ul>
+                  (grupos ?? [{ id: idFacilitador ?? 0, nombre: "", facturas: visibles }]).map(
+                    (g) => (
+                      <section key={g.id} className="space-y-2">
+                        {grupos && (
+                          <h3 className="flex flex-wrap items-baseline gap-x-2 border-b border-border/60 pt-1 pb-1">
+                            <span className="text-sm font-bold">{g.nombre}</span>
+                            <span className="text-[11px] text-muted-foreground tabular-nums">
+                              {plural(g.facturas.length, "factura", "facturas")} ·{" "}
+                              {numero.format(g.facturas.reduce((s, f) => s + f.monto, 0))}
+                            </span>
+                          </h3>
+                        )}
+                        <ul className="space-y-2">
+                          {g.facturas.map((f) => (
+                            <TarjetaFactura
+                              key={f.id}
+                              factura={f}
+                              conFacilitador={false}
+                              desde={desde}
+                              hasta={hasta}
+                              cantidadReporte={
+                                cantidadesValidas ? cantidadDe(f.idFacilitador) : undefined
+                              }
+                              onAbrir={() =>
+                                setVista({
+                                  modo: "editar",
+                                  factura: f,
+                                  idFacilitador: f.idFacilitador,
+                                })
+                              }
+                              onVerFoto={() =>
+                                setVista({
+                                  modo: "foto",
+                                  url: f.fotoUrl,
+                                  titulo: `Factura ${f.nroFactura}`,
+                                  archivo: nombreArchivoFactura(
+                                    f.fechaFactura,
+                                    f.nroFactura,
+                                    f.fotoUrl,
+                                  ),
+                                })
+                              }
+                              onOcupado={setOcupado}
+                            />
+                          ))}
+                        </ul>
+                      </section>
+                    ),
+                  )
                 )}
               </div>
             )}
@@ -282,6 +360,20 @@ export function DialogoFacturas({
 /* -------------------------------------------------------------------------- */
 /* La lista                                                                   */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Las facturas agrupadas por facilitador, por nombre; dentro de cada uno, en el
+ * orden en que llegan (el backend las manda de la más nueva a la más vieja).
+ */
+function agruparPorFacilitador(facturas: Factura[]) {
+  const m = new Map<number, { id: number; nombre: string; facturas: Factura[] }>();
+  for (const f of facturas) {
+    const g = m.get(f.idFacilitador);
+    if (g) g.facturas.push(f);
+    else m.set(f.idFacilitador, { id: f.idFacilitador, nombre: f.facilitador, facturas: [f] });
+  }
+  return [...m.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+}
 
 function Resumen({ facturas }: { facturas: Factura[] }) {
   if (!facturas.length) return null;
@@ -321,6 +413,7 @@ function TarjetaFactura({
   cantidadReporte,
   onAbrir,
   onVerFoto,
+  onOcupado,
 }: {
   factura: Factura;
   conFacilitador: boolean;
@@ -330,10 +423,34 @@ function TarjetaFactura({
   cantidadReporte?: number;
   onAbrir: () => void;
   onVerFoto: () => void;
+  /** Mientras se borra, el diálogo no se cierra. */
+  onOcupado: (o: boolean) => void;
 }) {
+  const qc = useQueryClient();
+  // Eliminar desde la lista, sin entrar al formulario: primer toque pide
+  // confirmación, el segundo borra. Mismo efecto que el botón del formulario.
+  const [confirmar, setConfirmar] = useState(false);
+  const borrar = useMutation({
+    mutationFn: () => eliminarFactura(f.id),
+    onMutate: () => onOcupado(true),
+    onSettled: () => onOcupado(false),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: keysFacturas.todo });
+      toast.success(`Factura ${f.nroFactura} eliminada`, {
+        description: f.fotoUrl && !r.aviso ? "Y su foto, de Cloudinary." : undefined,
+      });
+      if (r.aviso) toast.warning(r.aviso);
+    },
+    onError: (e) => {
+      setConfirmar(false);
+      toast.error(e instanceof Error ? e.message : "No se pudo eliminar");
+    },
+  });
+
   const pendiente = porRevisar(f);
   const mismoPeriodo = f.fechaDesde === desde && f.fechaHasta === hasta;
   const cubreTodo = f.fechaDesde <= desde && f.fechaHasta >= hasta;
+  const tocaPeriodo = sePisan({ desde, hasta }, { desde: f.fechaDesde, hasta: f.fechaHasta });
   const diferencia =
     cantidadReporte != null && mismoPeriodo && !pendiente ? cantidadReporte - f.cantidad : null;
 
@@ -409,6 +526,10 @@ function TarjetaFactura({
             El reporte hoy da {numero.format(cantidadReporte!)} ({diferencia > 0 ? "+" : ""}
             {numero.format(diferencia)})
           </p>
+        ) : !tocaPeriodo ? (
+          <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+            Fuera del período del reporte.
+          </p>
         ) : (
           !cubreTodo && (
             <p className="mt-0.5 text-[11.5px] text-muted-foreground">
@@ -421,14 +542,43 @@ function TarjetaFactura({
         )}
       </button>
 
-      <button
-        type="button"
-        onClick={onAbrir}
-        aria-label="Abrir la factura"
-        className="grid size-9 shrink-0 place-items-center self-start rounded-lg text-primary hover:bg-primary-soft"
-      >
-        <Pencil className="size-4" />
-      </button>
+      <div className="flex shrink-0 flex-col gap-1.5 self-start">
+        <button
+          type="button"
+          onClick={onAbrir}
+          disabled={borrar.isPending}
+          className="flex h-9 items-center gap-1.5 rounded-lg border border-primary/30 px-2.5 text-xs font-semibold text-primary hover:bg-primary-soft disabled:opacity-50"
+        >
+          <Pencil className="size-3.5" />
+          Modificar
+        </button>
+        {f.fotoUrl && (
+          <BotonDescargar
+            url={f.fotoUrl}
+            archivo={nombreArchivoFactura(f.fechaFactura, f.nroFactura, f.fotoUrl)}
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-input px-2.5 text-xs font-semibold hover:border-primary/40 disabled:opacity-50"
+            icono="size-3.5"
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => (confirmar ? borrar.mutate() : setConfirmar(true))}
+          onBlur={() => !borrar.isPending && setConfirmar(false)}
+          disabled={borrar.isPending}
+          className={`flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
+            confirmar
+              ? "border-destructive bg-destructive text-white"
+              : "border-destructive/40 text-destructive hover:bg-destructive/10"
+          }`}
+        >
+          {borrar.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="size-3.5" />
+          )}
+          {confirmar ? "¿Seguro?" : "Eliminar"}
+        </button>
+      </div>
     </li>
   );
 }
@@ -437,14 +587,57 @@ function TarjetaFactura({
 /* La foto en grande                                                          */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Descarga la foto o el PDF con el nombre `<fecha>-<nro_factura>` (ver
+ * `nombreArchivoFactura`). Es un `button` y no un `a download`: el enlace es de
+ * otro dominio (Cloudinary) y el navegador ignoraría el nombre.
+ */
+function BotonDescargar({
+  url,
+  archivo,
+  className,
+  icono,
+}: {
+  url: string;
+  archivo: string;
+  className: string;
+  icono: string;
+}) {
+  const [bajando, setBajando] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={bajando}
+      title={`Descargar como ${archivo}`}
+      onClick={async () => {
+        setBajando(true);
+        try {
+          await descargarArchivoFactura(url, archivo);
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "No se pudo descargar la factura");
+        } finally {
+          setBajando(false);
+        }
+      }}
+      className={className}
+    >
+      {bajando ? <Loader2 className={`${icono} animate-spin`} /> : <Download className={icono} />}
+      Descargar
+    </button>
+  );
+}
+
 function VerFoto({
   url,
   titulo,
+  archivo,
   onVolver,
   volverTexto = "Facturas",
 }: {
   url: string;
   titulo: string;
+  /** El nombre con que se descarga. */
+  archivo: string;
   onVolver: () => void;
   volverTexto?: string;
 }) {
@@ -462,15 +655,23 @@ function VerFoto({
         alt={titulo}
         className="max-h-[65vh] w-full rounded-lg border border-border bg-muted object-contain"
       />
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        className="flex h-11 items-center justify-center gap-1.5 rounded-xl border border-input bg-card text-sm font-semibold hover:border-primary/40"
-      >
-        <ExternalLink className="size-4" />
-        {esPdf(url) ? "Abrir el PDF" : "Abrir el original"}
-      </a>
+      <div className="grid grid-cols-2 gap-2">
+        <BotonDescargar
+          url={url}
+          archivo={archivo}
+          className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-primary text-sm font-semibold text-primary-foreground shadow-soft disabled:opacity-60"
+          icono="size-4"
+        />
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex h-11 items-center justify-center gap-1.5 rounded-xl border border-input bg-card text-sm font-semibold hover:border-primary/40"
+        >
+          <ExternalLink className="size-4" />
+          {esPdf(url) ? "Abrir el PDF" : "Abrir el original"}
+        </a>
+      </div>
     </>
   );
 }
@@ -500,7 +701,6 @@ function Editor({
   desde,
   hasta,
   sueldo,
-  cantidadesValidas,
   fotosHabilitadas,
   largoObservacion,
   onOcupado,
@@ -514,45 +714,27 @@ function Editor({
   desde: string;
   hasta: string;
   sueldo: number;
-  cantidadesValidas: boolean;
   fotosHabilitadas: boolean;
   largoObservacion: number;
   onOcupado: (o: boolean) => void;
   onVolver: () => void;
 }) {
   const qc = useQueryClient();
-  const { puedeRuta } = usePermisos();
   const nueva = factura == null;
-  const puedeGuardar = puedeRuta(RUTA_FACTURAS, nueva ? "insertar" : "actualizar");
-  const puedeBorrar = !nueva && puedeRuta(RUTA_FACTURAS, "borrar");
 
   // La subió el facilitador y falta completar cantidad y sueldo.
   const pendiente = factura != null && porRevisar(factura);
 
-  // Lo que da el reporte para el facilitador, solo si la factura cubre
-  // exactamente el período que se está viendo: de otro no se sabe.
-  const cantidadReporte = (id: number | null, d: string, h: string) =>
-    cantidadesValidas && id != null && d === desde && h === hasta
-      ? facilitadores.find((f) => f.id === id)?.cantidad
-      : undefined;
-
-  const inicio = {
-    idFac: factura?.idFacilitador ?? idFacilitadorInicial,
-    desde: factura?.fechaDesde ?? desde,
-    hasta: factura?.fechaHasta ?? hasta,
-  };
-  const [idFac, setIdFac] = useState<number | null>(inicio.idFac);
+  const [idFac, setIdFac] = useState<number | null>(factura?.idFacilitador ?? idFacilitadorInicial);
   const [nro, setNro] = useState(factura?.nroFactura ?? "");
   const [timbrado, setTimbrado] = useState(factura?.timbrado ?? "");
   const [fecha, setFecha] = useState(factura?.fechaFactura ?? hoyISO());
-  const [fDesde, setFDesde] = useState(inicio.desde);
-  const [fHasta, setFHasta] = useState(inicio.hasta);
-  // Una por revisar viene en 0: se propone como en el alta.
-  const [cantidad, setCantidad] = useState(
-    factura && !pendiente
-      ? String(factura.cantidad)
-      : String(cantidadReporte(inicio.idFac, inicio.desde, inicio.hasta) ?? ""),
-  );
+  const [fDesde, setFDesde] = useState(factura?.fechaDesde ?? desde);
+  const [fHasta, setFHasta] = useState(factura?.fechaHasta ?? hasta);
+  // Una nueva o una por revisar (viene en 0) se completa sola con las
+  // intervenciones del período de la factura; una ya revisada conserva la suya.
+  const [cantidad, setCantidad] = useState(factura && !pendiente ? String(factura.cantidad) : "");
+  const [cantidadTocada, setCantidadTocada] = useState(false);
   const [sueldoTxt, setSueldoTxt] = useState(
     factura && !pendiente ? String(factura.sueldo) : String(sueldo || ""),
   );
@@ -569,6 +751,39 @@ function Editor({
   const cant = Number(cantidad) || 0;
   const sue = Number(sueldoTxt) || 0;
   const periodoOk = !!fDesde && !!fHasta && fHasta >= fDesde;
+
+  // Las intervenciones del facilitador en el período DE LA FACTURA (no el de
+  // la pantalla), con Desarrollo: Sí, que son las que se pagan. Es el mismo
+  // endpoint del reporte: con el mismo período comparte la caché.
+  const contar = idFac != null && rangoValido({ desde: fDesde, hasta: fHasta });
+  const delPeriodo = useQuery({
+    queryKey: keysIntervenciones.resumenPeriodo(fDesde, fHasta, "Si"),
+    queryFn: () => listarResumenPeriodo(fDesde, fHasta, "Si"),
+    enabled: contar,
+  });
+  // `truncado`: el backend cortó la lista, el conteo no sería el real.
+  const reporte =
+    contar && delPeriodo.data && !delPeriodo.data.truncado
+      ? delPeriodo.data.data.filter((x) => x.id_facilitador === idFac).length
+      : undefined;
+  // Si el período de la factura da 0, cuántas tiene en el de la pantalla: para
+  // ofrecer pasarla ahí (la típica: el facilitador puso el mes siguiente).
+  const otroPeriodo = fDesde !== desde || fHasta !== hasta;
+  const delReporte = useQuery({
+    queryKey: keysIntervenciones.resumenPeriodo(desde, hasta, "Si"),
+    queryFn: () => listarResumenPeriodo(desde, hasta, "Si"),
+    enabled: idFac != null && otroPeriodo && reporte === 0 && rangoValido({ desde, hasta }),
+  });
+  const enReporte =
+    idFac != null && otroPeriodo && delReporte.data && !delReporte.data.truncado
+      ? delReporte.data.data.filter((x) => x.id_facilitador === idFac).length
+      : undefined;
+
+  const autoCantidad = (nueva || pendiente) && !cantidadTocada;
+  useEffect(() => {
+    if (autoCantidad && reporte != null) setCantidad(String(reporte));
+  }, [autoCantidad, reporte]);
+
   const pisada =
     idFac != null && periodoOk
       ? otras.find(
@@ -597,7 +812,7 @@ function Editor({
     cant < 1 && "la cantidad",
     sue < 1 && "el sueldo",
   ].filter(Boolean) as string[];
-  const listo = puedeGuardar && !falta.length && !pisada && !repetida && progreso == null;
+  const listo = !falta.length && !pisada && !repetida && progreso == null;
 
   const invalidar = () => qc.invalidateQueries({ queryKey: keysFacturas.todo });
 
@@ -621,9 +836,11 @@ function Editor({
     },
     onMutate: () => onOcupado(true),
     onSettled: () => onOcupado(false),
-    onSuccess: () => {
+    onSuccess: (r) => {
       invalidar();
       toast.success(nueva ? `Factura ${nroFormateado} registrada` : "Factura actualizada");
+      // La factura quedó guardada; solo la foto anterior quedó en Cloudinary.
+      if (r.aviso) toast.warning(r.aviso);
       onVolver();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo guardar"),
@@ -633,9 +850,12 @@ function Editor({
     mutationFn: () => eliminarFactura(factura!.id),
     onMutate: () => onOcupado(true),
     onSettled: () => onOcupado(false),
-    onSuccess: () => {
+    onSuccess: (r) => {
       invalidar();
-      toast.success(`Factura ${factura!.nroFactura} eliminada`);
+      toast.success(`Factura ${factura!.nroFactura} eliminada`, {
+        description: factura!.fotoUrl && !r.aviso ? "Y su foto, de Cloudinary." : undefined,
+      });
+      if (r.aviso) toast.warning(r.aviso);
       onVolver();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar"),
@@ -659,49 +879,53 @@ function Editor({
   };
 
   const ocupado = guardar.isPending || borrar.isPending || progreso != null;
-  const reporte = cantidadReporte(idFac, fDesde, fHasta);
   const titulo = nueva ? "Nueva factura" : `Factura ${factura.nroFactura}`;
 
+  // El diálogo, en el formulario, es una columna: el contenido scrollea y el
+  // pie con Guardar / Eliminar queda SIEMPRE a la vista (ver DialogoFacturas).
   return viendoFoto && foto ? (
-    <VerFoto
-      url={foto}
-      titulo={titulo}
-      volverTexto={titulo}
-      onVolver={() => setViendoFoto(false)}
-    />
+    <div className="-mx-6 min-h-0 flex-1 space-y-4 overflow-y-auto px-6">
+      <VerFoto
+        url={foto}
+        titulo={titulo}
+        archivo={nombreArchivoFactura(fecha, nroFormateado ?? nro.trim(), foto)}
+        volverTexto={titulo}
+        onVolver={() => setViendoFoto(false)}
+      />
+    </div>
   ) : (
-    <>
-      <DialogHeader className="text-left">
-        <Volver onClick={onVolver} />
-        <DialogTitle className="font-display text-xl">{titulo}</DialogTitle>
-        <DialogDescription className="text-xs">
-          {nombreFac || "Elegí el facilitador."}
-          {factura?.cargadoEl &&
-            ` · cargada el ${fechaHora(factura.cargadoEl)}${factura.cargadoPor ? ` por ${factura.cargadoPor}` : ""}`}
-          {factura?.modificadoEl &&
-            ` · modificada el ${fechaHora(factura.modificadoEl)}${factura.modificadoPor ? ` por ${factura.modificadoPor}` : ""}`}
-        </DialogDescription>
-      </DialogHeader>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (listo) guardar.mutate();
+      }}
+      className="flex min-h-0 flex-1 flex-col gap-3"
+    >
+      <div className="-mx-6 min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pb-1">
+        <DialogHeader className="text-left">
+          <Volver onClick={onVolver} />
+          <DialogTitle className="font-display text-xl">{titulo}</DialogTitle>
+          <DialogDescription className="text-xs">
+            {nombreFac || "Elegí el facilitador."}
+            {factura?.cargadoEl &&
+              ` · cargada el ${fechaHora(factura.cargadoEl)}${factura.cargadoPor ? ` por ${factura.cargadoPor}` : ""}`}
+            {factura?.modificadoEl &&
+              ` · modificada el ${fechaHora(factura.modificadoEl)}${factura.modificadoPor ? ` por ${factura.modificadoPor}` : ""}`}
+          </DialogDescription>
+        </DialogHeader>
 
-      {pendiente && (
-        <p className="flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-          <span>
-            <b>Por revisar.</b> La subió el facilitador desde su app: controlá con la foto el
-            número, la fecha y el mes, y completá las intervenciones y el sueldo. Al guardar queda
-            revisada y el facilitador ya no la puede cambiar.
-          </span>
-        </p>
-      )}
+        {pendiente && (
+          <p className="flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>
+              <b>Por revisar.</b> La subió el facilitador desde su app: controlá con la foto el
+              número, la fecha y el mes, y completá las intervenciones y el sueldo. Al guardar queda
+              revisada y el facilitador ya no la puede cambiar.
+            </span>
+          </p>
+        )}
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (listo) guardar.mutate();
-        }}
-        className="space-y-4"
-      >
-        <fieldset disabled={!puedeGuardar || ocupado} className="space-y-4">
+        <fieldset disabled={ocupado} className="space-y-4">
           {nueva && idFacilitadorInicial == null && (
             <SelectorModal
               label="Facilitador"
@@ -709,12 +933,7 @@ function Editor({
               requerido
               buscador
               value={idFac == null ? "" : String(idFac)}
-              onChange={(v) => {
-                const id = Number(v) || null;
-                setIdFac(id);
-                const c = cantidadReporte(id, fDesde, fHasta);
-                if (c != null) setCantidad(String(c));
-              }}
+              onChange={(v) => setIdFac(Number(v) || null)}
               opciones={facilitadores.map((f) => ({
                 valor: String(f.id),
                 texto: f.nombre,
@@ -796,24 +1015,29 @@ function Editor({
               req
               largo={5}
               valor={cantidad}
-              onCambio={(v) => setCantidad(v.replace(/\D/g, ""))}
+              onCambio={(v) => {
+                setCantidadTocada(true);
+                setCantidad(v.replace(/\D/g, ""));
+              }}
               inputMode="numeric"
               ayuda={
-                reporte == null ? (
-                  !cantidadesValidas ? (
-                    "El reporte está en Desarrollo: No."
-                  ) : fDesde !== desde || fHasta !== hasta ? (
-                    "Para ver cuántas da el reporte, elegí en la pantalla el período de la factura."
-                  ) : undefined
-                ) : reporte === cant ? (
-                  "La del reporte."
+                !contar ? undefined : delPeriodo.isFetching && reporte == null ? (
+                  "Contando las intervenciones del período…"
+                ) : delPeriodo.isError ? (
+                  <span className="text-destructive">
+                    No se pudieron contar las intervenciones.
+                  </span>
+                ) : delPeriodo.data?.truncado ? (
+                  "El período es muy largo para contarlas: cargala a mano."
+                ) : reporte == null ? undefined : reporte === cant ? (
+                  `Las ${numero.format(reporte)} del período (Desarrollo: Sí).`
                 ) : (
                   <button
                     type="button"
                     onClick={() => setCantidad(String(reporte))}
                     className="font-medium text-primary hover:underline"
                   >
-                    El reporte da {numero.format(reporte)}: usar
+                    El período da {numero.format(reporte)}: usar
                   </button>
                 )
               }
@@ -835,6 +1059,33 @@ function Editor({
             </div>
           </div>
 
+          {reporte === 0 && (
+            <div className="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
+              <p className="flex items-start gap-2">
+                <AlertTriangle className="mt-px size-4 shrink-0" />
+                <span>
+                  {nombreFac || "El facilitador"} no tiene intervenciones del {fechaCorta(fDesde)}{" "}
+                  al {fechaCorta(fHasta)}: por eso Intervenciones y Monto dan 0 y no se puede
+                  guardar. Revisá con la foto qué período cubre la factura.
+                </span>
+              </p>
+              {enReporte != null && enReporte > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFDesde(desde);
+                    setFHasta(hasta);
+                    setCantidadTocada(false);
+                  }}
+                  className="flex min-h-9 w-full items-center justify-center rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                >
+                  Pasar la factura al {fechaCorta(desde)} al {fechaCorta(hasta)} (
+                  {plural(enReporte, "intervención", "intervenciones")})
+                </button>
+              )}
+            </div>
+          )}
+
           <Texto
             etiqueta="Observación"
             multilinea
@@ -847,12 +1098,13 @@ function Editor({
         <CampoFoto
           foto={foto}
           progreso={progreso}
-          habilitada={fotosHabilitadas && puedeGuardar}
+          habilitada={fotosHabilitadas}
           sinConfigurar={!fotosHabilitadas}
           deshabilitado={ocupado}
           onElegir={() => archivo.current?.click()}
           onQuitar={() => setFoto("")}
           onVer={() => setViendoFoto(true)}
+          archivo={nombreArchivoFactura(fecha, nroFormateado ?? nro.trim(), foto)}
         />
         <input
           ref={archivo}
@@ -864,15 +1116,12 @@ function Editor({
             if (f) void subir(f);
           }}
         />
+      </div>
 
-        {!puedeGuardar && (
-          <SoloLectura
-            texto={`Solo lectura: tu usuario no puede ${nueva ? "registrar" : "modificar"} facturas.`}
-          />
-        )}
-
+      {/* El pie, fuera del scroll: Guardar y Eliminar siempre a la vista. */}
+      <div className="space-y-1.5 border-t border-border/60 pt-3">
         <div className="flex gap-2">
-          {puedeBorrar && (
+          {!nueva && (
             <BotonBorrar
               confirmar={confirmarBorrado}
               pendiente={borrar.isPending}
@@ -880,29 +1129,23 @@ function Editor({
               onClick={() => (confirmarBorrado ? borrar.mutate() : setConfirmarBorrado(true))}
             />
           )}
-          {puedeGuardar && (
-            <button
-              type="submit"
-              disabled={!listo || ocupado}
-              title={falta.length ? `Falta ${falta.join(", ")}` : undefined}
-              className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground shadow-soft disabled:opacity-50"
-            >
-              {guardar.isPending && <Loader2 className="size-4 animate-spin" />}
-              {nueva
-                ? "Registrar factura"
-                : pendiente
-                  ? "Guardar como revisada"
-                  : "Guardar cambios"}
-            </button>
-          )}
+          <button
+            type="submit"
+            disabled={!listo || ocupado}
+            title={falta.length ? `Falta ${falta.join(", ")}` : undefined}
+            className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground shadow-soft disabled:opacity-50"
+          >
+            {guardar.isPending && <Loader2 className="size-4 animate-spin" />}
+            {nueva ? "Registrar factura" : pendiente ? "Guardar como revisada" : "Guardar cambios"}
+          </button>
         </div>
-        {puedeGuardar && falta.length > 0 && (
+        {falta.length > 0 && (
           <p className="text-center text-[11.5px] text-muted-foreground">
             Falta {falta.join(", ")}.
           </p>
         )}
-      </form>
-    </>
+      </div>
+    </form>
   );
 }
 
@@ -915,16 +1158,19 @@ function CampoFoto({
   onElegir,
   onQuitar,
   onVer,
+  archivo,
 }: {
   foto: string;
   progreso: number | null;
-  /** Si se puede subir o cambiar (Cloudinary configurado y permiso). */
+  /** Si se puede subir o cambiar (Cloudinary configurado). */
   habilitada: boolean;
   sinConfigurar: boolean;
   deshabilitado: boolean;
   onElegir: () => void;
   onQuitar: () => void;
   onVer: () => void;
+  /** El nombre con que se descarga. */
+  archivo: string;
 }) {
   let contenido: ReactNode;
   if (progreso != null) {
@@ -964,6 +1210,12 @@ function CampoFoto({
             <FileText className="size-4" />
             Ver
           </button>
+          <BotonDescargar
+            url={foto}
+            archivo={archivo}
+            className="flex h-10 items-center gap-1.5 rounded-xl border border-input px-3 text-sm font-medium hover:border-primary/40 disabled:opacity-50"
+            icono="size-4"
+          />
           {habilitada && (
             <>
               <button
@@ -998,7 +1250,8 @@ function CampoFoto({
         className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border px-4 py-5 text-sm font-medium text-muted-foreground hover:border-primary/50 hover:text-foreground disabled:opacity-50"
       >
         <ImagePlus className="size-5" />
-        Subir la foto o el PDF (hasta {TOPE_FOTO_MB} MB)
+        Subir la foto o el PDF (la foto se achica sola a menos de {TOPE_FOTO_KB} KB; PDF hasta{" "}
+        {TOPE_PDF_MB} MB)
       </button>
     );
   } else {

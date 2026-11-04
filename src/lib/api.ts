@@ -29,24 +29,32 @@ export type Sesion = {
 /* -------------------------------------------------------------------------- */
 
 /**
- * La sesión vive SOLO en memoria: se pierde al recargar o al cerrar la app.
+ * La sesión vive en memoria y, además, en el `sessionStorage` DE LA PESTAÑA.
  *
- * Es una decisión deliberada, no una limitación. Antes el token se guardaba en
- * `localStorage`/`sessionStorage` y la contraseña en `localStorage` para poder
- * reentrar solo; eso se sacó entero. Consecuencias, para que nadie lo "arregle"
- * sin querer:
+ * Historia, para que nadie lo "arregle" sin querer:
  *
- * - **El token NUNCA se escribe en el disco**, en ningún frontend. Un XSS no
- *   encuentra una sesión que robar.
- * - **Recargar la página cierra la sesión.** Es el costo, y es el esperado.
+ * - Al principio el token iba a `localStorage` y, con "Mantener sesión
+ *   iniciada", también la contraseña: la sesión sobrevivía a cerrar el
+ *   navegador. Eso se sacó.
+ * - Después quedó SOLO en memoria, y recargar la página (F5) mandaba al login
+ *   desde cualquier formulario. Se decidió que eso no era aceptable (04/11/2026).
+ * - Hoy: **`sessionStorage`, nunca `localStorage`.** Sobrevive a recargar la
+ *   pestaña y a nada más: cerrar la pestaña, el navegador o la app la borra el
+ *   propio navegador. Una pestaña nueva no la ve (para eso está el
+ *   `BroadcastChannel` de más abajo).
  *
- * Lo anterior es sobre el TOKEN. La CONTRASEÑA es otra cosa y sí puede quedar
- * guardada, si el usuario tilda el check del login: ver "Recordar usuario y
- * contraseña" más abajo. Con ella se rehace el `login()`, que valida contra el
- * backend como siempre; la sesión no se restaura sola.
+ * El costo, que es real: mientras la pestaña está abierta, un XSS puede leer el
+ * token desde `sessionStorage` (antes solo podía usarlo, no llevárselo). El token
+ * dura 6 h igual que antes y se descarta si ya venció.
  *
- * Un `let` de módulo alcanza porque toda la app corre en un único contexto de JS.
+ * La clave es `ethos-sesion-pestana` y NO `ethos-sesion`: esa es la de la versión
+ * vieja en `localStorage`, y `limpiarDatosViejos()` la borra en cada arranque.
+ *
+ * Lo anterior es sobre el TOKEN. La CONTRASEÑA es otra cosa: ver "Recordar
+ * usuario y contraseña" más abajo.
  */
+const CLAVE_SESION_PESTANA = "ethos-sesion-pestana";
+
 let sesionActual: Sesion | null = null;
 
 export function getSesion(): Sesion | null {
@@ -55,10 +63,42 @@ export function getSesion(): Sesion | null {
 
 function guardarSesion(s: Sesion) {
   sesionActual = s;
+  try {
+    sessionStorage.setItem(CLAVE_SESION_PESTANA, JSON.stringify(s));
+  } catch {
+    /* SSR o storage bloqueado: queda solo en memoria, como antes */
+  }
 }
 
 export function cerrarSesion() {
   sesionActual = null;
+  try {
+    sessionStorage.removeItem(CLAVE_SESION_PESTANA);
+  } catch {
+    /* SSR o storage bloqueado */
+  }
+}
+
+/**
+ * La sesión que dejó esta misma pestaña antes de recargar, si sigue vigente. La
+ * deja también en memoria. `null` si no hay, está rota o ya venció (y en esos
+ * casos la borra).
+ */
+export function restaurarSesionDePestana(): Sesion | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const crudo = sessionStorage.getItem(CLAVE_SESION_PESTANA);
+    if (!crudo) return null;
+    const s = JSON.parse(crudo) as Sesion;
+    if (!s || typeof s.token !== "string" || !vigente(s)) {
+      sessionStorage.removeItem(CLAVE_SESION_PESTANA);
+      return null;
+    }
+    sesionActual = s;
+    return s;
+  } catch {
+    return null;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -78,8 +118,9 @@ export function cerrarSesion() {
  *
  * Por qué así y no de otra forma:
  *
- * - **Hace falta que la otra pestaña esté abierta.** Cerrar todas, o recargar la
- *   única, sigue pidiendo el login: no hay nada guardado que restaurar.
+ * - **Hace falta que la otra pestaña esté abierta.** Cerrar todas sigue pidiendo
+ *   el login. (Recargar una pestaña no pasa por acá: retoma su propia sesión del
+ *   `sessionStorage`, ver arriba.)
  * - **El backend da un solo token por usuario** (`auth.sql`): entrar de nuevo en
  *   otra pestaña mataba el de esta. Ahora las pestañas usan el mismo token, y
  *   un login nuevo se reparte a todas las del mismo usuario.

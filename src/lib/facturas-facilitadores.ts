@@ -12,9 +12,7 @@
  */
 
 import { authFetch } from "@/lib/api";
-
-/** La ruta de la página cuyos permisos usan las facturas. */
-export const RUTA_FACTURAS = "/totales-facilitador";
+import { descargarBlob } from "@/lib/excel";
 
 export type Factura = {
   id: number;
@@ -111,8 +109,15 @@ export async function listarFacturas(filtro: {
 /**
  * Alta (`id` null) o modificación. Devuelve el id. 409 si el número ya está
  * cargado para el facilitador o si el período se pisa con otra factura suya.
+ *
+ * Si se reemplazó o se quitó la foto, el backend borra la anterior de
+ * Cloudinary después de guardar; `aviso` dice si eso falló (la factura quedó
+ * guardada igual).
  */
-export async function guardarFactura(id: number | null, d: DatosFactura): Promise<number> {
+export async function guardarFactura(
+  id: number | null,
+  d: DatosFactura,
+): Promise<{ id: number; aviso: string }> {
   const r = (await authFetch(
     id == null ? "facturas-facilitadores" : `facturas-facilitadores/${id}`,
     {
@@ -120,21 +125,116 @@ export async function guardarFactura(id: number | null, d: DatosFactura): Promis
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(d),
     },
-  )) as { id_factura?: number };
-  return Number(r.id_factura ?? id ?? 0);
+  )) as { id_factura?: number; aviso?: string };
+  return { id: Number(r.id_factura ?? id ?? 0), aviso: s(r.aviso) };
 }
 
-/** Borra la factura. El archivo de Cloudinary queda: es la constancia. */
-export async function eliminarFactura(id: number): Promise<void> {
-  await authFetch(`facturas-facilitadores/${id}`, { method: "DELETE" });
+/**
+ * Borra la factura y, después, su foto de Cloudinary (04/11/2026). `aviso`
+ * dice si el archivo no se pudo borrar: la factura se borró igual.
+ *
+ * Sin `Content-Type` ni cuerpo: con JSON vacío ORDS responde 400.
+ */
+export async function eliminarFactura(id: number): Promise<{ aviso: string }> {
+  const r = (await authFetch(`facturas-facilitadores/${id}`, { method: "DELETE" })) as {
+    aviso?: string;
+  };
+  return { aviso: s(r.aviso) };
 }
 
 /* -------------------------------------------------------------------------- */
 /* La foto                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/** El tope de Cloudinary para un archivo en el plan gratuito. */
-export const TOPE_FOTO_MB = 10;
+/**
+ * El tope de una FOTO ya achicada (04/11/2026; antes 10 MB para todo, el
+ * máximo de Cloudinary en el plan gratuito, y después 3 MB). `achicarFoto` la
+ * deja por debajo: lo normal es 250–500 KB.
+ */
+export const TOPE_FOTO_KB = 600;
+
+/**
+ * El tope de un PDF, que sube tal cual: el de una factura electrónica pesa
+ * menos de 1 MB. Esto solo frena un escaneo de muchas páginas.
+ */
+export const TOPE_PDF_MB = 3;
+
+/**
+ * Lo más grande que se acepta ELEGIR antes de achicar: una foto de celular
+ * anda por 3–12 MB. Más que esto no es una foto de factura, y decodificarla
+ * en el celular puede quedarse sin memoria.
+ */
+const TOPE_ORIGINAL_MB = 40;
+
+/**
+ * Los intentos para que la foto entre en `TOPE_FOTO_KB`: [lado largo en px,
+ * calidad JPEG]. Se usa el PRIMERO que entra, o sea el más nítido posible.
+ * 2000 px en una factura A4 son ~240 ppp; 1400 px, ~170 ppp, que todavía se
+ * lee bien, timbrado incluido. Una foto de factura suele entrar en el primero.
+ */
+const INTENTOS: [lado: number, calidad: number][] = [
+  [2000, 0.85],
+  [2000, 0.75],
+  [1600, 0.75],
+  [1400, 0.7],
+  [1200, 0.65],
+];
+
+/**
+ * Achica una foto en el navegador antes de subirla, para que no pase de
+ * `TOPE_FOTO_KB` sin perder nitidez: prueba `INTENTOS` en orden y se queda con
+ * el primero que entra (si ninguno entra, el más liviano). La pasa a JPEG,
+ * girada según su EXIF y con fondo blanco (un PNG transparente no queda negro).
+ *
+ * Devuelve el ORIGINAL sin tocar si no es una foto (PDF), si el navegador no
+ * la puede leer (p. ej. HEIC en Chrome) o si ya era más liviana que lo que se
+ * logra: nunca empeora lo que ya era chico.
+ */
+async function achicarFoto(archivo: File): Promise<File> {
+  if (!archivo.type.startsWith("image/") || /gif|svg/.test(archivo.type)) return archivo;
+  if (archivo.size <= TOPE_FOTO_KB * 1024 && archivo.type === "image/jpeg") return archivo;
+  if (typeof createImageBitmap === "undefined") return archivo;
+
+  let bmp: ImageBitmap;
+  try {
+    bmp = await createImageBitmap(archivo, { imageOrientation: "from-image" });
+  } catch {
+    return archivo;
+  }
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    bmp.close();
+    return archivo;
+  }
+
+  let mejor: Blob | null = null;
+  try {
+    for (const [lado, calidad] of INTENTOS) {
+      const escala = Math.min(1, lado / Math.max(bmp.width, bmp.height));
+      const ancho = Math.max(1, Math.round(bmp.width * escala));
+      const alto = Math.max(1, Math.round(bmp.height * escala));
+      if (canvas.width !== ancho || canvas.height !== alto) {
+        canvas.width = ancho;
+        canvas.height = alto;
+      }
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, ancho, alto);
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(bmp, 0, 0, ancho, alto);
+      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", calidad));
+      if (blob && (!mejor || blob.size < mejor.size)) mejor = blob;
+      if (blob && blob.size <= TOPE_FOTO_KB * 1024) break;
+    }
+  } finally {
+    bmp.close();
+  }
+
+  if (!mejor || mejor.size >= archivo.size) return archivo;
+  const nombre = `${archivo.name.replace(/\.[^.]+$/, "") || "factura"}.jpg`;
+  return new File([mejor], nombre, { type: "image/jpeg" });
+}
 
 /** Lo que se acepta: una foto o el PDF de la factura electrónica. */
 export const TIPOS_FOTO = "image/*,application/pdf";
@@ -149,14 +249,27 @@ type Firma = { upload_url: string; campos: Record<string, string> };
  * navegador a Cloudinary con esos campos. Con XHR y no `fetch` para tener el
  * progreso, que en el celular con una foto grande se nota.
  *
+ * Una foto se achica antes (`achicarFoto`): lo que se guarda es esa versión,
+ * no el original. Los PDF suben como están.
+ *
  * Lo subido queda en Cloudinary aunque después no se guarde la factura.
  */
 export async function subirFotoFactura(
-  archivo: File,
+  elegido: File,
   onProgreso?: (porcentaje: number) => void,
 ): Promise<string> {
-  if (archivo.size > TOPE_FOTO_MB * 1024 * 1024) {
-    throw new Error(`El archivo pasa de ${TOPE_FOTO_MB} MB`);
+  if (elegido.size > TOPE_ORIGINAL_MB * 1024 * 1024) {
+    throw new Error(`El archivo pasa de ${TOPE_ORIGINAL_MB} MB: no parece una foto de factura`);
+  }
+  const archivo = await achicarFoto(elegido);
+  if (archivo.type === "application/pdf") {
+    if (archivo.size > TOPE_PDF_MB * 1024 * 1024) {
+      throw new Error(`El PDF pasa de ${TOPE_PDF_MB} MB`);
+    }
+  } else if (archivo.size > TOPE_FOTO_KB * 1024) {
+    throw new Error(
+      `La foto pasa de ${TOPE_FOTO_KB} KB y no se pudo achicar (¿es HEIC?): sacale una foto con la cámara o elegí un JPG`,
+    );
   }
   const firma = (await authFetch("facturas-facilitadores/firma-foto", {
     method: "POST",
@@ -192,6 +305,42 @@ export async function subirFotoFactura(
 
 /** Si el enlace es de un PDF (la factura electrónica). */
 export const esPdf = (url: string) => /\.pdf(\?|$)/i.test(url);
+
+/**
+ * El nombre del archivo al descargarla: `<fecha>-<nro_factura>.<ext>`, p. ej.
+ * `2026-10-31-001-001-0001234.pdf` (pedido el 04/11/2026). La fecha en
+ * año-mes-día para que en una carpeta queden ordenadas. La extensión, la del
+ * archivo en Cloudinary.
+ */
+export function nombreArchivoFactura(fecha: string, nroFactura: string, url: string): string {
+  const ext = /\.([a-z0-9]{2,5})(?:\?|$)/i.exec(url)?.[1]?.toLowerCase() ?? "jpg";
+  const base = [fecha, nroFactura].filter(Boolean).join("-") || "factura";
+  return `${base.replace(/[^0-9A-Za-z_-]+/g, "-")}.${ext}`;
+}
+
+/**
+ * Descarga la foto o el PDF de la factura con `nombre`. Lo baja como blob
+ * (Cloudinary responde con CORS abierto) para poder ponerle el nombre; si eso
+ * falla, abre el enlace con `fl_attachment`, que hace que Cloudinary lo mande
+ * como descarga con ese mismo nombre. En el APK la WebView puede no descargar,
+ * igual que con los Excel.
+ */
+export async function descargarArchivoFactura(url: string, nombre: string): Promise<void> {
+  let r: Response;
+  try {
+    r = await fetch(url);
+  } catch {
+    // Sin red hacia Cloudinary o el navegador bloqueó el fetch: que lo baje
+    // Cloudinary directo, como adjunto y con el mismo nombre.
+    const sinExt = nombre.replace(/\.[^.]+$/, "");
+    window.open(url.replace("/upload/", `/upload/fl_attachment:${sinExt}/`), "_blank", "noopener");
+    return;
+  }
+  // Cloudinary contestó que no: abrir el enlace mostraría la misma página de error.
+  if (r.status === 404) throw new Error("El archivo de la factura ya no está en Cloudinary.");
+  if (!r.ok) throw new Error(`Cloudinary respondió ${r.status} al descargar la factura.`);
+  descargarBlob(await r.blob(), nombre);
+}
 
 /**
  * Una miniatura liviana del archivo, con una transformación de Cloudinary en
@@ -238,5 +387,7 @@ export const sePisan = (a: { desde: string; hasta: string }, b: { desde: string;
 
 export const keysFacturas = {
   todo: ["facturas-facilitadores"] as const,
+  /** Todas las cargadas, sin filtro de período. */
+  todas: ["facturas-facilitadores", "todas"] as const,
   periodo: (desde: string, hasta: string) => ["facturas-facilitadores", desde, hasta] as const,
 };

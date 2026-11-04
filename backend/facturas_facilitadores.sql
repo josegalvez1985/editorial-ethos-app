@@ -3,7 +3,8 @@
 --------------------------------------------------------------------------------
 --
 -- Tabla NUEVA (28/10/2026), no viene de APEX. No es una pagina: es un dialogo
--- de Totales por Facilitador (/totales-facilitador, la 55) y usa sus permisos.
+-- de Totales por Facilitador (/totales-facilitador, la 55), sin permisos
+-- propios: quien llega a la pantalla carga, modifica y borra (ver PERMISOS).
 --
 -- UNA FACTURA = UN FACILITADOR EN UN PERIODO. El reporte tiene una fila por
 -- facilitador e institucion, pero el facilitador factura todo junto: la
@@ -49,8 +50,7 @@
 --     respuesta trae un "aviso". La bitacora conserva el enlace, pero el
 --     archivo ya no existe.
 --
--- CORRER DESPUES de auth.sql, roles_paginas.sql, facilitadores.sql y
--- cloudinary.sql.
+-- CORRER DESPUES de auth.sql, facilitadores.sql y cloudinary.sql.
 --
 --   SQL Workshop -> SQL Scripts -> Upload -> este archivo -> Run
 --
@@ -86,13 +86,13 @@
 --   uso" en su pantalla y no se pueda borrar.
 --
 --------------------------------------------------------------------------------
--- PERMISOS (los de la pagina de /totales-facilitador)
+-- PERMISOS: SOLO SESION (04/11/2026)
 --------------------------------------------------------------------------------
 --
---   GET     solo sesion.
---   POST    PUEDE_INSERTAR
---   PUT     PUEDE_ACTUALIZAR
---   DELETE  PUEDE_BORRAR
+--   Todo (GET, POST, PUT, DELETE, firma-foto) pide solo un token valido. Es
+--   un dialogo, no una pagina: el menu ya decide quien llega a Totales por
+--   Facilitador, y quien llega lo usa entero. Antes pedia las banderas
+--   PUEDE_INSERTAR / ACTUALIZAR / BORRAR de la pagina 55; se sacaron a pedido.
 --
 --------------------------------------------------------------------------------
 
@@ -107,7 +107,6 @@ DECLARE
   l_n PLS_INTEGER;
 BEGIN
   FOR o IN (SELECT 'PKG_AUTH_ETHOS' AS nombre, 'backend/auth.sql' AS script FROM dual
-            UNION ALL SELECT 'PKG_ROLES_PAGINAS_ETHOS', 'backend/roles_paginas.sql' FROM dual
             UNION ALL SELECT 'PKG_CLOUDINARY_ETHOS', 'backend/cloudinary.sql' FROM dual) LOOP
     SELECT COUNT(*) INTO l_n FROM all_objects
      WHERE object_name = o.nombre AND object_type = 'PACKAGE BODY';
@@ -361,7 +360,6 @@ END PKG_FACTURAS_FACIL_ETHOS;
 
 CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
 
-  c_ruta          CONSTANT VARCHAR2(30) := '/totales-facilitador';
   c_largo_obs     CONSTANT PLS_INTEGER  := 2000;
   c_largo_timbr   CONSTANT PLS_INTEGER  := 20;
   -- Topes contra un error de tipeo: un numero de mas no tiene que pasar.
@@ -452,41 +450,15 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
   END f_nro_factura;
 
   ------------------------------------------------------------------------------
-  -- Sesion + permiso. 'C' pide solo sesion; 'I', 'U', 'D' la accion en la
-  -- pagina de /totales-facilitador; 'F' (subir una foto) registrar O
-  -- modificar. FALSE = ya respondio el error.
+  -- Solo sesion (04/11/2026, ver PERMISOS arriba). p_accion ('C', 'I', 'U',
+  -- 'D', 'F') queda para que se lea en cada llamada que es; no se controla.
+  -- FALSE = ya respondio el 401.
   ------------------------------------------------------------------------------
   FUNCTION exigir(p_token IN VARCHAR2, p_accion IN VARCHAR2) RETURN BOOLEAN IS
-    l_usuario VARCHAR2(255) := f_usuario(p_token);
-    l_pagina  NUMBER;
-    l_puede   BOOLEAN;
   BEGIN
-    IF l_usuario IS NULL THEN
+    IF f_usuario(p_token) IS NULL THEN
       p_error(401, 'Unauthorized', 'Token invalido o expirado');
       RETURN FALSE;
-    END IF;
-    IF p_accion <> 'C' THEN
-      l_pagina := PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta(c_ruta);
-      IF l_pagina IS NULL THEN
-        p_error(403, 'Forbidden', 'La pantalla ' || c_ruta || ' no esta en el menu: '
-                || 'hay que darla de alta en Crear paginas y darle permisos');
-        RETURN FALSE;
-      END IF;
-      IF p_accion = 'F' THEN
-        l_puede := PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, 'I') = 'S'
-                OR PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, 'U') = 'S';
-      ELSE
-        l_puede := PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, p_accion) = 'S';
-      END IF;
-      IF NOT l_puede THEN
-        p_error(403, 'Forbidden', 'No tenes permiso para '
-          || CASE p_accion WHEN 'I' THEN 'registrar'
-                           WHEN 'U' THEN 'modificar'
-                           WHEN 'F' THEN 'subir fotos de'
-                           ELSE 'eliminar' END
-          || ' facturas de facilitadores');
-        RETURN FALSE;
-      END IF;
     END IF;
     RETURN TRUE;
   END exigir;
@@ -1007,7 +979,6 @@ END;
 
 DECLARE
   l_estado user_objects.status%TYPE;
-  l_pagina NUMBER;
 BEGIN
   FOR o IN (SELECT 'FACTURAS_FACILITADORES_JNTRG' AS nombre, 'TRIGGER' AS tipo FROM dual
             UNION ALL SELECT 'PKG_FACTURAS_FACIL_ETHOS', 'PACKAGE BODY' FROM dual) LOOP
@@ -1047,17 +1018,6 @@ BEGIN
       DBMS_OUTPUT.PUT_LINE('[ERROR] Falta PKG_CLOUDINARY_ETHOS: corre backend/cloudinary.sql.');
   END;
 
-  BEGIN
-    l_pagina := PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta('/totales-facilitador');
-  EXCEPTION
-    WHEN OTHERS THEN l_pagina := NULL;
-  END;
-  IF l_pagina IS NULL THEN
-    DBMS_OUTPUT.PUT_LINE('[WARN] /totales-facilitador no esta en MENU_PAGINAS: guardar y borrar');
-    DBMS_OUTPUT.PUT_LINE('       facturas respondera 403 hasta que este (corre menu_paginas.sql).');
-  ELSE
-    DBMS_OUTPUT.PUT_LINE('[OK]   Las facturas usan los permisos de la pagina ' || l_pagina
-                         || ' (/totales-facilitador).');
-  END IF;
+  DBMS_OUTPUT.PUT_LINE('[OK]   Sin permisos propios: cargar, modificar y borrar piden solo sesion.');
 END;
 /

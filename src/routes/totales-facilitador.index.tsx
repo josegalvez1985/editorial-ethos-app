@@ -9,7 +9,6 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  Plus,
   ReceiptText,
 } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
@@ -34,7 +33,6 @@ import {
   keysFacturas,
   listarFacturas,
   porRevisar,
-  RUTA_FACTURAS,
   type Factura,
 } from "@/lib/facturas-facilitadores";
 import {
@@ -44,7 +42,6 @@ import {
   type IntervencionResumen,
 } from "@/lib/intervenciones";
 import { otroInicial, rangoDe, rangoValido, type Periodo } from "@/lib/periodos";
-import { usePermisos } from "@/lib/permisos";
 import { ordenFecha, useTablaReporte, type ColumnaReporte } from "@/lib/tabla-reporte";
 
 export const Route = createFileRoute("/totales-facilitador/")({
@@ -123,7 +120,7 @@ const COLOR_HASTA: CSSProperties = { backgroundColor: "#ff9800", color: "#fff" }
  * qué facturas del facilitador tocan el período (o "Sin factura", que se
  * filtra como cualquier otra columna y sale en el Excel), y el botón Facturas
  * las muestra todas. Las dos abren el mismo diálogo
- * (`components/facturas-facilitador.tsx`), con los permisos de esta página.
+ * (`components/facturas-facilitador.tsx`), sin permisos propios.
  * Si el backend de facturas no responde, el reporte sigue igual, sin la
  * columna.
  */
@@ -139,11 +136,7 @@ function TotalesFacilitadorPage() {
   // sus instituciones sumadas.
   const [porFacilitador, setPorFacilitador] = useState(false);
   /** El diálogo de facturas: de un facilitador, de todos (`null`), o cerrado. */
-  const [facturasDe, setFacturasDe] = useState<{ id: number | null; nueva?: boolean } | null>(
-    null,
-  );
-  const { puedeRuta } = usePermisos();
-  const puedeFacturar = puedeRuta(RUTA_FACTURAS, "insertar");
+  const [facturasDe, setFacturasDe] = useState<{ id: number | null } | null>(null);
 
   const { desde, hasta } = rangoDe(periodo, otro);
   const valido = rangoValido({ desde, hasta });
@@ -305,7 +298,7 @@ function TotalesFacilitadorPage() {
               title={
                 facturas.isError
                   ? "No se pudieron cargar las facturas"
-                  : "Las facturas de los facilitadores en el período"
+                  : "Todas las facturas cargadas, por facilitador (el número: las del período)"
               }
               className="flex shrink-0 items-center gap-1.5 rounded-xl border border-primary/40 bg-card px-3.5 py-2.5 text-sm font-semibold text-primary shadow-soft hover:bg-primary-soft disabled:opacity-50"
             >
@@ -491,8 +484,7 @@ function TotalesFacilitadorPage() {
                             {conFacturas && (
                               <CeldaFactura
                                 facturas={facturasPorFac.get(f.idFacilitador) ?? []}
-                                puedeCargar={puedeFacturar}
-                                onAbrir={(nueva) => setFacturasDe({ id: f.idFacilitador, nueva })}
+                                onAbrir={() => setFacturasDe({ id: f.idFacilitador })}
                               />
                             )}
                             <td className="border-b border-border/60 text-center">
@@ -578,7 +570,6 @@ function TotalesFacilitadorPage() {
           facilitadores={delPeriodo}
           cantidadesValidas={siNo === "Si"}
           idFacilitador={facturasDe.id}
-          nueva={facturasDe.nueva}
           onCerrar={() => setFacturasDe(null)}
         />
       )}
@@ -696,23 +687,17 @@ function DialogoDetalle({
 
 /**
  * La columna Factura: los números de las facturas del facilitador que tocan el
- * período (abre su lista), o "Cargar" para registrar la primera.
+ * período, o "Sin factura". Las dos abren la LISTA de todas sus facturas, de
+ * cualquier período, donde se cargan, modifican y borran (04/11/2026: antes
+ * "Cargar" iba directo al alta y no dejaba ver las que ya tenía).
  */
-function CeldaFactura({
-  facturas,
-  puedeCargar,
-  onAbrir,
-}: {
-  facturas: Factura[];
-  puedeCargar: boolean;
-  onAbrir: (nueva: boolean) => void;
-}) {
+function CeldaFactura({ facturas, onAbrir }: { facturas: Factura[]; onAbrir: () => void }) {
   return (
     <td className="border-r border-b border-border/60 px-2 py-1">
       {facturas.length ? (
         <button
           type="button"
-          onClick={() => onAbrir(false)}
+          onClick={onAbrir}
           title="Ver las facturas del facilitador"
           className="flex flex-wrap items-center gap-1 text-left"
         >
@@ -734,17 +719,16 @@ function CeldaFactura({
             </span>
           ))}
         </button>
-      ) : puedeCargar ? (
+      ) : (
         <button
           type="button"
-          onClick={() => onAbrir(true)}
+          onClick={onAbrir}
+          title="Ver todas sus facturas, cargar, modificar o eliminar"
           className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-primary-soft"
         >
-          <Plus className="size-3.5" />
-          Cargar
+          <ReceiptText className="size-3.5" />
+          Sin factura · Ver facturas
         </button>
-      ) : (
-        <span className="text-xs text-muted-foreground">Sin factura</span>
       )}
     </td>
   );

@@ -20,6 +20,7 @@ import {
   logout as apiLogout,
   msHastaExpirar,
   pedirSesionAOtrasPestanas,
+  restaurarSesionDePestana,
   setOnCambioDeOtraPestana,
   setOnUnauthorized,
   type Sesion,
@@ -29,11 +30,11 @@ import { borrarCachePersistida } from "@/lib/query-persist";
 /**
  * Estado de la sesión.
  *
- * **El TOKEN nunca sobrevive a recargar la página ni a cerrar la app.** Vive solo
- * en memoria (ver `lib/api.ts`): no hay "mantener sesión iniciada" y cada arranque
- * pasa por el login — **salvo que haya otra pestaña abierta con sesión**, que se
- * la pasa a la nueva sin tocar el disco (27/10/2026, ver "Sesión compartida entre
- * pestañas" en `lib/api.ts`).
+ * **El TOKEN sobrevive a recargar la pestaña, pero no a cerrarla ni a cerrar la
+ * app** (04/11/2026): vive en memoria y en el `sessionStorage` de la pestaña (ver
+ * `lib/api.ts`). No hay "mantener sesión iniciada": abrir la app de cero pasa por
+ * el login — **salvo que haya otra pestaña abierta con sesión**, que se la pasa a
+ * la nueva (27/10/2026, ver "Sesión compartida entre pestañas" en `lib/api.ts`).
  *
  * Lo que sí puede sobrevivir, si el usuario tilda el check del login, es **la
  * contraseña** — en `localStorage` y en texto plano, igual en la web que en el
@@ -77,6 +78,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // equipo del usuario. Ver `limpiarDatosViejos()`.
   useEffect(() => {
     limpiarDatosViejos();
+
+    // Recarga (F5) de esta misma pestaña: la sesión quedó en su sessionStorage y
+    // se retoma sin esperar a las otras pestañas. Ver `lib/api.ts`.
+    const propia = restaurarSesionDePestana();
+    if (propia) {
+      setSesion(propia);
+      setReady(true);
+      return;
+    }
+
     let vivo = true;
     pedirSesionAOtrasPestanas().then((s) => {
       if (!vivo) return;

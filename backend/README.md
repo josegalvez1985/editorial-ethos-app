@@ -1281,7 +1281,7 @@ Signed y su carpeta). Si da error de ACL, Oracle no llega a Cloudinary: eso solo
 ## Facturas de los facilitadores (`facturas_facilitadores.sql`)
 
 Tabla nueva (28/10/2026), no viene de APEX. **No es una página:** es un diálogo de Totales por
-Facilitador (`/totales-facilitador`, la 55) y usa sus permisos.
+Facilitador (`/totales-facilitador`, la 55), **sin permisos propios** (04/11/2026): todo pide solo sesión.
 
 **Una factura = un facilitador en un período** (del `FECHA_DESDE` al `FECHA_HASTA`, con todas
 sus instituciones). `CANTIDAD` y `SUELDO` son una **foto** del reporte al facturar y `MONTO`
@@ -1291,10 +1291,10 @@ marcación, el reporte cambia y la factura queda como se pagó, para mostrar la 
 | Método | Ruta | Permiso | Qué hace |
 | --- | --- | --- | --- |
 | GET | `facturas-facilitadores?desde=&hasta=&id_facilitador=` | sesión | Las facturas cuyo período **toca** el rango (todas sin parámetros); con `id_facilitador`, las de ese facilitador. Con quién y cuándo se cargó y modificó (de la `_JN`, hora de Paraguay), `foto_url`, y arriba `fotos_habilitadas` (si Cloudinary está configurado) |
-| POST | `facturas-facilitadores` | `PUEDE_INSERTAR` | Alta: `{id_facilitador, nro_factura, timbrado, fecha_factura, fecha_desde, fecha_hasta, cantidad, sueldo, observacion, foto_url}` → `{id_factura, nro_factura, monto}` |
-| PUT | `facturas-facilitadores/:id` | `PUEDE_ACTUALIZAR` | Lo mismo, más `quitar_foto` |
-| DELETE | `facturas-facilitadores/:id` | `PUEDE_BORRAR` | Borra la factura |
-| POST | `facturas-facilitadores/firma-foto` | `PUEDE_INSERTAR` **o** `PUEDE_ACTUALIZAR` | La firma para subir la foto (ver *Cloudinary*); 503 si falta configurarlo |
+| POST | `facturas-facilitadores` | sesión | Alta: `{id_facilitador, nro_factura, timbrado, fecha_factura, fecha_desde, fecha_hasta, cantidad, sueldo, observacion, foto_url}` → `{id_factura, nro_factura, monto}` |
+| PUT | `facturas-facilitadores/:id` | sesión | Lo mismo, más `quitar_foto` |
+| DELETE | `facturas-facilitadores/:id` | sesión | Borra la factura |
+| POST | `facturas-facilitadores/firma-foto` | sesión | La firma para subir la foto (ver *Cloudinary*); 503 si falta configurarlo |
 
 Reglas:
 
