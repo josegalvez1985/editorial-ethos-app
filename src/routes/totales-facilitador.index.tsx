@@ -8,6 +8,9 @@ import {
   Eraser,
   Eye,
   EyeOff,
+  Loader2,
+  Plus,
+  ReceiptText,
 } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
@@ -15,6 +18,7 @@ import { Cargando, Fallo } from "@/components/admin-ui";
 import { AppShell } from "@/components/app-shell";
 import { BotonExcel } from "@/components/boton-excel";
 import { EncabezadoReporte, FiltrosColumnas } from "@/components/columna-reporte";
+import { DialogoFacturas, type FacilitadorPeriodo } from "@/components/facturas-facilitador";
 import { SelectorModal } from "@/components/selector-modal";
 import { SelectorPeriodo } from "@/components/selector-periodo";
 import { TotalesPago } from "@/components/totales-pago";
@@ -27,12 +31,20 @@ import {
 } from "@/components/ui/dialog";
 import { descargarExcel, type ColumnaExcel } from "@/lib/excel";
 import {
+  keysFacturas,
+  listarFacturas,
+  porRevisar,
+  RUTA_FACTURAS,
+  type Factura,
+} from "@/lib/facturas-facilitadores";
+import {
   keysIntervenciones,
   listarResumenPeriodo,
   SUELDO_INICIAL,
   type IntervencionResumen,
 } from "@/lib/intervenciones";
 import { otroInicial, rangoDe, rangoValido, type Periodo } from "@/lib/periodos";
+import { usePermisos } from "@/lib/permisos";
 import { ordenFecha, useTablaReporte, type ColumnaReporte } from "@/lib/tabla-reporte";
 
 export const Route = createFileRoute("/totales-facilitador/")({
@@ -106,6 +118,14 @@ const COLOR_HASTA: CSSProperties = { backgroundColor: "#ff9800", color: "#fff" }
  *   Cuentan lo que se ve, también con un filtro de columna puesto.
  * - **Detalle (la página 78) es un diálogo** con las marcaciones de esa fila.
  * - Cada columna se ordena y se filtra desde su encabezado.
+ *
+ * **Las facturas** (04/11/2026, no vienen de APEX): la columna Factura dice
+ * qué facturas del facilitador tocan el período (o "Sin factura", que se
+ * filtra como cualquier otra columna y sale en el Excel), y el botón Facturas
+ * las muestra todas. Las dos abren el mismo diálogo
+ * (`components/facturas-facilitador.tsx`), con los permisos de esta página.
+ * Si el backend de facturas no responde, el reporte sigue igual, sin la
+ * columna.
  */
 function TotalesFacilitadorPage() {
   const [periodo, setPeriodo] = useState<Periodo>("mes");
@@ -118,6 +138,12 @@ function TotalesFacilitadorPage() {
   // "Ocultar institución" (27/10/2026): una fila por facilitador, con todas
   // sus instituciones sumadas.
   const [porFacilitador, setPorFacilitador] = useState(false);
+  /** El diálogo de facturas: de un facilitador, de todos (`null`), o cerrado. */
+  const [facturasDe, setFacturasDe] = useState<{ id: number | null; nueva?: boolean } | null>(
+    null,
+  );
+  const { puedeRuta } = usePermisos();
+  const puedeFacturar = puedeRuta(RUTA_FACTURAS, "insertar");
 
   const { desde, hasta } = rangoDe(periodo, otro);
   const valido = rangoValido({ desde, hasta });
@@ -127,6 +153,35 @@ function TotalesFacilitadorPage() {
     queryFn: () => listarResumenPeriodo(desde, hasta, siNo),
     enabled: valido,
   });
+
+  // Las facturas que tocan el período. Si fallan, el reporte sigue sin ellas.
+  const facturas = useQuery({
+    queryKey: keysFacturas.periodo(desde, hasta),
+    queryFn: () => listarFacturas({ desde, hasta }),
+    enabled: valido,
+  });
+  const conFacturas = facturas.isSuccess;
+  const facturasPorFac = useMemo(() => {
+    const m = new Map<number, Factura[]>();
+    for (const f of facturas.data?.facturas ?? []) {
+      const l = m.get(f.idFacilitador);
+      if (l) l.push(f);
+      else m.set(f.idFacilitador, [f]);
+    }
+    return m;
+  }, [facturas.data]);
+
+  // Cada facilitador del período con todas sus intervenciones (todas sus
+  // instituciones juntas): lo que se propone facturar.
+  const delPeriodo = useMemo<FacilitadorPeriodo[]>(() => {
+    const m = new Map<number, FacilitadorPeriodo>();
+    for (const x of datos.data?.data ?? []) {
+      const f = m.get(x.id_facilitador);
+      if (f) f.cantidad++;
+      else m.set(x.id_facilitador, { id: x.id_facilitador, nombre: x.facilitador, cantidad: 1 });
+    }
+    return [...m.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  }, [datos.data]);
 
   // El GROUP BY de APEX: facilitador + institución, contando las intervenciones.
   // Con la institución oculta, solo por facilitador.
@@ -192,8 +247,20 @@ function TotalesFacilitadorPage() {
         : [{ clave: "institucion", titulo: "Institución", valor: (f: Fila) => f.institucion }]),
       { clave: "cantidad", titulo: "Cantidad Intervenciones", valor: (f) => f.cantidad },
       { clave: "total", titulo: "Total", valor: (f) => f.cantidad * sueldoNum },
+      ...(conFacturas
+        ? [
+            {
+              clave: "factura",
+              titulo: "Factura",
+              valor: (f: Fila) =>
+                (facturasPorFac.get(f.idFacilitador) ?? [])
+                  .map((x) => (porRevisar(x) ? `${x.nroFactura} (por revisar)` : x.nroFactura))
+                  .join(", ") || "Sin factura",
+            },
+          ]
+        : []),
     ],
-    [sueldoNum, porFacilitador],
+    [sueldoNum, porFacilitador, conFacturas, facturasPorFac],
   );
   const tabla = useTablaReporte(filtradas, columnas);
 
@@ -230,16 +297,41 @@ function TotalesFacilitadorPage() {
               Cuántas intervenciones hizo cada facilitador en cada institución, y su total
             </p>
           </div>
-          <BotonExcel
-            onDescargar={() =>
-              descargarExcel(
-                `totales-facilitador-${desde}-a-${hasta}`,
-                columnas.map((c): ColumnaExcel<Fila> => [c.titulo, c.valor]),
-                tabla.visibles,
-              )
-            }
-            deshabilitado={!tabla.visibles.length}
-          />
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setFacturasDe({ id: null })}
+              disabled={!valido || !conFacturas}
+              title={
+                facturas.isError
+                  ? "No se pudieron cargar las facturas"
+                  : "Las facturas de los facilitadores en el período"
+              }
+              className="flex shrink-0 items-center gap-1.5 rounded-xl border border-primary/40 bg-card px-3.5 py-2.5 text-sm font-semibold text-primary shadow-soft hover:bg-primary-soft disabled:opacity-50"
+            >
+              {facturas.isLoading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ReceiptText className="size-4" />
+              )}
+              Facturas
+              {conFacturas && (
+                <span className="rounded-full bg-primary-soft px-1.5 text-xs tabular-nums">
+                  {facturas.data.facturas.length}
+                </span>
+              )}
+            </button>
+            <BotonExcel
+              onDescargar={() =>
+                descargarExcel(
+                  `totales-facilitador-${desde}-a-${hasta}`,
+                  columnas.map((c): ColumnaExcel<Fila> => [c.titulo, c.valor]),
+                  tabla.visibles,
+                )
+              }
+              deshabilitado={!tabla.visibles.length}
+            />
+          </div>
         </div>
 
         {/* ── "Parametros" ─────────────────────────────────────────────── */}
@@ -345,6 +437,14 @@ function TotalesFacilitadorPage() {
           </p>
         )}
 
+        {valido && facturas.isError && (
+          <p className="mb-3 flex items-start gap-2 rounded-xl bg-muted/60 p-3 text-xs text-muted-foreground">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            No se pudieron cargar las facturas ({facturas.error.message}): el reporte se ve sin
+            ellas.
+          </p>
+        )}
+
         {/* ── El reporte ───────────────────────────────────────────────── */}
         <section className="rounded-lg border border-border bg-card shadow-soft">
           {!valido ? (
@@ -388,6 +488,13 @@ function TotalesFacilitadorPage() {
                             {!porFacilitador && <Td>{f.institucion}</Td>}
                             <Td numero>{numero.format(f.cantidad)}</Td>
                             <Td numero>{numero.format(f.cantidad * sueldoNum)}</Td>
+                            {conFacturas && (
+                              <CeldaFactura
+                                facturas={facturasPorFac.get(f.idFacilitador) ?? []}
+                                puedeCargar={puedeFacturar}
+                                onAbrir={(nueva) => setFacturasDe({ id: f.idFacilitador, nueva })}
+                              />
+                            )}
                             <td className="border-b border-border/60 text-center">
                               <button
                                 type="button"
@@ -418,6 +525,7 @@ function TotalesFacilitadorPage() {
                           <td className="border-r border-border/60 px-3 py-2 text-right tabular-nums">
                             {numero.format(cantidad * sueldoNum)}
                           </td>
+                          {conFacturas && <td className="border-r border-border/60" />}
                           <td />
                         </tr>
                       </tfoot>
@@ -459,6 +567,19 @@ function TotalesFacilitadorPage() {
           fila={detalleDe}
           conInstitucion={porFacilitador}
           onCerrar={() => setDetalleDe(null)}
+        />
+      )}
+
+      {facturasDe && (
+        <DialogoFacturas
+          desde={desde}
+          hasta={hasta}
+          sueldo={sueldoNum}
+          facilitadores={delPeriodo}
+          cantidadesValidas={siNo === "Si"}
+          idFacilitador={facturasDe.id}
+          nueva={facturasDe.nueva}
+          onCerrar={() => setFacturasDe(null)}
         />
       )}
     </AppShell>
@@ -572,6 +693,62 @@ function DialogoDetalle({
 /* -------------------------------------------------------------------------- */
 /* Piezas                                                                     */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * La columna Factura: los números de las facturas del facilitador que tocan el
+ * período (abre su lista), o "Cargar" para registrar la primera.
+ */
+function CeldaFactura({
+  facturas,
+  puedeCargar,
+  onAbrir,
+}: {
+  facturas: Factura[];
+  puedeCargar: boolean;
+  onAbrir: (nueva: boolean) => void;
+}) {
+  return (
+    <td className="border-r border-b border-border/60 px-2 py-1">
+      {facturas.length ? (
+        <button
+          type="button"
+          onClick={() => onAbrir(false)}
+          title="Ver las facturas del facilitador"
+          className="flex flex-wrap items-center gap-1 text-left"
+        >
+          {facturas.map((x) => (
+            <span
+              key={x.id}
+              className={`rounded-md px-1.5 py-0.5 font-mono text-[11.5px] font-semibold ${
+                porRevisar(x)
+                  ? "bg-amber-500/15 text-amber-800 hover:bg-amber-500/25 dark:text-amber-300"
+                  : "bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-300"
+              }`}
+            >
+              {x.nroFactura}
+              {porRevisar(x) ? (
+                <span className="ml-1 font-sans">· por revisar</span>
+              ) : (
+                !x.fotoUrl && <span className="ml-1 font-sans text-amber-700">· sin foto</span>
+              )}
+            </span>
+          ))}
+        </button>
+      ) : puedeCargar ? (
+        <button
+          type="button"
+          onClick={() => onAbrir(true)}
+          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-primary-soft"
+        >
+          <Plus className="size-3.5" />
+          Cargar
+        </button>
+      ) : (
+        <span className="text-xs text-muted-foreground">Sin factura</span>
+      )}
+    </td>
+  );
+}
 
 /** Encabezado con borde vertical: toda tabla de detalle lleva marcos entre columnas. */
 function Th({

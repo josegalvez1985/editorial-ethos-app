@@ -17,7 +17,8 @@
 --   - Para los datos, la IA escribe un SELECT y este paquete lo corre en una
 --     TRANSACCIÓN DE SOLO LECTURA. Ve todas las tablas y vistas del esquema
 --     SIN FILTRAR POR PERMISOS (pedido de Jose), salvo las privadas: las IA_*
---     (acá está la clave) y ETHOS_TOKENS (las sesiones). Ver "LAS CONSULTAS".
+--     (acá está la clave), ETHOS_TOKENS (las sesiones) y CLOUDINARY_* (el
+--     secreto de Cloudinary, desde el 04/11/2026). Ver "LAS CONSULTAS".
 --   - Para el uso del sistema, el sitio manda el "manual": las secciones del
 --     README que describen cada pantalla (src/lib/asistente.ts). Así queda al
 --     día con cada deploy sin volver a correr este script.
@@ -80,7 +81,8 @@
 --   - Ningún identificador puede ser un paquete, función, procedimiento, tipo,
 --     sinónimo o secuencia del esquema (salvo FN_ANIO_LECTIVO_ACTUAL), ni del
 --     sistema (DBMS_*, UTL_*, APEX_*, OWA, HTP, las vistas USER_/ALL_/DBA_/V$,
---     XMLQUERY y compañía), ni una tabla privada (IA_*, ETHOS_TOKENS).
+--     XMLQUERY y compañía), ni una tabla privada (IA_*, ETHOS_TOKENS,
+--     CLOUDINARY_*).
 --   - Corre en SET TRANSACTION READ ONLY: aunque algo pasara el filtro, Oracle
 --     rechaza cualquier escritura.
 --   - Devuelve hasta MAX_FILAS filas (IA_CONFIG, 200 de entrada) y corta los
@@ -441,10 +443,12 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_ETHOS AS
   ------------------------------------------------------------------------------
 
   -- Tablas que la IA no puede leer ni ver: la configuración (la clave) y el
-  -- registro del asistente, y las sesiones.
+  -- registro del asistente, las sesiones y la configuración de Cloudinary (el
+  -- secreto de la API, cloudinary.sql, 04/11/2026).
   FUNCTION es_privada(p_nombre IN VARCHAR2) RETURN BOOLEAN IS
   BEGIN
-    RETURN p_nombre LIKE 'IA\_%' ESCAPE '\' OR p_nombre LIKE 'ETHOS\_TOKENS%' ESCAPE '\';
+    RETURN p_nombre LIKE 'IA\_%' ESCAPE '\' OR p_nombre LIKE 'ETHOS\_TOKENS%' ESCAPE '\'
+        OR p_nombre LIKE 'CLOUDINARY\_%' ESCAPE '\';
   END es_privada;
 
   ------------------------------------------------------------------------------
@@ -491,6 +495,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_ETHOS AS
                  AND o.object_name NOT LIKE '%\_JN' ESCAPE '\'
                  AND o.object_name NOT LIKE 'IA\_%' ESCAPE '\'
                  AND o.object_name NOT LIKE 'ETHOS\_TOKENS%' ESCAPE '\'
+                 AND o.object_name NOT LIKE 'CLOUDINARY\_%' ESCAPE '\'
                  AND o.object_name NOT IN ('PLAN_TABLE', 'HTMLDB_PLAN_TABLE')
                ORDER BY o.object_name) LOOP
       g_permitidos(o.nombre) := TRUE;
@@ -529,6 +534,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_ETHOS AS
                  AND a.table_name NOT LIKE '%\_JN' ESCAPE '\'
                  AND a.table_name NOT LIKE 'IA\_%' ESCAPE '\'
                  AND a.table_name NOT LIKE 'ETHOS\_TOKENS%' ESCAPE '\'
+                 AND a.table_name NOT LIKE 'CLOUDINARY\_%' ESCAPE '\'
                ORDER BY a.table_name, ac.column_name, r.table_name) LOOP
       l_fks := l_fks || CHR(10) || f.tabla || '.' || f.columna
             || ' -> ' || f.ref_tabla || '.' || f.ref_columna;
@@ -543,6 +549,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_IA_ETHOS AS
                  AND table_name NOT LIKE '%$%'
                  AND table_name NOT LIKE 'IA\_%' ESCAPE '\'
                  AND table_name NOT LIKE 'ETHOS\_TOKENS%' ESCAPE '\'
+                 AND table_name NOT LIKE 'CLOUDINARY\_%' ESCAPE '\'
                ORDER BY table_name) LOOP
       g_permitidos(j.table_name) := TRUE;
       l_jn := SUBSTR(l_jn || CASE WHEN l_jn IS NOT NULL THEN ', ' END || j.table_name, 1, 30000);

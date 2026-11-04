@@ -14,18 +14,43 @@
 --   GET     facturas-facilitadores        ?desde=&hasta=&id_facilitador=
 --                                         las facturas cuyo periodo TOCA el
 --                                         rango (todas, sin parametros), con
---                                         quien y cuando se cargo y modifico
+--                                         quien y cuando se cargo y modifico,
+--                                         y el foto_url. Con id_facilitador,
+--                                         las de ese facilitador
 --   POST    facturas-facilitadores        {id_facilitador, nro_factura,
 --                                          timbrado, fecha_factura,
 --                                          fecha_desde, fecha_hasta,
---                                          cantidad, sueldo, observacion}
+--                                          cantidad, sueldo, observacion,
+--                                          foto_url}
 --                                         -> {id_factura}
---   PUT     facturas-facilitadores/:id    lo mismo
+--   PUT     facturas-facilitadores/:id    lo mismo, mas quitar_foto ('S')
 --   DELETE  facturas-facilitadores/:id
+--   POST    facturas-facilitadores/firma-foto
+--                                         -> {cloud_name, upload_url, campos}
+--                                         la firma para subir la foto a
+--                                         Cloudinary (ver cloudinary.sql)
 --
 --   Las fechas 'YYYY-MM-DD'.
 --
--- CORRER DESPUES de auth.sql, roles_paginas.sql y facilitadores.sql.
+-- LA FOTO (FOTO_URL, 04/11/2026)
+--
+--   La foto o el PDF de la factura vive en Cloudinary; la tabla guarda solo
+--   el enlace. El navegador la sube directo con la firma de firma-foto (el
+--   preset es Signed y el secreto queda en Oracle) a la carpeta
+--   facturas-facilitadores, y manda el secure_url al guardar.
+--
+--   - Solo se acepta un URL de NUESTRO cloud (https://res.cloudinary.com/
+--     <cloud>/...): nada de enlaces a cualquier lado.
+--   - En el PUT, foto_url vacio NO la borra (un cliente que no la conoce no
+--     la pierde): para sacarla va quitar_foto = 'S'.
+--   - Borrar la factura BORRA su archivo de Cloudinary, y reemplazar o quitar
+--     la foto borra la anterior (04/11/2026): PKG_CLOUDINARY_ETHOS.borrar,
+--     DESPUES del COMMIT. Si Cloudinary falla, el cambio queda igual y la
+--     respuesta trae un "aviso". La bitacora conserva el enlace, pero el
+--     archivo ya no existe.
+--
+-- CORRER DESPUES de auth.sql, roles_paginas.sql, facilitadores.sql y
+-- cloudinary.sql.
 --
 --   SQL Workshop -> SQL Scripts -> Upload -> este archivo -> Run
 --
@@ -82,7 +107,8 @@ DECLARE
   l_n PLS_INTEGER;
 BEGIN
   FOR o IN (SELECT 'PKG_AUTH_ETHOS' AS nombre, 'backend/auth.sql' AS script FROM dual
-            UNION ALL SELECT 'PKG_ROLES_PAGINAS_ETHOS', 'backend/roles_paginas.sql' FROM dual) LOOP
+            UNION ALL SELECT 'PKG_ROLES_PAGINAS_ETHOS', 'backend/roles_paginas.sql' FROM dual
+            UNION ALL SELECT 'PKG_CLOUDINARY_ETHOS', 'backend/cloudinary.sql' FROM dual) LOOP
     SELECT COUNT(*) INTO l_n FROM all_objects
      WHERE object_name = o.nombre AND object_type = 'PACKAGE BODY';
     IF l_n = 0 THEN
@@ -189,6 +215,21 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('[OK]   Tabla FACTURAS_FACILITADORES_JN creada.');
   END IF;
 
+  -- FOTO_URL (04/11/2026), en la tabla y en su bitacora, si falta: la de una
+  -- base que ya tenia la tabla de antes no la trae.
+  FOR t IN (SELECT 'FACTURAS_FACILITADORES' AS tabla FROM dual
+            UNION ALL SELECT 'FACTURAS_FACILITADORES_JN' FROM dual) LOOP
+    SELECT COUNT(*) INTO l_n FROM user_tab_columns
+     WHERE table_name = t.tabla AND column_name = 'FOTO_URL';
+    IF l_n = 0 THEN
+      ejecutar('ALTER TABLE "' || t.tabla || '" ADD ("FOTO_URL" VARCHAR2(1000 CHAR))');
+      DBMS_OUTPUT.PUT_LINE('[OK]   Columna FOTO_URL agregada a ' || t.tabla || '.');
+    ELSE
+      DBMS_OUTPUT.PUT_LINE('[SKIP] ' || t.tabla || ' ya tenia FOTO_URL.');
+    END IF;
+  END LOOP;
+  ejecutar(q'~COMMENT ON COLUMN "FACTURAS_FACILITADORES"."FOTO_URL" IS 'Enlace (URL) de Cloudinary a la foto de la factura'~');
+
   -- El mismo numero no se repite para un facilitador (con el mismo timbrado;
   -- sin timbrado cuenta como uno solo).
   SELECT COUNT(*) INTO l_n FROM user_indexes WHERE index_name = 'UQ_FACT_FACIL_NRO';
@@ -254,23 +295,23 @@ BEGIN
   IF INSERTING OR UPDATING THEN
     INSERT INTO facturas_facilitadores_jn (
       ID_AUDITORIA, ID_FACTURA, ID_FACILITADOR, NRO_FACTURA, TIMBRADO, FECHA_FACTURA,
-      FECHA_DESDE, FECHA_HASTA, CANTIDAD, SUELDO, MONTO, OBSERVACION,
+      FECHA_DESDE, FECHA_HASTA, CANTIDAD, SUELDO, MONTO, OBSERVACION, FOTO_URL,
       JN_OPERATION, JN_ORACLE_USER, JN_DATETIME, JN_NOTES, JN_APPLN, JN_SESSION
     ) VALUES (
       v_audit_id, :NEW.ID_FACTURA, :NEW.ID_FACILITADOR, :NEW.NRO_FACTURA, :NEW.TIMBRADO,
       :NEW.FECHA_FACTURA, :NEW.FECHA_DESDE, :NEW.FECHA_HASTA, :NEW.CANTIDAD, :NEW.SUELDO,
-      :NEW.MONTO, :NEW.OBSERVACION,
+      :NEW.MONTO, :NEW.OBSERVACION, :NEW.FOTO_URL,
       v_operacion, v_usuario, SYSDATE, NULL,
       SYS_CONTEXT('USERENV', 'MODULE'), SYS_CONTEXT('USERENV', 'SESSIONID'));
   ELSE
     INSERT INTO facturas_facilitadores_jn (
       ID_AUDITORIA, ID_FACTURA, ID_FACILITADOR, NRO_FACTURA, TIMBRADO, FECHA_FACTURA,
-      FECHA_DESDE, FECHA_HASTA, CANTIDAD, SUELDO, MONTO, OBSERVACION,
+      FECHA_DESDE, FECHA_HASTA, CANTIDAD, SUELDO, MONTO, OBSERVACION, FOTO_URL,
       JN_OPERATION, JN_ORACLE_USER, JN_DATETIME, JN_NOTES, JN_APPLN, JN_SESSION
     ) VALUES (
       v_audit_id, :OLD.ID_FACTURA, :OLD.ID_FACILITADOR, :OLD.NRO_FACTURA, :OLD.TIMBRADO,
       :OLD.FECHA_FACTURA, :OLD.FECHA_DESDE, :OLD.FECHA_HASTA, :OLD.CANTIDAD, :OLD.SUELDO,
-      :OLD.MONTO, :OLD.OBSERVACION,
+      :OLD.MONTO, :OLD.OBSERVACION, :OLD.FOTO_URL,
       'DEL', v_usuario, SYSDATE, NULL,
       SYS_CONTEXT('USERENV', 'MODULE'), SYS_CONTEXT('USERENV', 'SESSIONID'));
   END IF;
@@ -292,7 +333,8 @@ CREATE OR REPLACE PACKAGE PKG_FACTURAS_FACIL_ETHOS AS
     p_hasta          IN VARCHAR2,
     p_id_facilitador IN VARCHAR2);
 
-  -- p_id NULL = alta.
+  -- p_id NULL = alta. p_foto_url NULL en una modificacion deja la que habia;
+  -- p_quitar_foto = 'S' la saca.
   PROCEDURE guardar(
     p_token          IN VARCHAR2,
     p_id             IN VARCHAR2,
@@ -304,9 +346,15 @@ CREATE OR REPLACE PACKAGE PKG_FACTURAS_FACIL_ETHOS AS
     p_fecha_hasta    IN VARCHAR2,
     p_cantidad       IN VARCHAR2,
     p_sueldo         IN VARCHAR2,
-    p_observacion    IN VARCHAR2);
+    p_observacion    IN VARCHAR2,
+    p_foto_url       IN VARCHAR2 DEFAULT NULL,
+    p_quitar_foto    IN VARCHAR2 DEFAULT NULL);
 
   PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN VARCHAR2);
+
+  -- La firma para subir la foto a Cloudinary. Pide poder registrar o
+  -- modificar facturas: es el paso previo a guardar.
+  PROCEDURE firma_foto(p_token IN VARCHAR2);
 
 END PKG_FACTURAS_FACIL_ETHOS;
 /
@@ -319,6 +367,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
   -- Topes contra un error de tipeo: un numero de mas no tiene que pasar.
   c_tope_cant     CONSTANT NUMBER       := 99999;
   c_tope_sueldo   CONSTANT NUMBER       := 999999999;
+  c_largo_foto    CONSTANT PLS_INTEGER  := 1000;
+  -- La carpeta de Cloudinary de las fotos (pisa la del preset).
+  c_carpeta_foto  CONSTANT VARCHAR2(40) := 'facturas-facilitadores';
 
   PROCEDURE abrir_json IS
   BEGIN
@@ -402,11 +453,13 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
 
   ------------------------------------------------------------------------------
   -- Sesion + permiso. 'C' pide solo sesion; 'I', 'U', 'D' la accion en la
-  -- pagina de /totales-facilitador. FALSE = ya respondio el error.
+  -- pagina de /totales-facilitador; 'F' (subir una foto) registrar O
+  -- modificar. FALSE = ya respondio el error.
   ------------------------------------------------------------------------------
   FUNCTION exigir(p_token IN VARCHAR2, p_accion IN VARCHAR2) RETURN BOOLEAN IS
     l_usuario VARCHAR2(255) := f_usuario(p_token);
     l_pagina  NUMBER;
+    l_puede   BOOLEAN;
   BEGIN
     IF l_usuario IS NULL THEN
       p_error(401, 'Unauthorized', 'Token invalido o expirado');
@@ -419,10 +472,17 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
                 || 'hay que darla de alta en Crear paginas y darle permisos');
         RETURN FALSE;
       END IF;
-      IF PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, p_accion) <> 'S' THEN
+      IF p_accion = 'F' THEN
+        l_puede := PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, 'I') = 'S'
+                OR PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, 'U') = 'S';
+      ELSE
+        l_puede := PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, p_accion) = 'S';
+      END IF;
+      IF NOT l_puede THEN
         p_error(403, 'Forbidden', 'No tenes permiso para '
           || CASE p_accion WHEN 'I' THEN 'registrar'
                            WHEN 'U' THEN 'modificar'
+                           WHEN 'F' THEN 'subir fotos de'
                            ELSE 'eliminar' END
           || ' facturas de facilitadores');
         RETURN FALSE;
@@ -430,6 +490,21 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
     END IF;
     RETURN TRUE;
   END exigir;
+
+  -- Borra de Cloudinary una foto que ya no usa ninguna factura. NULL si quedo
+  -- borrada (o no habia nada que borrar); si no, el motivo. Va DESPUES del
+  -- COMMIT y nunca lanza: ver PKG_CLOUDINARY_ETHOS.borrar.
+  FUNCTION limpiar_foto(p_url IN VARCHAR2) RETURN VARCHAR2 IS
+    l_n PLS_INTEGER;
+  BEGIN
+    IF p_url IS NULL THEN RETURN NULL; END IF;
+    -- Por las dudas: si otra factura tiene el mismo enlace, no se toca.
+    SELECT COUNT(*) INTO l_n FROM facturas_facilitadores WHERE foto_url = p_url;
+    IF l_n > 0 THEN RETURN NULL; END IF;
+    RETURN PKG_CLOUDINARY_ETHOS.borrar(p_url);
+  EXCEPTION
+    WHEN OTHERS THEN RETURN SQLERRM;
+  END limpiar_foto;
 
   /* ---------------------------------------------------------------------- */
   /* LISTAR                                                                 */
@@ -458,6 +533,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('largo_observacion', c_largo_obs);
+    -- Si Cloudinary esta configurado: sin eso el sitio no ofrece subir fotos.
+    APEX_JSON.WRITE('fotos_habilitadas', PKG_CLOUDINARY_ETHOS.falta IS NULL);
 
     APEX_JSON.OPEN_ARRAY('data');
     -- Alta y ultimo cambio salen de la bitacora, en hora de Paraguay.
@@ -466,7 +543,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
                      TO_CHAR(f.fecha_factura, 'YYYY-MM-DD') AS fecha_factura,
                      TO_CHAR(f.fecha_desde, 'YYYY-MM-DD') AS fecha_desde,
                      TO_CHAR(f.fecha_hasta, 'YYYY-MM-DD') AS fecha_hasta,
-                     f.cantidad, f.sueldo, f.monto, f.observacion,
+                     f.cantidad, f.sueldo, f.monto, f.observacion, f.foto_url,
                      TO_CHAR(b.alta - 3/24, 'YYYY-MM-DD"T"HH24:MI') AS cargado_el,
                      CASE WHEN b.alta IS NOT NULL THEN b.alta_por END AS cargado_por,
                      TO_CHAR(b.cambio - 3/24, 'YYYY-MM-DD"T"HH24:MI') AS modificado_el,
@@ -501,6 +578,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
       APEX_JSON.WRITE('sueldo',         c.sueldo);
       APEX_JSON.WRITE('monto',          c.monto);
       APEX_JSON.WRITE('observacion',    c.observacion);
+      APEX_JSON.WRITE('foto_url',       c.foto_url);
       APEX_JSON.WRITE('cargado_el',     c.cargado_el);
       APEX_JSON.WRITE('cargado_por',    c.cargado_por);
       APEX_JSON.WRITE('modificado_el',  c.modificado_el);
@@ -529,8 +607,13 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
     p_fecha_hasta    IN VARCHAR2,
     p_cantidad       IN VARCHAR2,
     p_sueldo         IN VARCHAR2,
-    p_observacion    IN VARCHAR2)
+    p_observacion    IN VARCHAR2,
+    p_foto_url       IN VARCHAR2 DEFAULT NULL,
+    p_quitar_foto    IN VARCHAR2 DEFAULT NULL)
   IS
+    l_foto     VARCHAR2(32767) := TRIM(p_foto_url);
+    -- 'S' / 'N' y no BOOLEAN: va adentro del UPDATE.
+    l_quitar   VARCHAR2(1) := CASE WHEN UPPER(TRIM(p_quitar_foto)) = 'S' THEN 'S' ELSE 'N' END;
     l_id       NUMBER := f_numero(p_id);
     l_fac      NUMBER := f_numero(p_id_facilitador);
     l_nro      VARCHAR2(15);
@@ -544,16 +627,21 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
     l_sueldo   NUMBER := f_numero(p_sueldo);
     l_n        PLS_INTEGER;
     l_otra     facturas_facilitadores%ROWTYPE;
+    -- La foto que tenia: si se reemplaza o se quita, se borra de Cloudinary.
+    l_foto_vieja facturas_facilitadores.foto_url%TYPE;
+    l_aviso      VARCHAR2(4000);
   BEGIN
     IF NOT exigir(p_token, CASE WHEN p_id IS NULL THEN 'I' ELSE 'U' END) THEN RETURN; END IF;
     IF p_id IS NOT NULL AND l_id IS NULL THEN
       p_error(400, 'Bad Request', 'Id de factura invalido'); RETURN;
     END IF;
     IF l_id IS NOT NULL THEN
-      SELECT COUNT(*) INTO l_n FROM facturas_facilitadores WHERE id_factura = l_id;
-      IF l_n = 0 THEN
-        p_error(404, 'Not Found', 'La factura no existe'); RETURN;
-      END IF;
+      BEGIN
+        SELECT foto_url INTO l_foto_vieja FROM facturas_facilitadores WHERE id_factura = l_id;
+      EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+          p_error(404, 'Not Found', 'La factura no existe'); RETURN;
+      END;
     END IF;
 
     -- El facilitador, y su fila bloqueada hasta el COMMIT: dos altas a la vez
@@ -623,6 +711,21 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
       RETURN;
     END IF;
 
+    -- La foto: solo un enlace de nuestro Cloudinary (ver cloudinary.sql).
+    IF l_foto IS NOT NULL THEN
+      IF LENGTH(l_foto) > c_largo_foto THEN
+        ROLLBACK;
+        p_error(400, 'Bad Request', 'El enlace de la foto no puede pasar de ' || c_largo_foto
+                || ' caracteres');
+        RETURN;
+      END IF;
+      IF NOT PKG_CLOUDINARY_ETHOS.es_url_propia(l_foto) THEN
+        ROLLBACK;
+        p_error(400, 'Bad Request', 'La foto tiene que estar subida al Cloudinary del sistema');
+        RETURN;
+      END IF;
+    END IF;
+
     -- El mismo numero para el facilitador (el indice unico es la red de abajo).
     SELECT COUNT(*) INTO l_n FROM facturas_facilitadores
      WHERE id_facilitador = l_fac
@@ -655,20 +758,33 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
     IF l_id IS NULL THEN
       INSERT INTO facturas_facilitadores (
         id_facilitador, nro_factura, timbrado, fecha_factura, fecha_desde, fecha_hasta,
-        cantidad, sueldo, monto, observacion)
+        cantidad, sueldo, monto, observacion, foto_url)
       VALUES (
         l_fac, l_nro, l_timbrado, l_fecha, l_desde, l_hasta,
-        l_cantidad, l_sueldo, l_cantidad * l_sueldo, l_obs)
+        l_cantidad, l_sueldo, l_cantidad * l_sueldo, l_obs, l_foto)
       RETURNING id_factura INTO l_id;
     ELSE
+      -- La foto de este momento, con la fila bloqueada (la app del
+      -- facilitador pudo cambiarla desde que se leyo arriba).
+      SELECT foto_url INTO l_foto_vieja FROM facturas_facilitadores
+       WHERE id_factura = l_id FOR UPDATE;
+      -- Sin foto en el body queda la que habia; quitar_foto = 'S' la saca.
       UPDATE facturas_facilitadores
          SET id_facilitador = l_fac, nro_factura = l_nro, timbrado = l_timbrado,
              fecha_factura = l_fecha, fecha_desde = l_desde, fecha_hasta = l_hasta,
              cantidad = l_cantidad, sueldo = l_sueldo, monto = l_cantidad * l_sueldo,
-             observacion = l_obs
+             observacion = l_obs,
+             foto_url = CASE WHEN l_quitar = 'S' THEN NULL ELSE NVL(l_foto, foto_url) END
        WHERE id_factura = l_id;
     END IF;
     COMMIT;
+
+    -- Despues del COMMIT: la foto reemplazada o quitada se borra de Cloudinary.
+    -- Si falla, la factura ya quedo bien y solo se avisa.
+    IF l_foto_vieja IS NOT NULL
+       AND (l_quitar = 'S' OR (l_foto IS NOT NULL AND l_foto <> l_foto_vieja)) THEN
+      l_aviso := limpiar_foto(l_foto_vieja);
+    END IF;
 
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
@@ -677,6 +793,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
     APEX_JSON.WRITE('nro_factura', l_nro);
     APEX_JSON.WRITE('monto', l_cantidad * l_sueldo);
     APEX_JSON.WRITE('message', CASE WHEN p_id IS NULL THEN 'Factura registrada' ELSE 'Factura actualizada' END);
+    IF l_aviso IS NOT NULL THEN
+      APEX_JSON.WRITE('aviso', 'La foto anterior no se pudo borrar de Cloudinary: ' || l_aviso);
+    END IF;
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION
     WHEN OTHERS THEN
@@ -689,30 +808,65 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
   /* ---------------------------------------------------------------------- */
 
   PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN VARCHAR2) IS
-    l_id NUMBER := f_numero(p_id);
+    l_id    NUMBER := f_numero(p_id);
+    l_foto  facturas_facilitadores.foto_url%TYPE;
+    l_aviso VARCHAR2(4000);
   BEGIN
     IF NOT exigir(p_token, 'D') THEN RETURN; END IF;
     IF l_id IS NULL THEN
       p_error(400, 'Bad Request', 'Id de factura invalido'); RETURN;
     END IF;
 
-    DELETE FROM facturas_facilitadores WHERE id_factura = l_id;
+    DELETE FROM facturas_facilitadores WHERE id_factura = l_id
+    RETURNING foto_url INTO l_foto;
     IF SQL%ROWCOUNT = 0 THEN
       ROLLBACK;
       p_error(404, 'Not Found', 'La factura no existe'); RETURN;
     END IF;
     COMMIT;
 
+    -- Despues del COMMIT: la factura ya no esta; su foto se borra de
+    -- Cloudinary. Si falla, solo se avisa.
+    l_aviso := limpiar_foto(l_foto);
+
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('message', 'Factura eliminada');
+    APEX_JSON.WRITE('foto_borrada', l_foto IS NOT NULL AND l_aviso IS NULL);
+    IF l_aviso IS NOT NULL THEN
+      APEX_JSON.WRITE('aviso', 'La foto no se pudo borrar de Cloudinary: ' || l_aviso);
+    END IF;
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION
     WHEN OTHERS THEN
       ROLLBACK;
       p_error_oracle;
   END eliminar;
+
+  /* ---------------------------------------------------------------------- */
+  /* FIRMA PARA SUBIR LA FOTO                                               */
+  /* ---------------------------------------------------------------------- */
+
+  PROCEDURE firma_foto(p_token IN VARCHAR2) IS
+    l_falta VARCHAR2(400);
+  BEGIN
+    IF NOT exigir(p_token, 'F') THEN RETURN; END IF;
+    l_falta := PKG_CLOUDINARY_ETHOS.falta;
+    IF l_falta IS NOT NULL THEN
+      p_error(503, 'Service Unavailable', l_falta || ': no se pueden subir fotos todavia');
+      RETURN;
+    END IF;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    PKG_CLOUDINARY_ETHOS.escribir_firma(c_carpeta_foto);
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+  END firma_foto;
 
 END PKG_FACTURAS_FACIL_ETHOS;
 /
@@ -735,11 +889,12 @@ DECLARE
     'DECLARE l_token VARCHAR2(256); l_pos PLS_INTEGER; BEGIN';
 
   -- El cuerpo de POST y PUT, igual salvo el id.
-  c_campos CONSTANT VARCHAR2(600) := '
+  c_campos CONSTANT VARCHAR2(1000) := '
         p_id_facilitador => :id_facilitador, p_nro_factura => :nro_factura,
         p_timbrado => :timbrado, p_fecha_factura => :fecha_factura,
         p_fecha_desde => :fecha_desde, p_fecha_hasta => :fecha_hasta,
-        p_cantidad => :cantidad, p_sueldo => :sueldo, p_observacion => :observacion);';
+        p_cantidad => :cantidad, p_sueldo => :sueldo, p_observacion => :observacion,
+        p_foto_url => :foto_url, p_quitar_foto => :quitar_foto);';
 
   PROCEDURE auth_param(p_pattern IN VARCHAR2, p_method IN VARCHAR2) IS
   BEGIN
@@ -766,6 +921,7 @@ DECLARE
   END handler;
 BEGIN
   FOR r IN (SELECT 'facturas-facilitadores' AS p FROM dual
+            UNION ALL SELECT 'facturas-facilitadores/firma-foto' FROM dual
             UNION ALL SELECT 'facturas-facilitadores/:id' FROM dual) LOOP
     FOR m IN (SELECT 'GET' AS v FROM dual UNION ALL SELECT 'POST' FROM dual
               UNION ALL SELECT 'PUT' FROM dual UNION ALL SELECT 'DELETE' FROM dual
@@ -777,6 +933,9 @@ BEGIN
 
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'facturas-facilitadores',
                        p_priority => 0, p_etag_type => 'NONE');
+  -- La ruta fija con mas prioridad que /:id, como postulaciones/todas.
+  ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'facturas-facilitadores/firma-foto',
+                       p_priority => 2, p_etag_type => 'NONE');
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'facturas-facilitadores/:id',
                        p_priority => 1, p_etag_type => 'NONE');
 
@@ -793,6 +952,10 @@ BEGIN
 
   handler('facturas-facilitadores/:id', 'DELETE', '
     PKG_FACTURAS_FACIL_ETHOS.ELIMINAR(p_token => l_token, p_id => :id);');
+
+  -- POST y no GET: cada firma es nueva y no se tiene que cachear.
+  handler('facturas-facilitadores/firma-foto', 'POST', '
+    PKG_FACTURAS_FACIL_ETHOS.FIRMA_FOTO(p_token => l_token);');
 
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Handlers de facturas-facilitadores publicados.');
@@ -827,6 +990,7 @@ END;
   END preflight;
 BEGIN
   preflight('facturas-facilitadores');
+  preflight('facturas-facilitadores/firma-foto');
   preflight('facturas-facilitadores/:id');
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado.');
@@ -869,6 +1033,19 @@ BEGIN
   DBMS_OUTPUT.PUT_LINE('       POST   facturas-facilitadores');
   DBMS_OUTPUT.PUT_LINE('       PUT    facturas-facilitadores/:id');
   DBMS_OUTPUT.PUT_LINE('       DELETE facturas-facilitadores/:id');
+  DBMS_OUTPUT.PUT_LINE('       POST   facturas-facilitadores/firma-foto');
+
+  BEGIN
+    IF PKG_CLOUDINARY_ETHOS.falta IS NULL THEN
+      DBMS_OUTPUT.PUT_LINE('[OK]   Cloudinary configurado: se pueden subir fotos.');
+    ELSE
+      DBMS_OUTPUT.PUT_LINE('[WARN] ' || PKG_CLOUDINARY_ETHOS.falta || ': las facturas andan,');
+      DBMS_OUTPUT.PUT_LINE('       pero sin subir fotos hasta completarlo (ver cloudinary.sql).');
+    END IF;
+  EXCEPTION
+    WHEN OTHERS THEN
+      DBMS_OUTPUT.PUT_LINE('[ERROR] Falta PKG_CLOUDINARY_ETHOS: corre backend/cloudinary.sql.');
+  END;
 
   BEGIN
     l_pagina := PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta('/totales-facilitador');

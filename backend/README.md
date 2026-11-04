@@ -13,6 +13,8 @@
 | **[`sucursales.sql`](sucursales.sql)** | ABM de sucursales (`PKG_SUCURSALES_ETHOS`) + corrige `SUCURSALES_JNTRG` | independiente |
 | **[`envios_graficas.sql`](envios_graficas.sql)** | Envíos de gráficas a las sucursales, cabecera y detalle: crea `ENVIOS_CABECERA`, `ENVIOS_GRAFICAS` y sus bitácoras si faltan, los dos `_JNTRG` con el usuario de la app y el ABM (`PKG_ENVIOS_GRAFICAS_ETHOS`) | después de `roles_paginas.sql`, `ciudades.sql` y `sucursales.sql` |
 | **[`ia_asistente.sql`](ia_asistente.sql)** | El asistente con IA: crea `IA_CONFIG` e `IA_CONSULTAS` si faltan y `PKG_IA_ETHOS`, que llama a la API de Claude y corre sus consultas en solo lectura (`ia/preguntar`). Después, a mano: la clave de la API | después de `auth.sql` |
+| **[`cloudinary.sql`](cloudinary.sql)** | Subida de archivos a Cloudinary firmada desde Oracle (04/11/2026): crea `CLOUDINARY_CONFIG` (privada) y `PKG_CLOUDINARY_ETHOS`, que firma las subidas del navegador y valida que un enlace sea de nuestro cloud. Sin endpoints propios. Después, a mano: la clave y el secreto | después de `auth.sql` |
+| **[`facturas_facilitadores.sql`](facturas_facilitadores.sql)** | Las facturas de los facilitadores (28/10/2026, no viene de APEX), un diálogo de Totales por Facilitador: crea `FACTURAS_FACILITADORES` y su `_JN` si faltan, `FOTO_URL` si falta (04/11/2026), el `_JNTRG` con el usuario de la app y el ABM (`PKG_FACTURAS_FACIL_ETHOS`, `facturas-facilitadores[/:id]`, `facturas-facilitadores/firma-foto`) | después de `roles_paginas.sql`, `facilitadores.sql` y `cloudinary.sql` |
 | **[`auditoria.sql`](auditoria.sql)** | Consulta de las bitácoras `_JN` (`PKG_AUDITORIA_ETHOS`) + `pr_crear_trigger_auditoria` | independiente |
 | **[`auditoria_intervenciones.sql`](auditoria_intervenciones.sql)** | La bitácora `INTERVENCIONES_JN` con todas sus columnas, para la página 58, Auditoría de Intervenciones (`PKG_AUDITORIA_INTERV_ETHOS`, `auditoria-intervenciones`) | independiente |
 | **[`menu_paginas.sql`](menu_paginas.sql)** | Tabla `MENU_PAGINAS`: el menú del sitio, con las páginas del menú de APEX (mismo número, ruta del sitio) y las pantallas nuevas | independiente |
@@ -1233,6 +1235,98 @@ cargar también el ID del workspace con `BEGIN PKG_IA_ETHOS.fijar_workspace_id('
 END;` o crear la clave dentro de un workspace; probar con `BEGIN PKG_IA_ETHOS.probar; END;`.
 No hay nada que dar de alta en Crear páginas. Si `probar` da un error de ACL o de certificado, la instancia
 no deja salir a `api.anthropic.com` y el asistente no puede correr en Oracle.
+
+## Cloudinary (`cloudinary.sql`)
+
+El servicio para subir archivos (04/11/2026). Hoy lo usan solo las fotos de las facturas.
+**No publica endpoints**: cada módulo expone su propia ruta de firma, con sus permisos, y
+llama al paquete.
+
+El preset (`fc`) es **Signed**: Cloudinary rechaza una subida sin firma, y la firma lleva el
+API secret, que no puede ir al navegador. Por eso el archivo va **directo del navegador a
+Cloudinary** (ORDS no carga con imágenes de varios MB), pero firmado por Oracle:
+
+1. El sitio pide la firma al módulo (`POST facturas-facilitadores/firma-foto`), que controla
+   sesión y permiso.
+2. `PKG_CLOUDINARY_ETHOS.escribir_firma` arma `asset_folder`, `timestamp` y `upload_preset`
+   en orden alfabético, los firma con SHA-1 + el secreto (`STANDARD_HASH`, como `auth.sql`)
+   y devuelve `cloud_name`, `upload_url` (`…/auto/upload`, que acepta imágenes y PDF) y
+   `campos` (todo menos el secreto).
+3. El navegador hace `POST` del archivo con esos `campos` y recibe el `secure_url`.
+4. El módulo acepta ese URL al guardar solo si es de nuestro cloud (`es_url_propia`:
+   `https://res.cloudinary.com/<cloud>/…`, sin espacios ni comillas).
+
+La firma vence en una hora (lo controla Cloudinary con el `timestamp`). La carpeta la elige
+cada módulo y pisa la del preset (que en el preset es `samples/ecommerce`).
+
+**`CLOUDINARY_CONFIG` es privada**, como `IA_CONFIG`: `CLOUD_NAME` (`cayve9bx`) y
+`UPLOAD_PRESET` (`fc`) vienen cargados; `API_KEY` y `API_SECRET` se cargan **a mano en SQL
+Commands, nunca en el repositorio**:
+
+```sql
+BEGIN PKG_CLOUDINARY_ETHOS.fijar_credenciales('la-api-key', 'el-api-secret'); END;
+BEGIN PKG_CLOUDINARY_ETHOS.probar; END;
+```
+
+`probar` hace un `ping` a la Admin API con la clave y el secreto, y lee el preset (si es
+Signed y su carpeta). Si da error de ACL, Oracle no llega a Cloudinary: eso solo afecta a
+`probar`, porque la subida la hace el navegador. Otro cloud o preset:
+`PKG_CLOUDINARY_ETHOS.configurar('cloud', 'preset')`.
+
+> **El asistente con IA no tiene que poder leerla.** `CLOUDINARY_*` está en `es_privada` y en
+> los filtros de `cargar_esquema` de `ia_asistente.sql` desde el 04/11/2026: **volver a
+> correr `ia_asistente.sql` antes de cargar el secreto.** La verificación de
+> `cloudinary.sql` avisa si el paquete del asistente todavía no lo excluye.
+
+## Facturas de los facilitadores (`facturas_facilitadores.sql`)
+
+Tabla nueva (28/10/2026), no viene de APEX. **No es una página:** es un diálogo de Totales por
+Facilitador (`/totales-facilitador`, la 55) y usa sus permisos.
+
+**Una factura = un facilitador en un período** (del `FECHA_DESDE` al `FECHA_HASTA`, con todas
+sus instituciones). `CANTIDAD` y `SUELDO` son una **foto** del reporte al facturar y `MONTO`
+lo calcula el paquete (`CANTIDAD × SUELDO`, no viaja en el body): si después se corrige una
+marcación, el reporte cambia y la factura queda como se pagó, para mostrar la diferencia.
+
+| Método | Ruta | Permiso | Qué hace |
+| --- | --- | --- | --- |
+| GET | `facturas-facilitadores?desde=&hasta=&id_facilitador=` | sesión | Las facturas cuyo período **toca** el rango (todas sin parámetros); con `id_facilitador`, las de ese facilitador. Con quién y cuándo se cargó y modificó (de la `_JN`, hora de Paraguay), `foto_url`, y arriba `fotos_habilitadas` (si Cloudinary está configurado) |
+| POST | `facturas-facilitadores` | `PUEDE_INSERTAR` | Alta: `{id_facilitador, nro_factura, timbrado, fecha_factura, fecha_desde, fecha_hasta, cantidad, sueldo, observacion, foto_url}` → `{id_factura, nro_factura, monto}` |
+| PUT | `facturas-facilitadores/:id` | `PUEDE_ACTUALIZAR` | Lo mismo, más `quitar_foto` |
+| DELETE | `facturas-facilitadores/:id` | `PUEDE_BORRAR` | Borra la factura |
+| POST | `facturas-facilitadores/firma-foto` | `PUEDE_INSERTAR` **o** `PUEDE_ACTUALIZAR` | La firma para subir la foto (ver *Cloudinary*); 503 si falta configurarlo |
+
+Reglas:
+
+- Facilitador, número, fecha de la factura y período, obligatorios. `NRO_FACTURA` se guarda
+  siempre como `001-001-0000123`; se acepta también con los 13 dígitos juntos o sin los ceros
+  de la izquierda (`1-1-123`). `TIMBRADO`, opcional y solo dígitos.
+- El mismo número (con el mismo timbrado) no se repite para un facilitador: el paquete lo
+  dice y el índice único `UQ_FACT_FACIL_NRO` lo asegura.
+- **Dos facturas de un facilitador no se superponen**, para no pagar dos veces la misma
+  intervención; el 409 dice con cuál choca. Guardar bloquea la fila del facilitador, así dos
+  altas a la vez no se cruzan.
+- **La foto (`FOTO_URL`, 04/11/2026)** es un enlace de Cloudinary, en la carpeta
+  `facturas-facilitadores`, y solo se acepta uno de nuestro cloud. **En el PUT, `foto_url`
+  vacío no la borra** (un cliente que no conoce el campo no la pierde): para sacarla va
+  `quitar_foto: "S"`.
+- **Borrar la factura no borra el archivo de Cloudinary:** la bitácora guarda el enlace y es
+  la constancia de lo que se pagó.
+- La FK a `FACILITADORES` hace que un facilitador con facturas figure en uso y no se borre.
+
+### Las que suben los facilitadores (04/11/2026)
+
+La app de los facilitadores (`facilitador-hub`, script `sql/facturas_app_ethos.sql`,
+`PKG_FACTURAS_APP_ETHOS`, rutas `mis-facturas/*`) escribe en **esta misma tabla**: el
+facilitador sube la foto de su factura física y completa número, timbrado, fecha y el **mes**
+que cubre (desde el 1 hasta el último día). Su `ID_FACILITADOR` sale del token.
+
+**Sin columna de estado** (pedido el 04/11/2026): **`CANTIDAD = 0` quiere decir "por revisar"**.
+La app la guarda con `CANTIDAD`, `SUELDO` y `MONTO` en 0 (el facilitador no ve montos), y el
+administrador la completa desde Totales por Facilitador. `guardar` de este paquete exige
+cantidad ≥ 1, así que **guardarla acá la deja revisada**. Mientras esté en 0 el facilitador la
+puede corregir o borrar; revisada, ya no (la app responde 409). Las dos puntas bloquean la
+fila de `FACILITADORES` al guardar, así que el control de superposición vale entre ellas.
 
 ## Transferencias de manuales (`transferencias.sql`)
 
