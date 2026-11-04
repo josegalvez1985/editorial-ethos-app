@@ -1,7 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, ChevronLeft, ChevronRight, Eraser, ExternalLink } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Eraser,
+  ExternalLink,
+  FileDown,
+  Loader2,
+} from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 
 import { Cargando, Fallo } from "@/components/admin-ui";
 import { AppShell } from "@/components/app-shell";
@@ -16,7 +25,9 @@ import {
   META_PAGOS,
   type PagoFactura,
 } from "@/lib/facturas-facilitadores";
+import { abrirPdfEnPestana, generarPdfPagos } from "@/lib/pdf-pagos-facilitadores";
 import { otroInicial, rangoDe, rangoValido, type Periodo } from "@/lib/periodos";
+import { useSession } from "@/lib/session";
 import { useTablaReporte, type ColumnaReporte } from "@/lib/tabla-reporte";
 
 export const Route = createFileRoute("/pagos-facilitadores/")({
@@ -61,7 +72,8 @@ const sinCuenta = (p: PagoFactura) => !p.banco.trim() || !p.nroCuenta.trim();
  *   esta página porque trae cuentas bancarias (ver `facturas_facilitadores.sql`).
  *   Por lo mismo la consulta no se guarda en el navegador (`META_PAGOS`).
  *
- * Como todo reporte: Excel con lo filtrado, orden y filtro por columna, marcos
+ * Como todo reporte: Excel y PDF con lo filtrado (el PDF, por facilitador:
+ * `lib/pdf-pagos-facilitadores.ts`), orden y filtro por columna, marcos
  * verticales y la suma al pie. Un facilitador sin banco o sin número de
  * cuenta se marca en ámbar, para verlo antes de ir a pagar.
  */
@@ -70,6 +82,8 @@ function PagosFacilitadoresPage() {
   const [otro, setOtro] = useState(otroInicial);
   const [idFac, setIdFac] = useState("");
   const [pagina, setPagina] = useState(0);
+  const [generando, setGenerando] = useState(false);
+  const { sesion } = useSession();
 
   const { desde, hasta } = rangoDe(periodo, otro);
   const valido = rangoValido({ desde, hasta });
@@ -159,6 +173,28 @@ function PagosFacilitadoresPage() {
     setPagina(0);
   };
 
+  /**
+   * El PDF: lo mismo que el Excel (lo filtrado, en el orden de la tabla),
+   * armado para Tesorería. Ver `lib/pdf-pagos-facilitadores.ts`.
+   */
+  function generarPdf() {
+    setGenerando(true);
+    // SIN await antes de esta llamada: la pestaña se abre dentro del clic o el
+    // navegador la bloquea como popup. Ver `abrirPdfEnPestana`.
+    abrirPdfEnPestana(
+      () =>
+        generarPdfPagos(vis, {
+          periodo: `${dmy(desde)} al ${dmy(hasta)}`,
+          facilitador: facilitadores.find((f) => f.valor === idFac)?.texto ?? "Todos",
+          conFiltrosColumna: Object.keys(tabla.filtros).length > 0,
+          usuario: sesion?.nombre ?? "",
+        }),
+      `pagos-facilitadores-${desde}-a-${hasta}.pdf`,
+    )
+      .catch((err) => toast.error(err instanceof Error ? err.message : "No se pudo generar el PDF"))
+      .finally(() => setGenerando(false));
+  }
+
   return (
     <AppShell>
       <div className="px-5 pt-5 pb-24">
@@ -169,16 +205,34 @@ function PagosFacilitadoresPage() {
               Las facturas emitidas en el período, con los datos bancarios para pagarlas
             </p>
           </div>
-          <BotonExcel
-            onDescargar={() =>
-              descargarExcel(
-                `pagos-facilitadores-${desde}-a-${hasta}`,
-                columnas.map((c): ColumnaExcel<PagoFactura> => [c.titulo, c.valor]),
-                vis,
-              )
-            }
-            deshabilitado={!vis.length}
-          />
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            <BotonExcel
+              onDescargar={() =>
+                descargarExcel(
+                  `pagos-facilitadores-${desde}-a-${hasta}`,
+                  columnas.map((c): ColumnaExcel<PagoFactura> => [c.titulo, c.valor]),
+                  vis,
+                )
+              }
+              deshabilitado={!vis.length}
+            />
+            <button
+              type="button"
+              onClick={generarPdf}
+              disabled={generando || !vis.length}
+              title={
+                !vis.length ? "No hay facturas para imprimir" : "Abre el PDF en una pestaña nueva"
+              }
+              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2.5 text-sm font-semibold text-primary-foreground shadow-soft disabled:opacity-50"
+            >
+              {generando ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <FileDown className="size-4" />
+              )}
+              PDF
+            </button>
+          </div>
         </div>
 
         {/* ── Parámetros ───────────────────────────────────────────────── */}
