@@ -390,4 +390,90 @@ export const keysFacturas = {
   /** Todas las cargadas, sin filtro de período. */
   todas: ["facturas-facilitadores", "todas"] as const,
   periodo: (desde: string, hasta: string) => ["facturas-facilitadores", desde, hasta] as const,
+  /** Pagos a Facilitadores: bajo `todo`, así guardar o borrar una factura la refresca. */
+  pagos: (desde: string, hasta: string) =>
+    ["facturas-facilitadores", "pagos", desde, hasta] as const,
 };
+
+/* -------------------------------------------------------------------------- */
+/* Pagos a Facilitadores (Tesorería)                                          */
+/* -------------------------------------------------------------------------- */
+
+/** La pantalla de Tesorería (04/11/2026). Su permiso de consultar lo pide el backend. */
+export const RUTA_PAGOS = "/pagos-facilitadores";
+
+/**
+ * Las consultas de Pagos NO se guardan en el navegador (`query-persist`): traen
+ * cuentas bancarias, y la caché persistida queda en `localStorage`. Igual que
+ * Auditoría y los permisos.
+ */
+export const META_PAGOS = { persistir: false } as const;
+
+/** Una factura con lo que Tesorería necesita para pagarla. */
+export type PagoFactura = {
+  id: number;
+  idFacilitador: number;
+  facilitador: string;
+  nroCi: string;
+  ruc: string;
+  nombreEmisor: string;
+  tipoFactura: string;
+  telefono: string;
+  email: string;
+  nroFactura: string;
+  timbrado: string;
+  /** `YYYY-MM-DD`, como las demás fechas de este archivo. */
+  fechaFactura: string;
+  fechaDesde: string;
+  fechaHasta: string;
+  cantidad: number;
+  sueldo: number;
+  monto: number;
+  observacion: string;
+  fotoUrl: string;
+  banco: string;
+  sucursalBanco: string;
+  titular: string;
+  ciTitular: string;
+  tipoCuenta: string;
+  nroCuenta: string;
+};
+
+/**
+ * Las facturas EMITIDAS entre `desde` y `hasta` (fecha de la factura, no el
+ * período que cubren), con los datos bancarios del facilitador. 403 si el
+ * usuario no tiene la página de Pagos para consultar.
+ */
+export async function listarPagos(desde: string, hasta: string): Promise<PagoFactura[]> {
+  const q = new URLSearchParams({ desde, hasta });
+  const r = (await authFetch(`facturas-facilitadores/pagos?${q}`)) as {
+    data?: Record<string, unknown>[];
+  };
+  return (r.data ?? []).map((x) => ({
+    id: n(x.id_factura),
+    idFacilitador: n(x.id_facilitador),
+    facilitador: s(x.facilitador),
+    nroCi: s(x.nro_ci),
+    ruc: s(x.ruc),
+    nombreEmisor: s(x.nombre_emisor),
+    tipoFactura: s(x.tipo_factura),
+    telefono: s(x.telefono),
+    email: s(x.email),
+    nroFactura: s(x.nro_factura),
+    timbrado: s(x.timbrado),
+    fechaFactura: s(x.fecha_factura),
+    fechaDesde: s(x.fecha_desde),
+    fechaHasta: s(x.fecha_hasta),
+    cantidad: n(x.cantidad),
+    sueldo: n(x.sueldo),
+    monto: n(x.monto),
+    observacion: s(x.observacion),
+    fotoUrl: s(x.foto_url),
+    banco: s(x.nombre_banco),
+    sucursalBanco: s(x.sucursal_banco),
+    titular: s(x.titular_banco),
+    ciTitular: s(x.nro_ci_titular_banco),
+    tipoCuenta: s(x.tipo_cuenta),
+    nroCuenta: s(x.nro_cuenta),
+  }));
+}

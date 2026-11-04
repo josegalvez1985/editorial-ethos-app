@@ -39,6 +39,7 @@ import {
   Archive,
   ArrowLeftRight,
   Backpack,
+  Banknote,
   Bell,
   Book,
   BookCopy,
@@ -224,6 +225,10 @@ const ICONOS_MENU: Record<string, LucideIcon> = {
   // Pantalla nueva, no de APEX (13/10/2026): el envío de manuales al interior,
   // a pedido. Una camioneta y no Truck, que es el de Transferencias.
   "/envios-graficas": Van,
+  // Pantalla nueva, no de APEX (04/11/2026): Pagos a Facilitadores, el reporte
+  // de Tesorería. Un billete, elegido por Jose (Landmark, Wallet y Receipt ya
+  // estaban usados).
+  "/pagos-facilitadores": Banknote,
 };
 
 /**
@@ -324,6 +329,9 @@ export const PANTALLAS: Record<string, { descripcion: string }> = {
   "/consulta-transferencias": { descripcion: "Envíos entre sucursales por ruta y manual, con PDF" },
   "/auditoria": { descripcion: "Consultas de auditoría" },
   "/usuarios": { descripcion: "Activar y bloquear cuentas" },
+  "/pagos-facilitadores": {
+    descripcion: "Las facturas de los facilitadores con sus datos bancarios, para Tesorería",
+  },
 };
 
 /**

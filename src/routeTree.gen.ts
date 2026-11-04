@@ -63,6 +63,7 @@ import { Route as MateriasIndexRouteImport } from './routes/materias.index'
 import { Route as MonitoreoFacilitadoresIndexRouteImport } from './routes/monitoreo-facilitadores.index'
 import { Route as NacionalidadesIndexRouteImport } from './routes/nacionalidades.index'
 import { Route as PaginasIndexRouteImport } from './routes/paginas.index'
+import { Route as PagosFacilitadoresIndexRouteImport } from './routes/pagos-facilitadores.index'
 import { Route as PaisesIndexRouteImport } from './routes/paises.index'
 import { Route as PermisosIndexRouteImport } from './routes/permisos.index'
 import { Route as PostulacionesIndexRouteImport } from './routes/postulaciones.index'
@@ -363,6 +364,11 @@ const PaginasIndexRoute = PaginasIndexRouteImport.update({
   path: '/paginas/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PagosFacilitadoresIndexRoute = PagosFacilitadoresIndexRouteImport.update({
+  id: '/pagos-facilitadores/',
+  path: '/pagos-facilitadores/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PaisesIndexRoute = PaisesIndexRouteImport.update({
   id: '/paises/',
   path: '/paises/',
@@ -483,6 +489,7 @@ export interface FileRoutesByFullPath {
   '/monitoreo-facilitadores/': typeof MonitoreoFacilitadoresIndexRoute
   '/nacionalidades/': typeof NacionalidadesIndexRoute
   '/paginas/': typeof PaginasIndexRoute
+  '/pagos-facilitadores/': typeof PagosFacilitadoresIndexRoute
   '/paises/': typeof PaisesIndexRoute
   '/permisos/': typeof PermisosIndexRoute
   '/postulaciones/': typeof PostulacionesIndexRoute
@@ -551,6 +558,7 @@ export interface FileRoutesByTo {
   '/monitoreo-facilitadores': typeof MonitoreoFacilitadoresIndexRoute
   '/nacionalidades': typeof NacionalidadesIndexRoute
   '/paginas': typeof PaginasIndexRoute
+  '/pagos-facilitadores': typeof PagosFacilitadoresIndexRoute
   '/paises': typeof PaisesIndexRoute
   '/permisos': typeof PermisosIndexRoute
   '/postulaciones': typeof PostulacionesIndexRoute
@@ -620,6 +628,7 @@ export interface FileRoutesById {
   '/monitoreo-facilitadores/': typeof MonitoreoFacilitadoresIndexRoute
   '/nacionalidades/': typeof NacionalidadesIndexRoute
   '/paginas/': typeof PaginasIndexRoute
+  '/pagos-facilitadores/': typeof PagosFacilitadoresIndexRoute
   '/paises/': typeof PaisesIndexRoute
   '/permisos/': typeof PermisosIndexRoute
   '/postulaciones/': typeof PostulacionesIndexRoute
@@ -690,6 +699,7 @@ export interface FileRouteTypes {
     | '/monitoreo-facilitadores/'
     | '/nacionalidades/'
     | '/paginas/'
+    | '/pagos-facilitadores/'
     | '/paises/'
     | '/permisos/'
     | '/postulaciones/'
@@ -758,6 +768,7 @@ export interface FileRouteTypes {
     | '/monitoreo-facilitadores'
     | '/nacionalidades'
     | '/paginas'
+    | '/pagos-facilitadores'
     | '/paises'
     | '/permisos'
     | '/postulaciones'
@@ -826,6 +837,7 @@ export interface FileRouteTypes {
     | '/monitoreo-facilitadores/'
     | '/nacionalidades/'
     | '/paginas/'
+    | '/pagos-facilitadores/'
     | '/paises/'
     | '/permisos/'
     | '/postulaciones/'
@@ -895,6 +907,7 @@ export interface RootRouteChildren {
   MonitoreoFacilitadoresIndexRoute: typeof MonitoreoFacilitadoresIndexRoute
   NacionalidadesIndexRoute: typeof NacionalidadesIndexRoute
   PaginasIndexRoute: typeof PaginasIndexRoute
+  PagosFacilitadoresIndexRoute: typeof PagosFacilitadoresIndexRoute
   PaisesIndexRoute: typeof PaisesIndexRoute
   PermisosIndexRoute: typeof PermisosIndexRoute
   PostulacionesIndexRoute: typeof PostulacionesIndexRoute
@@ -1287,6 +1300,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PaginasIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pagos-facilitadores/': {
+      id: '/pagos-facilitadores/'
+      path: '/pagos-facilitadores'
+      fullPath: '/pagos-facilitadores/'
+      preLoaderRoute: typeof PagosFacilitadoresIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/paises/': {
       id: '/paises/'
       path: '/paises'
@@ -1432,6 +1452,7 @@ const rootRouteChildren: RootRouteChildren = {
   MonitoreoFacilitadoresIndexRoute: MonitoreoFacilitadoresIndexRoute,
   NacionalidadesIndexRoute: NacionalidadesIndexRoute,
   PaginasIndexRoute: PaginasIndexRoute,
+  PagosFacilitadoresIndexRoute: PagosFacilitadoresIndexRoute,
   PaisesIndexRoute: PaisesIndexRoute,
   PermisosIndexRoute: PermisosIndexRoute,
   PostulacionesIndexRoute: PostulacionesIndexRoute,

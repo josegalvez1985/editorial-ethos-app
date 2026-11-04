@@ -30,6 +30,13 @@
 --                                         -> {cloud_name, upload_url, campos}
 --                                         la firma para subir la foto a
 --                                         Cloudinary (ver cloudinary.sql)
+--   GET     facturas-facilitadores/pagos  ?desde=&hasta= (obligatorios, hasta
+--                                         un anio): Pagos a Facilitadores, la
+--                                         pantalla de Tesoreria (04/11/2026).
+--                                         Las facturas EMITIDAS en el rango
+--                                         (FECHA_FACTURA) con los datos
+--                                         bancarios, el RUC y el emisor del
+--                                         facilitador
 --
 --   Las fechas 'YYYY-MM-DD'.
 --
@@ -50,7 +57,8 @@
 --     respuesta trae un "aviso". La bitacora conserva el enlace, pero el
 --     archivo ya no existe.
 --
--- CORRER DESPUES de auth.sql, facilitadores.sql y cloudinary.sql.
+-- CORRER DESPUES de auth.sql, roles_paginas.sql (solo para pagos),
+-- facilitadores.sql y cloudinary.sql.
 --
 --   SQL Workshop -> SQL Scripts -> Upload -> este archivo -> Run
 --
@@ -94,6 +102,11 @@
 --   Facilitador, y quien llega lo usa entero. Antes pedia las banderas
 --   PUEDE_INSERTAR / ACTUALIZAR / BORRAR de la pagina 55; se sacaron a pedido.
 --
+--   LA EXCEPCION: GET facturas-facilitadores/pagos pide PUEDE_CONSULTAR de la
+--   pagina /pagos-facilitadores. Es una pantalla propia y trae cuentas
+--   bancarias: el endpoint se alcanza con cualquier token, el menu no basta.
+--   Mientras la pantalla no este en Crear paginas responde 403 diciendo eso.
+--
 --------------------------------------------------------------------------------
 
 SET SERVEROUTPUT ON
@@ -107,6 +120,8 @@ DECLARE
   l_n PLS_INTEGER;
 BEGIN
   FOR o IN (SELECT 'PKG_AUTH_ETHOS' AS nombre, 'backend/auth.sql' AS script FROM dual
+            -- Solo para PAGOS (Tesoreria), que si controla permiso de pagina.
+            UNION ALL SELECT 'PKG_ROLES_PAGINAS_ETHOS', 'backend/roles_paginas.sql' FROM dual
             UNION ALL SELECT 'PKG_CLOUDINARY_ETHOS', 'backend/cloudinary.sql' FROM dual) LOOP
     SELECT COUNT(*) INTO l_n FROM all_objects
      WHERE object_name = o.nombre AND object_type = 'PACKAGE BODY';
@@ -351,9 +366,13 @@ CREATE OR REPLACE PACKAGE PKG_FACTURAS_FACIL_ETHOS AS
 
   PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN VARCHAR2);
 
-  -- La firma para subir la foto a Cloudinary. Pide poder registrar o
-  -- modificar facturas: es el paso previo a guardar.
+  -- La firma para subir la foto a Cloudinary. Pide solo sesion.
   PROCEDURE firma_foto(p_token IN VARCHAR2);
+
+  -- Pagos a Facilitadores (/pagos-facilitadores, para Tesoreria): las facturas
+  -- EMITIDAS entre desde y hasta (FECHA_FACTURA), con los datos bancarios del
+  -- facilitador. Pide la pagina con PUEDE_CONSULTAR: trae cuentas bancarias.
+  PROCEDURE pagos(p_token IN VARCHAR2, p_desde IN VARCHAR2, p_hasta IN VARCHAR2);
 
 END PKG_FACTURAS_FACIL_ETHOS;
 /
@@ -368,6 +387,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
   c_largo_foto    CONSTANT PLS_INTEGER  := 1000;
   -- La carpeta de Cloudinary de las fotos (pisa la del preset).
   c_carpeta_foto  CONSTANT VARCHAR2(40) := 'facturas-facilitadores';
+  -- La pantalla de Tesoreria: SU permiso de consultar controla PAGOS.
+  c_ruta_pagos    CONSTANT VARCHAR2(30) := '/pagos-facilitadores';
 
   PROCEDURE abrir_json IS
   BEGIN
@@ -563,6 +584,99 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACTURAS_FACIL_ETHOS AS
     WHEN OTHERS THEN
       p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
   END listar;
+
+  /* ---------------------------------------------------------------------- */
+  /* PAGOS (Tesoreria)                                                      */
+  /* ---------------------------------------------------------------------- */
+
+  PROCEDURE pagos(p_token IN VARCHAR2, p_desde IN VARCHAR2, p_hasta IN VARCHAR2) IS
+    l_usuario VARCHAR2(255) := f_usuario(p_token);
+    l_pagina  NUMBER;
+    l_desde   DATE := f_fecha(p_desde);
+    l_hasta   DATE := f_fecha(p_hasta);
+  BEGIN
+    IF l_usuario IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado'); RETURN;
+    END IF;
+    -- A diferencia del resto del paquete, ACA SI hay permiso de pagina: son
+    -- cuentas bancarias, y el endpoint se alcanza con cualquier token.
+    BEGIN
+      l_pagina := PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta(c_ruta_pagos);
+    EXCEPTION
+      WHEN OTHERS THEN l_pagina := NULL;
+    END;
+    IF l_pagina IS NULL THEN
+      p_error(403, 'Forbidden', 'La pantalla ' || c_ruta_pagos || ' no esta en el menu: '
+              || 'hay que darla de alta en Crear paginas y darle permisos'); RETURN;
+    END IF;
+    IF PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, 'C') <> 'S' THEN
+      p_error(403, 'Forbidden', 'No tenes permiso para ver los pagos a facilitadores'); RETURN;
+    END IF;
+
+    IF l_desde IS NULL OR l_hasta IS NULL THEN
+      p_error(400, 'Bad Request', 'Desde y hasta son obligatorios, como YYYY-MM-DD'); RETURN;
+    END IF;
+    IF l_hasta < l_desde THEN
+      p_error(400, 'Bad Request', 'La fecha hasta no puede ser anterior a la desde'); RETURN;
+    END IF;
+    IF l_hasta - l_desde > 366 THEN
+      p_error(400, 'Bad Request', 'El rango no puede pasar de un anio'); RETURN;
+    END IF;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.OPEN_ARRAY('data');
+    -- Por FECHA_FACTURA (la emision). "< hasta + 1" por si alguna trae hora.
+    FOR c IN (SELECT f.id_factura, f.id_facilitador, fa.nombre_apellido AS facilitador,
+                     fa.nro_ci, fa.ruc, fa.nombre_emisor, fa.tipo_factura,
+                     fa.telefono, fa.email,
+                     f.nro_factura, f.timbrado,
+                     TO_CHAR(f.fecha_factura, 'YYYY-MM-DD') AS fecha_factura,
+                     TO_CHAR(f.fecha_desde, 'YYYY-MM-DD') AS fecha_desde,
+                     TO_CHAR(f.fecha_hasta, 'YYYY-MM-DD') AS fecha_hasta,
+                     f.cantidad, f.sueldo, f.monto, f.observacion, f.foto_url,
+                     fa.nombre_banco, fa.sucursal_banco, fa.titular_banco,
+                     fa.nro_ci_titular_banco, fa.tipo_cuenta, fa.nro_cuenta
+                FROM facturas_facilitadores f
+                JOIN facilitadores fa ON fa.id_facilitador = f.id_facilitador
+               WHERE f.fecha_factura >= l_desde
+                 AND f.fecha_factura < l_hasta + 1
+               ORDER BY UPPER(fa.nombre_apellido), f.fecha_factura, f.id_factura) LOOP
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id_factura',           c.id_factura);
+      APEX_JSON.WRITE('id_facilitador',       c.id_facilitador);
+      APEX_JSON.WRITE('facilitador',          c.facilitador);
+      APEX_JSON.WRITE('nro_ci',               c.nro_ci);
+      APEX_JSON.WRITE('ruc',                  c.ruc);
+      APEX_JSON.WRITE('nombre_emisor',        c.nombre_emisor);
+      APEX_JSON.WRITE('tipo_factura',         c.tipo_factura);
+      APEX_JSON.WRITE('telefono',             c.telefono);
+      APEX_JSON.WRITE('email',                c.email);
+      APEX_JSON.WRITE('nro_factura',          c.nro_factura);
+      APEX_JSON.WRITE('timbrado',             c.timbrado);
+      APEX_JSON.WRITE('fecha_factura',        c.fecha_factura);
+      APEX_JSON.WRITE('fecha_desde',          c.fecha_desde);
+      APEX_JSON.WRITE('fecha_hasta',          c.fecha_hasta);
+      APEX_JSON.WRITE('cantidad',             c.cantidad);
+      APEX_JSON.WRITE('sueldo',               c.sueldo);
+      APEX_JSON.WRITE('monto',                c.monto);
+      APEX_JSON.WRITE('observacion',          c.observacion);
+      APEX_JSON.WRITE('foto_url',             c.foto_url);
+      APEX_JSON.WRITE('nombre_banco',         c.nombre_banco);
+      APEX_JSON.WRITE('sucursal_banco',       c.sucursal_banco);
+      APEX_JSON.WRITE('titular_banco',        c.titular_banco);
+      APEX_JSON.WRITE('nro_ci_titular_banco', c.nro_ci_titular_banco);
+      APEX_JSON.WRITE('tipo_cuenta',          c.tipo_cuenta);
+      APEX_JSON.WRITE('nro_cuenta',           c.nro_cuenta);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+  END pagos;
 
   /* ---------------------------------------------------------------------- */
   /* GUARDAR                                                                */
@@ -894,6 +1008,7 @@ DECLARE
 BEGIN
   FOR r IN (SELECT 'facturas-facilitadores' AS p FROM dual
             UNION ALL SELECT 'facturas-facilitadores/firma-foto' FROM dual
+            UNION ALL SELECT 'facturas-facilitadores/pagos' FROM dual
             UNION ALL SELECT 'facturas-facilitadores/:id' FROM dual) LOOP
     FOR m IN (SELECT 'GET' AS v FROM dual UNION ALL SELECT 'POST' FROM dual
               UNION ALL SELECT 'PUT' FROM dual UNION ALL SELECT 'DELETE' FROM dual
@@ -907,6 +1022,8 @@ BEGIN
                        p_priority => 0, p_etag_type => 'NONE');
   -- La ruta fija con mas prioridad que /:id, como postulaciones/todas.
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'facturas-facilitadores/firma-foto',
+                       p_priority => 2, p_etag_type => 'NONE');
+  ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'facturas-facilitadores/pagos',
                        p_priority => 2, p_etag_type => 'NONE');
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'facturas-facilitadores/:id',
                        p_priority => 1, p_etag_type => 'NONE');
@@ -928,6 +1045,10 @@ BEGIN
   -- POST y no GET: cada firma es nueva y no se tiene que cachear.
   handler('facturas-facilitadores/firma-foto', 'POST', '
     PKG_FACTURAS_FACIL_ETHOS.FIRMA_FOTO(p_token => l_token);');
+
+  -- Tesoreria: ?desde=&hasta= (por fecha de la factura), los dos obligatorios.
+  handler('facturas-facilitadores/pagos', 'GET', '
+    PKG_FACTURAS_FACIL_ETHOS.PAGOS(p_token => l_token, p_desde => :desde, p_hasta => :hasta);');
 
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Handlers de facturas-facilitadores publicados.');
@@ -963,6 +1084,7 @@ END;
 BEGIN
   preflight('facturas-facilitadores');
   preflight('facturas-facilitadores/firma-foto');
+  preflight('facturas-facilitadores/pagos');
   preflight('facturas-facilitadores/:id');
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado.');
@@ -1005,6 +1127,7 @@ BEGIN
   DBMS_OUTPUT.PUT_LINE('       PUT    facturas-facilitadores/:id');
   DBMS_OUTPUT.PUT_LINE('       DELETE facturas-facilitadores/:id');
   DBMS_OUTPUT.PUT_LINE('       POST   facturas-facilitadores/firma-foto');
+  DBMS_OUTPUT.PUT_LINE('       GET    facturas-facilitadores/pagos?desde=&hasta=');
 
   BEGIN
     IF PKG_CLOUDINARY_ETHOS.falta IS NULL THEN
@@ -1019,5 +1142,22 @@ BEGIN
   END;
 
   DBMS_OUTPUT.PUT_LINE('[OK]   Sin permisos propios: cargar, modificar y borrar piden solo sesion.');
+
+  -- Pagos a Facilitadores (Tesoreria) si pide su pagina.
+  DECLARE
+    l_pag NUMBER;
+  BEGIN
+    l_pag := PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta('/pagos-facilitadores');
+    IF l_pag IS NULL THEN
+      DBMS_OUTPUT.PUT_LINE('[WARN] /pagos-facilitadores no esta en el menu: darla de alta en');
+      DBMS_OUTPUT.PUT_LINE('       Crear paginas y darle permisos. Hasta entonces pagos responde 403.');
+    ELSE
+      DBMS_OUTPUT.PUT_LINE('[OK]   Pagos a Facilitadores es la pagina ' || l_pag
+                           || ': pide su PUEDE_CONSULTAR.');
+    END IF;
+  EXCEPTION
+    WHEN OTHERS THEN
+      DBMS_OUTPUT.PUT_LINE('[WARN] No se pudo ver /pagos-facilitadores en el menu: ' || SQLERRM);
+  END;
 END;
 /
