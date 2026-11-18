@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileDown, FileSpreadsheet, ImageDown, Loader2 } from "lucide-react";
+import { FileDown, FileSpreadsheet, Handshake, ImageDown, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -15,6 +15,8 @@ import {
 } from "@/lib/formulario-postulacion";
 import { minutos } from "@/lib/horario-instituciones";
 import { keysInstituciones } from "@/lib/instituciones";
+import { listarDirectoresDeInstitucion } from "@/lib/instituciones-directores";
+import { directorActual, generarAcuerdoPdf, nombreArchivoAcuerdo } from "@/lib/pdf-acuerdo";
 import { abrirPdfEnPestana } from "@/lib/pdf-base";
 import { usePermisos } from "@/lib/permisos";
 import {
@@ -64,7 +66,7 @@ export function PostulacionesInstitucion({
   const puede =
     puedeRuta("/instituciones", "actualizar") || puedeRuta("/postulaciones", "actualizar");
   const [anio, setAnio] = useState<string | null>(null);
-  const [generando, setGenerando] = useState<"pdf" | "png" | "xlsx" | null>(null);
+  const [generando, setGenerando] = useState<"pdf" | "png" | "xlsx" | "acuerdo" | null>(null);
 
   // Sin año: el backend usa el lectivo actual y dice cuál es.
   const lista = useQuery({
@@ -214,6 +216,25 @@ export function PostulacionesInstitucion({
       .finally(() => setGenerando(null));
   };
 
+  /**
+   * El Acuerdo Específico de Cooperación del año elegido, solo en PDF
+   * (18/11/2026), con el director actual de la institución. Ver `pdf-acuerdo.ts`.
+   * Sin `await` antes, por la pestaña.
+   */
+  const imprimirAcuerdo = () => {
+    setGenerando("acuerdo");
+    const datos = { institucion: nombreInstitucion, anio: elegido };
+    abrirPdfEnPestana(
+      () =>
+        listarDirectoresDeInstitucion(idInstitucion).then((filas) =>
+          generarAcuerdoPdf({ ...datos, director: directorActual(filas, elegido) }),
+        ),
+      `${nombreArchivoAcuerdo(datos)}.pdf`,
+    )
+      .catch((e) => toast.error(e instanceof Error ? e.message : "No se pudo generar"))
+      .finally(() => setGenerando(null));
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -292,7 +313,21 @@ export function PostulacionesInstitucion({
             idInstitucion={idInstitucion}
             anio={elegido === anioActual ? "" : elegido}
           />
-
+          <button
+            type="button"
+            disabled={generando != null}
+            onClick={imprimirAcuerdo}
+            aria-label="Acuerdo de cooperación en PDF"
+            title="El Acuerdo Específico de Cooperación en PDF, con el director actual"
+            className="flex h-10 items-center gap-1.5 rounded-xl border border-primary/40 bg-card px-3.5 text-sm font-semibold text-primary shadow-soft hover:bg-primary-soft disabled:opacity-60"
+          >
+            {generando === "acuerdo" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Handshake className="size-4" />
+            )}
+            Acuerdo
+          </button>
         </div>
       </div>
 

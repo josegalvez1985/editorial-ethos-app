@@ -232,7 +232,7 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Núcleo de Datos | **Departamentos**: los de cada país, filtrados y agrupados por país; alta, modificación y baja (solo si nada lo usa). Páginas 6 y 7 (modal) de APEX | `/departamentos` | `departamentos.sql` |
 | Núcleo de Datos | **Ciudades**: las de cada departamento, filtradas y agrupadas por departamento; el país sale del departamento. Alta, modificación y baja (solo si nada la usa). Páginas 8 y 9 (modal) de APEX | `/ciudades` | `ciudades.sql` |
 | Núcleo de Datos | **Barrios**: los de cada ciudad, filtrados y agrupados por ciudad; departamento y país salen de la ciudad. Alta, modificación y baja (solo si nada lo usa). Páginas 10 y 11 (modal) de APEX | `/barrios` | `barrios.sql` |
-| Núcleo de Datos | **Instituciones**: listado con cómo va el año lectivo en cada una (horario, pre-horarios confirmados, postulaciones) y "Limpiar filtros", y la ficha con pestañas: **Datos** (con "asignar el facilitador a los pre-horarios"), **Autoridades** (directores y coordinadores, con alta de persona ahí mismo), **Horario** (por año, con "copiar el del año anterior"), **Pre-horarios** (con la vista Planilla en el formato del Formulario N° 1 y su PDF, imagen y Excel, y el Form. 3 del facilitador) y **Postulaciones** (grillas editables iguales a los IG de la 43 y la 38, con la lupa, todas las filas a la vista, los manuales en su color, los días agrupados en Desde/Hasta y las horas escritas con un clic, con "horarios de otro año", postulaciones por año y el Formulario N° 1 en **PDF, imagen y Excel**, y el **Form. 3** (agenda semanal) de su facilitador). Páginas 16, 21, 33, 35, 38, 43, 46 y 60 de APEX | `/instituciones` | `instituciones.sql`, `instituciones_directores.sql`, `instituciones_coordinadores.sql`, `horario_instituciones.sql`, `pre_horarios.sql`, `postulaciones.sql`, `directores.sql`, `coordinadores.sql` |
+| Núcleo de Datos | **Instituciones**: listado con cómo va el año lectivo en cada una (horario, pre-horarios confirmados, postulaciones) y "Limpiar filtros", y la ficha con pestañas: **Datos** (con "asignar el facilitador a los pre-horarios"), **Autoridades** (directores y coordinadores, con alta de persona ahí mismo), **Horario** (por año, con "copiar el del año anterior"), **Pre-horarios** (con la vista Planilla en el formato del Formulario N° 1 y su PDF, imagen y Excel, y el Form. 3 del facilitador) y **Postulaciones** (grillas editables iguales a los IG de la 43 y la 38, con la lupa, todas las filas a la vista, los manuales en su color, los días agrupados en Desde/Hasta y las horas escritas con un clic, con "horarios de otro año", postulaciones por año y el Formulario N° 1 en **PDF, imagen y Excel**, y el **Form. 3** (agenda semanal) de su facilitador, y el **Acuerdo Específico de Cooperación** en PDF, 18/11/2026). Páginas 16, 21, 33, 35, 38, 43, 46 y 60 de APEX | `/instituciones` | `instituciones.sql`, `instituciones_directores.sql`, `instituciones_coordinadores.sql`, `horario_instituciones.sql`, `pre_horarios.sql`, `postulaciones.sql`, `directores.sql`, `coordinadores.sql` |
 | Núcleo de Datos | **Docentes**: activos e inactivos en pastillas, buscador por nombre, CI o teléfono, aviso de CI o nombre repetido; uno en uso no se borra, se marca inactivo. El diálogo dice **dónde está**: institución y ciudad del año lectivo actual, con un botón para ver los años anteriores, y cada institución lleva a su ficha (19/10/2026). Páginas 41 y 42 (modal) de APEX | `/docentes` | `docentes.sql` |
 | Núcleo de Datos | **Materias** y **Énfasis**: alta, modificación y baja (solo si nada los usa, contando pre-horarios y postulaciones). Páginas 17/18 y 26/27 (modales) de APEX | `/materias`, `/enfasis` | `materias.sql`, `enfasis.sql` |
 | Núcleo de Datos | **Índices**: los de cada manual, agrupados y en orden, con pastillas por manual y buscador; el alta propone el número siguiente y "Agregar y seguir" carga un índice entero de corrido. No repite un número dentro del manual; uno en uso no se borra ni cambia de manual. Estado activo por índice, y el botón **Manuales** abre un panel con un interruptor por manual: inactivarlo inactiva todos sus índices y activarlo los activa a todos (los nuevos heredan el estado del manual). Páginas 28 y 29 (modal) de APEX | `/indices` | `indices.sql` |
@@ -618,6 +618,21 @@ Excel), en [`form-3-institucion.tsx`](src/components/form-3-institucion.tsx). Lo
   facilitador (todos, confirmados o no, como su Form. 1), con `GET pre-horarios/facilitador`
   —**nuevo en `pre_horarios.sql`: correr el script antes de publicar**—; Postulaciones, con sus
   postulaciones activas (`postulaciones/todas`, como `/agenda-semanal-facilitador`).
+
+**El Acuerdo Específico de Cooperación** (18/11/2026) sale en la pestaña **Postulaciones**, al
+lado del Form. 3, **solo en PDF**: el modelo "7 MODELO ACUERDO IE" de la Editorial, en dos hojas
+A4, en [`pdf-acuerdo.ts`](src/lib/pdf-acuerdo.ts). Sin SQL propio. Lo acordado:
+
+- **El texto va tal cual el modelo**, con sus negritas, subrayados y erratas. Lo fijo de la
+  Editorial (Santiago Monti y su C.I., Cecilia Rafael y su teléfono) está en `EDITORIAL`, arriba
+  del archivo: si cambia quién firma, se cambia ahí.
+- **Se completan** el nombre de la institución, el **director actual** (nombre, C.I. y teléfono)
+  y el **año elegido** en la pestaña (año académico, marzo a octubre, vigencia y fecha de firma).
+- **El director actual** sale de `GET instituciones-directores`: entre los **activos**, primero el
+  del año del acuerdo con cargo de director (no vice), después cualquier activo. Sin ninguno
+  activo, quedan las rayas para completar a mano, igual que la vigencia del Convenio Marco con
+  el MEC (art. 3), que la base no tiene.
+- La firma de la Editorial **no va impresa**: queda la raya, para firmar en papel.
 
 En **Auditoría**, la vista *Movimientos* tiene un buscador que mira en todos los campos de
 cada tabla, y tocar un movimiento abre la historia del registro con **todos sus campos** y los
