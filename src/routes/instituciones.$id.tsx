@@ -52,6 +52,7 @@ import {
   type OpcionesInstitucion,
 } from "@/lib/instituciones";
 import { usePermisos } from "@/lib/permisos";
+import { keysPreHorarios } from "@/lib/pre-horarios";
 import { normalizar } from "@/lib/utils";
 
 type Pestana = "datos" | "autoridades" | "horario" | "prehorarios" | "postulaciones";
@@ -386,10 +387,15 @@ function Datos({
 
   const asignar = useMutation({
     mutationFn: () => asignarFacilitadorPreHorarios(idNum!),
-    onSuccess: (n) => {
+    onSuccess: ({ actualizados, salteados }) => {
       setConfirmarAsignar(false);
       qc.invalidateQueries({ queryKey: keysInstituciones.todo });
-      toast.success(`${n} pre-horario(s) con ${ficha?.facilitador || "el facilitador"}`);
+      qc.invalidateQueries({ queryKey: keysPreHorarios.institucion(idNum!) });
+      toast.success(`${actualizados} pre-horario(s) con ${ficha?.facilitador || "el facilitador"}`);
+      if (salteados > 0)
+        toast.warning(
+          `${salteados} pre-horario(s) quedaron sin facilitador: caen en un horario bloqueado suyo.`,
+        );
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo asignar"),
   });

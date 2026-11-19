@@ -26,6 +26,12 @@ import { HorarioInstitucion } from "@/components/horario-institucion";
 import { PlanillaPreHorarios } from "@/components/planilla-pre-horarios";
 import { keysFacilitadores, listarFacilitadores } from "@/lib/facilitadores";
 import {
+  choqueBloqueo,
+  keysBloqueos,
+  listarBloqueos,
+  type Bloqueo,
+} from "@/lib/facilitadores-bloqueos";
+import {
   descargarFormularioExcel,
   generarFormularioImagen,
   generarFormularioPdf,
@@ -106,6 +112,10 @@ export function PreHorariosInstitucion({
     queryKey: keysFacilitadores.lista,
     queryFn: listarFacilitadores,
   });
+  // Los horarios bloqueados de los facilitadores (19/11/2026), para avisar en
+  // la fila antes de guardar. No se espera a que carguen: si fallan, el
+  // backend igual rechaza el choque al guardar.
+  const bloqueos = useQuery({ queryKey: keysBloqueos.todo, queryFn: listarBloqueos });
 
   // Se decide por los DATOS y no por `isLoading`/`isError` (22/10/2026): una
   // consulta que falló (un ORA-01555 del backend) y quedó con el reintento en
@@ -129,6 +139,7 @@ export function PreHorariosInstitucion({
       lista={lista.data}
       op={opciones.data}
       facilitadores={facilitadores.data}
+      bloqueos={bloqueos.data?.bloqueos ?? []}
     />
   );
 }
@@ -160,6 +171,7 @@ function PreHorariosCargados({
   lista,
   op,
   facilitadores,
+  bloqueos,
 }: {
   idInstitucion: number;
   idFacilitadorInstitucion: number | null;
@@ -167,6 +179,7 @@ function PreHorariosCargados({
   lista: ListaPreHorarios;
   op: OpcionesPreHorario;
   facilitadores: Awaited<ReturnType<typeof listarFacilitadores>>;
+  bloqueos: Bloqueo[];
 }) {
   const qc = useQueryClient();
   const { puedeRuta } = usePermisos();
@@ -310,7 +323,19 @@ function PreHorariosCargados({
     // La acción dinámica de la 43: al cambiar el docente, su teléfono.
     alCambiar: (clave, valor, d) =>
       clave === "idDocente" ? { ...d, telefono: telefonoDe(valor) } : d,
-    validar,
+    // Lo que necesita el trigger y, después, que el facilitador no tenga
+    // bloqueado ese día y esa hora (19/11/2026; el backend lo controla igual).
+    validar: (d) => {
+      const falta = validar(d);
+      if (falta) return falta;
+      const dia = DIAS.find((x) => x.valor === d.dia);
+      const idFac = num(d.idFacilitador);
+      if (!dia || idFac == null) return null;
+      const f = choqueBloqueo(bloqueos, idFac, Number(anio), dia.clave, d.desde, d.hasta);
+      if (!f) return null;
+      const nombre = facilitadores.find((x) => x.id === idFac)?.nombre || "El facilitador";
+      return `${nombre} tiene bloqueado el ${dia.nombre.toLowerCase()} de ${f.desde} a ${f.hasta}: no está disponible de ${d.desde} a ${d.hasta}.`;
+    },
     guardarFila: (id, d) => guardarPreHorario(id, idInstitucion, deFila(d)),
     eliminarFila: eliminarPreHorario,
     onGuardado: () =>

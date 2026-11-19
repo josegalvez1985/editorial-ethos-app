@@ -24,6 +24,10 @@
 --   PUT     facilitadores-bloqueos/:id   {lunes ... viernes}
 --   DELETE  facilitadores-bloqueos/:id
 --
+-- Y la funcion FN_CHOQUE_BLOQUEO (19/11/2026, seccion 3b): si una clase cae en
+-- un horario bloqueado de su facilitador. La usan pre_horarios.sql e
+-- instituciones.sql: este script se corre ANTES que esos dos.
+--
 -- CORRER DESPUES de auth.sql, anios_lectivos.sql y facilitadores.sql.
 --
 --   SQL Workshop -> SQL Scripts -> Upload -> este archivo -> Run
@@ -287,6 +291,89 @@ END;
 /
 
 ALTER TRIGGER "FACILITADORES_DIAS_BLOQUEOS_JNTRG" ENABLE;
+
+--------------------------------------------------------------------------------
+-- === 3b) FN_CHOQUE_BLOQUEO: la clase cae en un horario bloqueado? ==========
+--------------------------------------------------------------------------------
+--
+-- 19/11/2026, pedido de Jose: un pre-horario no se carga con un facilitador
+-- que tiene bloqueado ese dia y esa hora. La usan pre_horarios.sql (guardar)
+-- e instituciones.sql (asignar el facilitador a los pre-horarios), por eso es
+-- una funcion suelta y no parte del paquete.
+--
+--   FN_CHOQUE_BLOQUEO(id_facilitador, anio, dia, desde, hasta)
+--
+--   anio   el ANIO lectivo (el numero, como PRE_HORARIOS.ANIO), no el ID
+--   dia    'LUNES' ... 'VIERNES' (como PRE_HORARIOS.DIA)
+--   desde, hasta  las horas de la clase (DATE: solo cuentan hora y minuto)
+--
+-- Devuelve la PRIMERA franja bloqueada que se pisa con la clase, como esta
+-- guardada ('07:00 - 08:00'), o NULL si no hay choque (o falta un dato).
+-- Pisarse = empezar antes de que la otra termine y terminar despues de que
+-- empiece: una clase de 08:00 a 08:40 NO choca con un bloqueo de 07:00 a
+-- 08:00 (se tocan, no se pisan).
+--------------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION FN_CHOQUE_BLOQUEO(
+  p_id_facilitador IN NUMBER,
+  p_anio           IN VARCHAR2,
+  p_dia            IN VARCHAR2,
+  p_desde          IN DATE,
+  p_hasta          IN DATE) RETURN VARCHAR2
+IS
+  l_a      PLS_INTEGER;
+  l_b      PLS_INTEGER;
+  l_partes APEX_T_VARCHAR2;
+  l_f      VARCHAR2(100);
+  l_ini    PLS_INTEGER;
+  l_fin    PLS_INTEGER;
+
+  -- 'HH:MI' -> minutos del dia, o NULL.
+  FUNCTION f_min(p_txt IN VARCHAR2) RETURN PLS_INTEGER IS
+    l_t VARCHAR2(100) := TRIM(p_txt);
+  BEGIN
+    IF l_t IS NULL OR NOT REGEXP_LIKE(l_t, '^[0-9]{1,2}:[0-9]{2}$') THEN
+      RETURN NULL;
+    END IF;
+    RETURN TO_NUMBER(SUBSTR(l_t, 1, INSTR(l_t, ':') - 1)) * 60
+           + TO_NUMBER(SUBSTR(l_t, INSTR(l_t, ':') + 1));
+  EXCEPTION
+    WHEN OTHERS THEN RETURN NULL;
+  END f_min;
+BEGIN
+  IF p_id_facilitador IS NULL OR p_anio IS NULL OR p_dia IS NULL
+     OR p_desde IS NULL OR p_hasta IS NULL THEN
+    RETURN NULL;
+  END IF;
+  l_a := TO_NUMBER(TO_CHAR(p_desde, 'HH24')) * 60 + TO_NUMBER(TO_CHAR(p_desde, 'MI'));
+  l_b := TO_NUMBER(TO_CHAR(p_hasta, 'HH24')) * 60 + TO_NUMBER(TO_CHAR(p_hasta, 'MI'));
+
+  FOR r IN (SELECT CASE UPPER(TRIM(p_dia))
+                     WHEN 'LUNES'     THEN b.lunes
+                     WHEN 'MARTES'    THEN b.martes
+                     WHEN 'MIERCOLES' THEN b.miercoles
+                     WHEN 'JUEVES'    THEN b.jueves
+                     WHEN 'VIERNES'   THEN b.viernes
+                   END AS franjas
+              FROM facilitadores_dias_bloqueos b
+              JOIN anios_lectivos a ON a.id_anio = b.id_anio
+             WHERE b.id_facilitador = p_id_facilitador
+               AND TO_CHAR(a.anio) = TRIM(p_anio)) LOOP
+    IF r.franjas IS NOT NULL THEN
+      l_partes := APEX_STRING.SPLIT(r.franjas, ',');
+      FOR i IN 1 .. l_partes.COUNT LOOP
+        l_f   := TRIM(l_partes(i));
+        l_ini := f_min(REGEXP_SUBSTR(l_f, '^[^-]+'));
+        l_fin := f_min(REGEXP_SUBSTR(l_f, '[^-]+$'));
+        IF l_ini IS NOT NULL AND l_fin IS NOT NULL AND l_a < l_fin AND l_b > l_ini THEN
+          RETURN l_f;
+        END IF;
+      END LOOP;
+    END IF;
+  END LOOP;
+  RETURN NULL;
+END FN_CHOQUE_BLOQUEO;
+/
 
 --------------------------------------------------------------------------------
 -- === 4) PAQUETE =============================================================
@@ -875,6 +962,7 @@ DECLARE
   l_n      PLS_INTEGER;
 BEGIN
   FOR o IN (SELECT 'FACILITADORES_DIAS_BLOQUEOS_JNTRG' AS nombre, 'TRIGGER' AS tipo FROM dual
+            UNION ALL SELECT 'FN_CHOQUE_BLOQUEO', 'FUNCTION' FROM dual
             UNION ALL SELECT 'PKG_FAC_BLOQUEOS_ETHOS', 'PACKAGE BODY' FROM dual) LOOP
     BEGIN
       SELECT status INTO l_estado FROM user_objects

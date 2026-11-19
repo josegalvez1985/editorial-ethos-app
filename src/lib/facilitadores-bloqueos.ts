@@ -148,6 +148,34 @@ export function anioVigente(anios: AnioBloqueo[]): AnioBloqueo | undefined {
   return anios.find((a) => a.vigente) ?? anios[0];
 }
 
+/**
+ * La franja bloqueada del facilitador que se pisa con una clase de `desde` a
+ * `hasta` ese día y año lectivo (`"07:00 - 08:00"`), o `null` (19/11/2026). Es
+ * la misma regla que `FN_CHOQUE_BLOQUEO` en el backend: se pisan si una empieza
+ * antes de que la otra termine; tocarse (08:00 y 08:00) no es choque.
+ */
+export function choqueBloqueo(
+  bloqueos: Bloqueo[],
+  idFacilitador: number,
+  anio: number,
+  dia: Dia,
+  desde: string,
+  hasta: string,
+): Franja | null {
+  const a = minutos(desde);
+  const b = minutos(hasta);
+  if (a == null || b == null) return null;
+  for (const bl of bloqueos) {
+    if (bl.idFacilitador !== idFacilitador || bl.anio !== anio) continue;
+    for (const f of leerFranjas(bl.dias[dia]).franjas) {
+      const ini = minutos(f.desde);
+      const fin = minutos(f.hasta);
+      if (ini != null && fin != null && a < fin && b > ini) return f;
+    }
+  }
+  return null;
+}
+
 export const keysBloqueos = {
   todo: ["facilitadores-bloqueos"] as const,
 };

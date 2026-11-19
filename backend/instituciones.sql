@@ -35,8 +35,9 @@
 --   POST    instituciones/:id/facilitador  el boton "Actualizar Facilitador" de
 --                                          la 21: ver abajo
 --
--- CORRER DESPUES de auth.sql, roles_paginas.sql (permisos) y anios_lectivos.sql
--- (FN_ANIO_LECTIVO_ACTUAL). La pantalla lee tambien GET ciudades, barrios y
+-- CORRER DESPUES de auth.sql, roles_paginas.sql (permisos), anios_lectivos.sql
+-- (FN_ANIO_LECTIVO_ACTUAL) y facilitadores_dias_bloqueos.sql (FN_CHOQUE_BLOQUEO,
+-- 19/11/2026). La pantalla lee tambien GET ciudades, barrios y
 -- facilitadores: conviene tener corridos ciudades.sql, barrios.sql y
 -- facilitadores.sql.
 --
@@ -105,6 +106,11 @@
 -- es lo que ya pasaba en APEX. La ficha devuelve cuantos se van a tocar
 -- (pre_sin_facilitador) para que la pantalla lo diga antes de confirmar.
 --
+-- Desde el 19/11/2026 SALTEA los pre-horarios que caen en un horario bloqueado
+-- del facilitador (FACILITADORES_DIAS_BLOQUEOS, con FN_CHOQUE_BLOQUEO de
+-- facilitadores_dias_bloqueos.sql): quedan sin facilitador y la respuesta los
+-- cuenta en `salteados`.
+--
 --------------------------------------------------------------------------------
 -- PERMISOS, ID
 --------------------------------------------------------------------------------
@@ -132,7 +138,9 @@ BEGIN
             UNION ALL SELECT 'PKG_ROLES_PAGINAS_ETHOS', 'PACKAGE BODY',
                    'backend/roles_paginas.sql' FROM dual
             UNION ALL SELECT 'FN_ANIO_LECTIVO_ACTUAL', 'FUNCTION',
-                   'backend/anios_lectivos.sql' FROM dual) LOOP
+                   'backend/anios_lectivos.sql' FROM dual
+            UNION ALL SELECT 'FN_CHOQUE_BLOQUEO', 'FUNCTION',
+                   'backend/facilitadores_dias_bloqueos.sql' FROM dual) LOOP
     SELECT COUNT(*) INTO l_n FROM all_objects
      WHERE object_name = o.nombre AND object_type = o.tipo;
     IF l_n = 0 THEN
@@ -871,6 +879,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_INSTITUCIONES_ETHOS AS
     l_anio VARCHAR2(16) := f_anio;
     l_fac  NUMBER;
     l_n    PLS_INTEGER;
+    l_salteo PLS_INTEGER := 0;
   BEGIN
     IF NOT exigir(p_token, 'U') THEN RETURN; END IF;
     IF l_id IS NULL THEN
@@ -889,19 +898,30 @@ CREATE OR REPLACE PACKAGE BODY PKG_INSTITUCIONES_ETHOS AS
       p_error(409, 'Conflict', 'No hay un ' || UNISTR('a\00f1o') || ' lectivo activo (ver ANIOS_LECTIVOS)'); RETURN;
     END IF;
 
-    UPDATE pre_horarios
-       SET id_facilitador = l_fac
-     WHERE id_institucion = l_id
-       AND id_facilitador IS NULL
-       AND anio = l_anio;
-    l_n := SQL%ROWCOUNT;
+    -- Se saltean los que caen en un horario bloqueado del facilitador
+    -- (19/11/2026): ver FN_CHOQUE_BLOQUEO en facilitadores_dias_bloqueos.sql.
+    l_n := 0;
+    FOR r IN (SELECT id_pre_horario, dia, hora_desde, hora_hasta FROM pre_horarios
+               WHERE id_institucion = l_id
+                 AND id_facilitador IS NULL
+                 AND anio = l_anio) LOOP
+      IF FN_CHOQUE_BLOQUEO(l_fac, l_anio, r.dia, r.hora_desde, r.hora_hasta) IS NULL THEN
+        UPDATE pre_horarios SET id_facilitador = l_fac WHERE id_pre_horario = r.id_pre_horario;
+        l_n := l_n + 1;
+      ELSE
+        l_salteo := l_salteo + 1;
+      END IF;
+    END LOOP;
     COMMIT;
 
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('actualizados', l_n);
-    APEX_JSON.WRITE('message', l_n || ' pre-horario(s) actualizados');
+    APEX_JSON.WRITE('salteados', l_salteo);
+    APEX_JSON.WRITE('message', l_n || ' pre-horario(s) actualizados'
+                    || CASE WHEN l_salteo > 0 THEN '; ' || l_salteo
+                         || ' no, porque el facilitador tiene bloqueado ese horario' END);
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION
     WHEN OTHERS THEN

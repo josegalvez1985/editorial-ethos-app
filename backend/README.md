@@ -526,6 +526,13 @@ una página ni va en `MENU_PAGINAS`.
   que **volver a correr `facilitadores.sql`** para que tome el cambio.
 - **Años Lectivos no los cuenta** como datos del año: cuenta las tablas con columna `ANIO`, y
   esta tiene `ID_ANIO`. Borrar un año con bloqueos lo frena la FK `FK_FAC_BLOQ_ANIO`.
+- **Frenan los pre-horarios** (19/11/2026, pedido de Jose): `FN_CHOQUE_BLOQUEO(id_facilitador,
+  anio, dia, desde, hasta)`, función suelta de este script, devuelve la franja bloqueada que se
+  pisa con una clase (o `NULL`). Pisarse = empezar antes de que la otra termine; tocarse (una
+  termina 08:00 y la otra empieza 08:00) no es choque. La usan `pre_horarios.sql` (guardar
+  responde **409**) e `instituciones.sql` (asignar el facilitador saltea esos pre-horarios), así
+  que **este script va antes que esos dos**. El sitio avisa lo mismo en la fila antes de guardar
+  (`choqueBloqueo` en `lib/facilitadores-bloqueos.ts`).
 
 ## Departamentos (`departamentos.sql`)
 
@@ -690,7 +697,7 @@ Orden para correrlos: `directores.sql` y `coordinadores.sql`, después `instituc
 | POST | `instituciones` | insertar en la página de `/instituciones` | `{nombre, estado, id_ciudad, id_barrio, direccion, ubicacion, zona, comentario, id_facilitador}` → `{id_institucion, autoridades_cambiadas}` |
 | PUT | `instituciones/:id` | actualizar | Lo mismo |
 | DELETE | `instituciones/:id` | borrar | **409** si algo la usa fuera de su ficha; autoridades y horario se borran con ella |
-| POST | `instituciones/:id/facilitador` | actualizar | El "Actualizar Facilitador" de la 21: el facilitador guardado a los pre-horarios del año que no tienen → `{actualizados}` |
+| POST | `instituciones/:id/facilitador` | actualizar | El "Actualizar Facilitador" de la 21: el facilitador guardado a los pre-horarios del año que no tienen → `{actualizados, salteados}`. Desde el 19/11/2026 saltea los que caen en un horario bloqueado del facilitador |
 | GET | `instituciones-directores?id_institucion=` | sesión | Las filas de una institución (sin el parámetro, todas); misma forma en `instituciones-coordinadores` |
 | POST/PUT/DELETE | `instituciones-directores[/:id]` | actualizar en `/instituciones`, o la acción en `/instituciones-directores` | Una fila por vez |
 | GET | `directores` | sesión | Las personas, con en cuántas instituciones figuran |
@@ -700,7 +707,7 @@ Orden para correrlos: `directores.sql` y `coordinadores.sql`, después `instituc
 | GET | `pre-horarios?id_institucion=&anio=` | sesión | Los del año (sin `anio`, el actual), con `id_postulacion` y sus `usos` (> 0 = bloqueado) |
 | GET | `pre-horarios/facilitador?id_facilitador=&anio=` | sesión | Los de UN facilitador en TODAS sus instituciones (sin `anio`, el actual), con la institución: solo turno, grado, sección, día, horas y si está confirmado. Lo usa el Form. 3 (la agenda semanal del facilitador) desde la pestaña Pre-horarios de una institución (26/10/2026). **Hay que volver a correr `pre_horarios.sql`** antes de publicar ese botón |
 | GET | `pre-horarios/opciones` | sesión | Turnos y "confirmado" (listas de APEX), materias, énfasis y docentes (con `es_activo`) |
-| POST/PUT/DELETE | `pre-horarios[/:id]` | actualizar en `/instituciones` | Una clase por vez; **409** si está bloqueado o no es del año actual |
+| POST/PUT/DELETE | `pre-horarios[/:id]` | actualizar en `/instituciones` | Una clase por vez; **409** si está bloqueado o no es del año actual, y (POST/PUT, 19/11/2026) si el facilitador tiene **bloqueado** ese día y esa hora (`FN_CHOQUE_BLOQUEO`) |
 | POST | `pre-horarios/confirmar` | actualizar en `/instituciones` | `{id_institucion, ids, estado}`: confirma varios; saltea bloqueados e incompletos. Hoy el sitio no lo usa (la grilla confirma fila por fila, como la 43) |
 | GET | `postulaciones?id_institucion=&anio=` | sesión | Las del año, con `anios` (los que tiene la institución) y `usos` |
 | GET | `postulaciones/formulario?id_institucion=&anio=` | sesión | Lo que imprime el Formulario N° 1 (el proceso DATOS de la 60) |

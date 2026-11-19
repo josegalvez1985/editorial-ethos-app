@@ -32,8 +32,14 @@
 --   POST    pre-horarios/confirmar  {id_institucion, ids, estado} confirma (o
 --                                   des-confirma) varios de una vez
 --
--- CORRER DESPUES de auth.sql, roles_paginas.sql, anios_lectivos.sql e
--- instituciones.sql. La pantalla lee tambien GET facilitadores y GET
+-- HORARIOS BLOQUEADOS (19/11/2026): guardar rechaza (409) un pre-horario cuyo
+-- facilitador tiene bloqueado ese dia y esa hora en FACILITADORES_DIAS_BLOQUEOS
+-- (del mismo anio lectivo), con FN_CHOQUE_BLOQUEO. Se mira en el alta y en
+-- toda modificacion con facilitador. Confirmar no lo mira: no cambia ni el
+-- facilitador ni las horas.
+--
+-- CORRER DESPUES de auth.sql, roles_paginas.sql, anios_lectivos.sql,
+-- instituciones.sql y facilitadores_dias_bloqueos.sql. La pantalla lee tambien GET facilitadores y GET
 -- postulaciones (postulaciones.sql).
 --
 --   SQL Workshop -> SQL Scripts -> Upload -> este archivo -> Run
@@ -114,7 +120,9 @@ BEGIN
             UNION ALL SELECT 'PKG_ROLES_PAGINAS_ETHOS', 'PACKAGE BODY',
                    'backend/roles_paginas.sql' FROM dual
             UNION ALL SELECT 'FN_ANIO_LECTIVO_ACTUAL', 'FUNCTION',
-                   'backend/anios_lectivos.sql' FROM dual) LOOP
+                   'backend/anios_lectivos.sql' FROM dual
+            UNION ALL SELECT 'FN_CHOQUE_BLOQUEO', 'FUNCTION',
+                   'backend/facilitadores_dias_bloqueos.sql' FROM dual) LOOP
     SELECT COUNT(*) INTO l_n FROM all_objects
      WHERE object_name = o.nombre AND object_type = o.tipo;
     IF l_n = 0 THEN
@@ -670,6 +678,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRE_HORARIOS_ETHOS AS
     l_cant    NUMBER;
     l_anio    VARCHAR2(16);
     l_n       PLS_INTEGER;
+    l_choque  VARCHAR2(100);
+    l_nombre  VARCHAR2(4000);
   BEGIN
     IF NOT exigir(p_token, 'U') THEN RETURN; END IF;
     IF p_id IS NOT NULL AND l_id IS NULL THEN
@@ -745,6 +755,24 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRE_HORARIOS_ETHOS AS
       IF l_n > 0 THEN
         p_error(409, 'Conflict', 'Su postulacion ya tiene ' || l_n || ' intervencion(es) o '
                 || 'evaluacion(es): no se puede modificar'); RETURN;
+      END IF;
+    END IF;
+
+    -- El facilitador no puede tener bloqueado ese dia y esa hora (19/11/2026):
+    -- ver FN_CHOQUE_BLOQUEO en facilitadores_dias_bloqueos.sql.
+    IF l_fac IS NOT NULL THEN
+      l_choque := FN_CHOQUE_BLOQUEO(l_fac, NVL(l_anio, f_anio), l_dia, l_desde, l_hasta);
+      IF l_choque IS NOT NULL THEN
+        BEGIN
+          SELECT TRIM(nombre_apellido) INTO l_nombre FROM facilitadores
+           WHERE id_facilitador = l_fac;
+        EXCEPTION
+          WHEN NO_DATA_FOUND THEN l_nombre := 'El facilitador';
+        END;
+        p_error(409, 'Conflict', l_nombre || ' tiene bloqueado el ' || l_dia || ' de '
+                || l_choque || ': no est' || UNISTR('\00e1') || ' disponible de '
+                || TO_CHAR(l_desde, 'HH24:MI') || ' a ' || TO_CHAR(l_hasta, 'HH24:MI'));
+        RETURN;
       END IF;
     END IF;
 

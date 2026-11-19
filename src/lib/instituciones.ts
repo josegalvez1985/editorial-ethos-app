@@ -223,13 +223,17 @@ export async function eliminarInstitucion(id: number): Promise<void> {
 /**
  * El botón "Actualizar Facilitador" de la página 21: pone el facilitador
  * GUARDADO de la institución en los pre-horarios del año que no tienen.
- * Devuelve cuántos cambió.
+ * Devuelve cuántos cambió y cuántos salteó porque caen en un horario bloqueado
+ * del facilitador (19/11/2026).
  */
-export async function asignarFacilitadorPreHorarios(id: number): Promise<number> {
+export async function asignarFacilitadorPreHorarios(
+  id: number,
+): Promise<{ actualizados: number; salteados: number }> {
   const r = (await authFetch(`instituciones/${id}/facilitador`, { method: "POST" })) as {
     actualizados?: number;
+    salteados?: number;
   };
-  return num(r.actualizados);
+  return { actualizados: num(r.actualizados), salteados: num(r.salteados) };
 }
 
 /**
