@@ -144,12 +144,23 @@ export async function opcionesPreHorario(): Promise<OpcionesPreHorario> {
   };
 }
 
-/** Alta (`id` null) o modificación. Devuelve el id. */
+export type ResultadoGuardarPreHorario = {
+  id: number;
+  /**
+   * Lo que reactivó `TRG_PRE_HORARIOS_REACTIVAR` al confirmarlo (23/11/2026):
+   * si la institución estaba inactiva y el nombre del facilitador, si lo
+   * estaba. Las autoridades no se reactivan.
+   */
+  institucionReactivada: boolean;
+  facilitadorReactivado: string | null;
+};
+
+/** Alta (`id` null) o modificación. Devuelve el id y lo que se reactivó. */
 export async function guardarPreHorario(
   id: number | null,
   idInstitucion: number,
   d: DatosPreHorario,
-): Promise<number> {
+): Promise<ResultadoGuardarPreHorario> {
   const r = (await authFetch(id == null ? "pre-horarios" : `pre-horarios/${id}`, {
     method: id == null ? "POST" : "PUT",
     headers: { "Content-Type": "application/json" },
@@ -171,8 +182,12 @@ export async function guardarPreHorario(
       observacion: d.observacion,
       estado: d.confirmado ? "SI" : "NO",
     }),
-  })) as { id?: number };
-  return Number(r.id ?? id ?? 0);
+  })) as { id?: number; institucion_reactivada?: boolean; facilitador_reactivado?: string | null };
+  return {
+    id: Number(r.id ?? id ?? 0),
+    institucionReactivada: r.institucion_reactivada === true,
+    facilitadorReactivado: r.facilitador_reactivado ? String(r.facilitador_reactivado) : null,
+  };
 }
 
 /** Baja. El trigger borra su postulación; 409 si está bloqueado. */

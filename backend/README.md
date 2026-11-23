@@ -3,7 +3,7 @@
 | Archivo | Qué trae | Orden |
 | --- | --- | --- |
 | **[`auth.sql`](auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
-| **[`anios_lectivos.sql`](anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` + el ABM de `/anios-lectivos` (`PKG_ANIOS_LECTIVOS_ETHOS`, `anios-lectivos[/:id]`; el paquete necesita `roles_paginas.sql`: en una instalación nueva, correrlo de nuevo después) | 2º |
+| **[`anios_lectivos.sql`](anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` + `TRG_ANIOS_LECTIVOS_INACTIVAR` (23/11/2026: al dejar de ser vigente un año, inactiva todas las instituciones y todos los facilitadores) + el ABM de `/anios-lectivos` (`PKG_ANIOS_LECTIVOS_ETHOS`, `anios-lectivos[/:id]`; el paquete necesita `roles_paginas.sql`: en una instalación nueva, correrlo de nuevo después) | 2º |
 | **[`evaluaciones_facilitadores.sql`](evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos y de la tarjeta de dirección (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
 | **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`); desde el 09/10/2026 también el mapa de la página 25 (`intervenciones/mapa`, `intervenciones/mapa/facilitadores`), el detalle de un día del gráfico de Actividad (`intervenciones/por-dia/detalle`) y desde el 12/10/2026 las páginas 52, Intervenciones Realizadas (`intervenciones/realizadas`), 53, Resumen de Intervenciones (`intervenciones/resumen-periodo`), 55, Totales por Facilitador (`intervenciones/resumen-periodo`, desde el 27/10/2026), y 69, Intervenciones no realizadas (`intervenciones/no-realizadas`) | independiente |
 | **[`intervenciones_crud.sql`](intervenciones_crud.sql)** | Carga manual de intervenciones (`PKG_INTERV_CRUD_ETHOS`) | independiente |
@@ -33,7 +33,7 @@
 | **[`instituciones_directores.sql`](instituciones_directores.sql)** | Quién dirige cada institución (`PKG_INST_DIRECTORES_ETHOS`) | después de `directores.sql` |
 | **[`instituciones_coordinadores.sql`](instituciones_coordinadores.sql)** | Quién coordina en cada institución (`PKG_INST_COORDINADORES_ETHOS`) | después de `coordinadores.sql` |
 | **[`horario_instituciones.sql`](horario_instituciones.sql)** | El horario de cada institución, por año (`PKG_HORARIO_INST_ETHOS`) | después de `anios_lectivos.sql` |
-| **[`pre_horarios.sql`](pre_horarios.sql)** | Pre-horarios: la planificación del año; confirmarlos crea la postulación (`PKG_PRE_HORARIOS_ETHOS`) | después de `instituciones.sql` |
+| **[`pre_horarios.sql`](pre_horarios.sql)** | Pre-horarios: la planificación del año; confirmarlos crea la postulación (`PKG_PRE_HORARIOS_ETHOS`) y, desde el 23/11/2026, reactiva su institución y su facilitador sin las autoridades (`TRG_PRE_HORARIOS_REACTIVAR`) | después de `instituciones.sql` |
 | **[`docentes.sql`](docentes.sql)** | ABM de docentes (`PKG_DOCENTES_ETHOS`) | después de `roles_paginas.sql` |
 | **[`materias.sql`](materias.sql)** | ABM de materias (`PKG_MATERIAS_ETHOS`) | después de `roles_paginas.sql` |
 | **[`enfasis.sql`](enfasis.sql)** | ABM de énfasis (`PKG_ENFASIS_ETHOS`) | después de `roles_paginas.sql` |
@@ -1427,6 +1427,74 @@ desactivar el anterior en la misma transacción.
 
 Es la única forma de expresar "solo una fila activa" sin un trigger: un `CHECK` no puede
 mirar otras filas y un trigger de tabla choca con la *mutating table*.
+
+### Al cambiar el año vigente: se inactivan instituciones y facilitadores
+
+Desde el 23/11/2026 (pedido de Jose), **cuando el año vigente deja de serlo** (`ESTADO` pasa de
+`'A'` a otro valor), el trigger `TRG_ANIOS_LECTIVOS_INACTIVAR` de `anios_lectivos.sql`:
+
+| Tabla | Qué cambia | Cuáles |
+| --- | --- | --- |
+| `INSTITUCIONES` | `ESTADO = 'I'` | las activas: `'A'` o `NULL` (que cuenta como activa) |
+| `FACILITADORES` | `ACTIVO = 'NO'` | las que empiezan con S (`'SI'`) |
+
+- **Solo inactiva.** Se reactivan al **confirmar un pre-horario** (ver abajo) o a mano desde su
+  ficha.
+- **Es de la tabla, no del paquete:** salta igual desde el sitio y desde APEX. En el sitio pasa
+  al crear un año nuevo como vigente, con "Hacer vigente" o al apagarle "Año vigente" al que lo
+  es. Guardar un año inactivo, o editar el vigente sin cambiarle el estado, no dispara nada.
+- **Es un trigger compuesto:** la fila solo marca y los `UPDATE` van en el `AFTER STATEMENT`.
+  Un trigger de fila haría saltar los triggers de `INSTITUCIONES` y `FACILITADORES` con
+  `ANIOS_LECTIVOS` mutando, y si alguno lee el año vigente revienta con ORA-04091.
+- **Arrastra a las autoridades:** `TRG_UPD_ESTADO_INSTITUCIONES` pone `'I'` a todas las filas
+  de `INSTITUCIONES_DIRECTORES` e `INSTITUCIONES_COORDNADORES` de cada institución que se
+  inactiva. Las instituciones que tenían `ESTADO` `NULL` pasan a `'I'`, pero sus autoridades no
+  se tocan (ese trigger compara con `!=`). Al **reactivar a mano** una institución desde su ficha,
+  el mismo trigger reactiva **todas** sus autoridades, también las de períodos viejos.
+- **El Form. 1 y el Acuerdo se quedan sin autoridades:** `postulaciones/formulario` y el
+  director del Acuerdo solo toman autoridades con `ESTADO = 'A'`. Salen sin directores ni
+  coordinadores, también los de años anteriores, hasta que se activan en la pestaña Autoridades
+  o se reactiva la institución a mano.
+- **Hasta que se reactivan, no aparecen** en lo que ofrece solo los activos: el facilitador de
+  los **pre-horarios**, los combos de facilitador e institución de **Evaluaciones** y la
+  **tarjeta de cumpleaños** del Inicio. Los reportes y las fichas los siguen mostrando.
+- **Los formularios 2 y 3 no cambian:** eligen facilitadores por sus **postulaciones activas**,
+  no por `FACILITADORES.ACTIVO`, y el trigger no toca `POSTULACIONES`.
+- **Queda en la bitácora:** los `_JNTRG` anotan cada cambio con el usuario que cambió el año.
+- **Misma transacción:** si algo falla, ni cambia el año ni se inactiva nada.
+- **El login no se ve afectado:** `auth.sql` no lee `FACILITADORES.ACTIVO`.
+
+`guardar` cuenta las activas antes y después y devuelve `instituciones_inactivadas` y
+`facilitadores_inactivados`. La pantalla avisa en la confirmación y en el interruptor "Año
+vigente", y el aviso de guardado dice cuántas se inactivaron.
+
+#### Confirmar un pre-horario las reactiva (`TRG_PRE_HORARIOS_REACTIVAR`)
+
+También del 23/11/2026, en `pre_horarios.sql`. Es la otra mitad de lo de arriba: el año nuevo
+reactiva lo que se confirma.
+
+| Cuándo | Qué se reactiva |
+| --- | --- |
+| Un pre-horario **pasa a confirmado** (alta con `ESTADO = 'SI'`, o de `'NO'` a `'SI'`) | su institución (`ESTADO = 'A'`) y su facilitador (`ACTIVO = 'SI'`), si estaban inactivos |
+| Uno **ya confirmado cambia de facilitador** | el facilitador nuevo (la institución no se toca) |
+
+- **Las autoridades NO se reactivan** (decisión de Jose). `TRG_UPD_ESTADO_INSTITUCIONES` las
+  reactivaría a todas, también las de períodos viejos. Para evitarlo, el trigger guarda antes el
+  estado de cada una (por `ROWID`) y se lo devuelve después. Se activan aparte, en la pestaña
+  **Autoridades**. Efecto en la bitácora: la `_JN` de autoridades anota dos movimientos por
+  fila, el del trigger viejo y el que lo deshace.
+- **Des-confirmar o borrar no inactiva nada**, y editar un confirmado sin cambiarle el
+  facilitador tampoco reactiva: solo cuenta el paso a confirmado.
+- **Es de la tabla:** vale para el sitio y para APEX (el modal 43). Compuesto, por lo mismo que
+  el de años lectivos. Va en la misma transacción que el pre-horario.
+- **Lo verificado el 23/11/2026:** ningún trigger de `PRE_HORARIOS` ni de `POSTULACIONES`
+  tocaba `INSTITUCIONES` ni `FACILITADORES` (la consulta a `USER_SOURCE` no devolvió filas). Antes
+  de esto, confirmar no reactivaba nada.
+- `POST/PUT pre-horarios` devuelve `institucion_reactivada` (true/false) y
+  `facilitador_reactivado` (el nombre, o nada). La pestaña Pre-horarios junta lo de todas las
+  filas del Guardar y lo avisa una vez: "Se reactivó *institución* y *facilitador*", con la
+  aclaración de que las autoridades se activan aparte. `pre-horarios/confirmar` (el masivo, que
+  la pantalla no usa) reactiva igual por el trigger, pero no lo informa.
 
 > **`FN_ANIO_LECTIVO_ACTUAL` ya existía en la base** —la usa el trigger
 > `TRG_POSTULACIONES_SET_ANIO`— pero su fuente **no estaba en el repositorio**. El script la

@@ -26,7 +26,10 @@
 --                                  id_enfasis, cantidad_alumnos, manual, dia,
 --                                  hora_desde, hora_hasta, id_materia,
 --                                  id_docente, telefono, id_facilitador,
---                                  observacion, estado} -> {id}
+--                                  observacion, estado} -> {id,
+--                                  institucion_reactivada, facilitador_reactivado}
+--                                  (lo que reactivo TRG_PRE_HORARIOS_REACTIVAR:
+--                                  true/false y el nombre del facilitador)
 --   PUT     pre-horarios/:id      lo mismo
 --   DELETE  pre-horarios/:id
 --   POST    pre-horarios/confirmar  {id_institucion, ids, estado} confirma (o
@@ -164,6 +167,149 @@ BEGIN
 EXCEPTION
   WHEN OTHERS THEN
     DBMS_OUTPUT.PUT_LINE('[ERROR] ' || SQLERRM);
+END;
+/
+
+--------------------------------------------------------------------------------
+-- === 1b) TRG_PRE_HORARIOS_REACTIVAR  —  23/11/2026, pedido de Jose ==========
+--------------------------------------------------------------------------------
+--
+-- Al cambiar el año vigente, TRG_ANIOS_LECTIVOS_INACTIVAR (anios_lectivos.sql)
+-- inactiva todas las instituciones y todos los facilitadores. Este trigger
+-- los vuelve a activar a medida que se confirma el año nuevo:
+--
+--   - un pre-horario PASA A CONFIRMADO (alta con ESTADO 'SI', o de 'NO' a 'SI')
+--       -> su institucion   ESTADO = 'A'   si estaba inactiva
+--       -> su facilitador   ACTIVO = 'SI'  si tiene uno y estaba inactivo
+--   - un pre-horario YA CONFIRMADO cambia de facilitador
+--       -> el facilitador nuevo ACTIVO = 'SI' (la institucion no se toca)
+--
+-- Des-confirmar o borrar NO inactiva nada. Editar un confirmado sin cambiarle
+-- el facilitador tampoco reactiva: solo cuenta el paso a confirmado.
+--
+-- LAS AUTORIDADES NO SE REACTIVAN (decision de Jose)
+--
+--   TRG_UPD_ESTADO_INSTITUCIONES (ya estaba, no se toca) pone el estado de la
+--   institucion a TODAS sus filas de INSTITUCIONES_DIRECTORES e
+--   INSTITUCIONES_COORDNADORES: reactivarla las reactivaria a todas, tambien
+--   las de periodos viejos. Para que no pase, antes de reactivar se guarda el
+--   estado de cada una (por ROWID) y despues se le devuelve el que tenia. Las
+--   autoridades se activan aparte, desde la pestana Autoridades.
+--   Efecto en la bitacora: la _JN de autoridades anota dos movimientos por
+--   fila (el del trigger viejo y el que lo deshace).
+--
+--   Reactivar una institucion A MANO desde su ficha sigue reactivando todas
+--   sus autoridades: eso es TRG_UPD_ESTADO_INSTITUCIONES y no cambia.
+--
+-- Es de la tabla: vale igual para el sitio y para APEX. Compuesto por lo
+-- mismo que el de anios_lectivos.sql: la fila solo anota, y los UPDATE van en
+-- el AFTER STATEMENT, cuando PRE_HORARIOS ya no muta. Misma transaccion que
+-- el pre-horario: si algo falla, no se guarda.
+--------------------------------------------------------------------------------
+
+CREATE OR REPLACE TRIGGER trg_pre_horarios_reactivar
+FOR INSERT OR UPDATE OF estado, id_facilitador ON pre_horarios
+COMPOUND TRIGGER
+
+  -- Los ids a reactivar, sin repetir (la clave es el id como texto).
+  TYPE t_ids IS TABLE OF BOOLEAN INDEX BY VARCHAR2(40);
+  g_inst t_ids;
+  g_fac  t_ids;
+
+  AFTER EACH ROW IS
+  BEGIN
+    IF UPPER(TRIM(:NEW.estado)) = 'SI' THEN
+      IF INSERTING OR NVL(UPPER(TRIM(:OLD.estado)), 'NO') <> 'SI' THEN
+        -- Paso a confirmado: la institucion y el facilitador.
+        IF :NEW.id_institucion IS NOT NULL THEN
+          g_inst(TO_CHAR(:NEW.id_institucion)) := TRUE;
+        END IF;
+        IF :NEW.id_facilitador IS NOT NULL THEN
+          g_fac(TO_CHAR(:NEW.id_facilitador)) := TRUE;
+        END IF;
+      ELSIF :NEW.id_facilitador IS NOT NULL
+            AND NVL(:OLD.id_facilitador, -1) <> :NEW.id_facilitador THEN
+        -- Ya estaba confirmado y cambio de facilitador: solo el nuevo.
+        g_fac(TO_CHAR(:NEW.id_facilitador)) := TRUE;
+      END IF;
+    END IF;
+  END AFTER EACH ROW;
+
+  AFTER STATEMENT IS
+  BEGIN
+    DECLARE
+      TYPE t_rowids IS TABLE OF ROWID;
+      TYPE t_est_dir IS TABLE OF instituciones_directores.estado%TYPE;
+      TYPE t_est_coo IS TABLE OF instituciones_coordnadores.estado%TYPE;
+      l_rid_d t_rowids;
+      l_est_d t_est_dir;
+      l_rid_c t_rowids;
+      l_est_c t_est_coo;
+      l_estado instituciones.estado%TYPE;
+      k VARCHAR2(40);
+    BEGIN
+      k := g_inst.FIRST;
+      WHILE k IS NOT NULL LOOP
+        BEGIN
+          SELECT estado INTO l_estado FROM instituciones WHERE id_institucion = TO_NUMBER(k);
+        EXCEPTION
+          WHEN NO_DATA_FOUND THEN l_estado := 'A';  -- no existe: nada que hacer
+        END;
+        -- Activa = 'A' o NULL (instituciones.sql): solo las inactivas.
+        IF NVL(UPPER(TRIM(l_estado)), 'A') <> 'A' THEN
+          -- Lo que tenian las autoridades, para devolverselo.
+          SELECT ROWID, estado BULK COLLECT INTO l_rid_d, l_est_d
+            FROM instituciones_directores WHERE id_institucion = TO_NUMBER(k);
+          SELECT ROWID, estado BULK COLLECT INTO l_rid_c, l_est_c
+            FROM instituciones_coordnadores WHERE id_institucion = TO_NUMBER(k);
+
+          UPDATE instituciones SET estado = 'A' WHERE id_institucion = TO_NUMBER(k);
+
+          -- Deshace lo que haya cambiado TRG_UPD_ESTADO_INSTITUCIONES.
+          FORALL i IN 1 .. l_rid_d.COUNT
+            UPDATE instituciones_directores SET estado = l_est_d(i)
+             WHERE ROWID = l_rid_d(i) AND DECODE(estado, l_est_d(i), 0, 1) = 1;
+          FORALL i IN 1 .. l_rid_c.COUNT
+            UPDATE instituciones_coordnadores SET estado = l_est_c(i)
+             WHERE ROWID = l_rid_c(i) AND DECODE(estado, l_est_c(i), 0, 1) = 1;
+        END IF;
+        k := g_inst.NEXT(k);
+      END LOOP;
+
+      k := g_fac.FIRST;
+      WHILE k IS NOT NULL LOOP
+        -- Activo = empieza con S (facilitadores.sql): solo los inactivos.
+        UPDATE facilitadores SET activo = 'SI'
+         WHERE id_facilitador = TO_NUMBER(k)
+           AND NVL(UPPER(SUBSTR(TRIM(activo), 1, 1)), 'N') <> 'S';
+        k := g_fac.NEXT(k);
+      END LOOP;
+    END;
+  END AFTER STATEMENT;
+
+END trg_pre_horarios_reactivar;
+/
+
+SHOW ERRORS TRIGGER trg_pre_horarios_reactivar
+
+DECLARE
+  l_estado user_objects.status%TYPE;
+BEGIN
+  SELECT status INTO l_estado FROM user_objects
+   WHERE object_name = 'TRG_PRE_HORARIOS_REACTIVAR' AND object_type = 'TRIGGER';
+  IF l_estado = 'VALID' THEN
+    DBMS_OUTPUT.PUT_LINE('[OK]   TRG_PRE_HORARIOS_REACTIVAR: confirmar un pre-horario reactiva');
+    DBMS_OUTPUT.PUT_LINE('       su institucion y su facilitador (las autoridades no).');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[ERROR] TRG_PRE_HORARIOS_REACTIVAR quedo INVALID:');
+    FOR e IN (SELECT line, text FROM user_errors
+               WHERE name = 'TRG_PRE_HORARIOS_REACTIVAR' ORDER BY sequence) LOOP
+      DBMS_OUTPUT.PUT_LINE('        L' || e.line || ': ' || e.text);
+    END LOOP;
+  END IF;
+EXCEPTION
+  WHEN NO_DATA_FOUND THEN
+    DBMS_OUTPUT.PUT_LINE('[ERROR] TRG_PRE_HORARIOS_REACTIVAR no se creo.');
 END;
 /
 
@@ -403,6 +549,28 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRE_HORARIOS_ETHOS AS
   EXCEPTION
     WHEN NO_DATA_FOUND THEN RETURN 0;
   END usos_de;
+
+  -- 'S' si la institucion esta activa ('A' o NULL), 'N' si no. Para avisar lo
+  -- que reactivo TRG_PRE_HORARIOS_REACTIVAR (23/11/2026).
+  FUNCTION f_inst_activa(p_id IN NUMBER) RETURN VARCHAR2 IS
+    l_estado instituciones.estado%TYPE;
+  BEGIN
+    SELECT estado INTO l_estado FROM instituciones WHERE id_institucion = p_id;
+    RETURN CASE WHEN NVL(UPPER(TRIM(l_estado)), 'A') = 'A' THEN 'S' ELSE 'N' END;
+  EXCEPTION
+    WHEN NO_DATA_FOUND THEN RETURN 'S';
+  END f_inst_activa;
+
+  -- 'S' si el facilitador esta activo (ACTIVO empieza con S), 'N' si no.
+  FUNCTION f_fac_activo(p_id IN NUMBER) RETURN VARCHAR2 IS
+    l_activo facilitadores.activo%TYPE;
+  BEGIN
+    IF p_id IS NULL THEN RETURN 'S'; END IF;
+    SELECT activo INTO l_activo FROM facilitadores WHERE id_facilitador = p_id;
+    RETURN CASE WHEN UPPER(SUBSTR(TRIM(l_activo), 1, 1)) = 'S' THEN 'S' ELSE 'N' END;
+  EXCEPTION
+    WHEN NO_DATA_FOUND THEN RETURN 'S';
+  END f_fac_activo;
 
   /* ---------------------------------------------------------------------- */
   /* LISTAR                                                                 */
@@ -680,6 +848,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRE_HORARIOS_ETHOS AS
     l_n       PLS_INTEGER;
     l_choque  VARCHAR2(100);
     l_nombre  VARCHAR2(4000);
+    -- Activos antes de guardar: lo que reactivo TRG_PRE_HORARIOS_REACTIVAR.
+    l_inst_antes VARCHAR2(1);
+    l_fac_antes  VARCHAR2(1);
+    l_fac_nombre VARCHAR2(4000);
   BEGIN
     IF NOT exigir(p_token, 'U') THEN RETURN; END IF;
     IF p_id IS NOT NULL AND l_id IS NULL THEN
@@ -776,6 +948,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRE_HORARIOS_ETHOS AS
       END IF;
     END IF;
 
+    l_inst_antes := f_inst_activa(l_inst);
+    l_fac_antes  := f_fac_activo(l_fac);
+
     IF l_id IS NULL THEN
       -- Sin ANIO: lo pone TRG_PRE_HORARIO_SET_ANIO (el lectivo actual).
       INSERT INTO pre_horarios (
@@ -796,12 +971,25 @@ CREATE OR REPLACE PACKAGE BODY PKG_PRE_HORARIOS_ETHOS AS
              id_facilitador = l_fac, id_docente = l_docente
        WHERE id_pre_horario = l_id;
     END IF;
+
+    -- El nombre del facilitador, si el trigger lo reactivo.
+    IF l_fac_antes = 'N' AND f_fac_activo(l_fac) = 'S' THEN
+      BEGIN
+        SELECT TRIM(nombre_apellido) INTO l_fac_nombre FROM facilitadores
+         WHERE id_facilitador = l_fac;
+      EXCEPTION
+        WHEN NO_DATA_FOUND THEN l_fac_nombre := 'El facilitador';
+      END;
+    END IF;
     COMMIT;
 
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('id', l_id);
+    -- Lo que reactivo TRG_PRE_HORARIOS_REACTIVAR al confirmarlo (23/11/2026).
+    APEX_JSON.WRITE('institucion_reactivada', l_inst_antes = 'N' AND f_inst_activa(l_inst) = 'S');
+    APEX_JSON.WRITE('facilitador_reactivado', l_fac_nombre);
     APEX_JSON.WRITE('message', CASE WHEN p_id IS NULL THEN 'Pre-horario agregado'
                                     ELSE 'Pre-horario actualizado' END);
     APEX_JSON.CLOSE_OBJECT;

@@ -9,7 +9,7 @@ import {
   Rows3,
   Sheet,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Cargando, Fallo, SoloLectura } from "@/components/admin-ui";
@@ -185,6 +185,8 @@ function PreHorariosCargados({
   const { puedeRuta } = usePermisos();
   const puede = puedeRuta("/instituciones", "actualizar");
   const [vista, setVista] = useVista();
+  /** Lo reactivado al confirmar en el Guardar en curso (ver `guardarFila`). */
+  const reactivados = useRef({ institucion: false, facilitadores: new Set<string>() });
   const [generando, setGenerando] = useState<"pdf" | "png" | "xlsx" | null>(null);
   const [alta, setAlta] = useState<AltaPendiente | null>(null);
 
@@ -336,14 +338,40 @@ function PreHorariosCargados({
       const nombre = facilitadores.find((x) => x.id === idFac)?.nombre || "El facilitador";
       return `${nombre} tiene bloqueado el ${dia.nombre.toLowerCase()} de ${f.desde} a ${f.hasta}: no está disponible de ${d.desde} a ${d.hasta}.`;
     },
-    guardarFila: (id, d) => guardarPreHorario(id, idInstitucion, deFila(d)),
+    // Lo que reactivó TRG_PRE_HORARIOS_REACTIVAR al confirmar (23/11/2026):
+    // se junta fila por fila y se avisa una vez, al terminar de guardar.
+    guardarFila: async (id, d) => {
+      const r = await guardarPreHorario(id, idInstitucion, deFila(d));
+      if (r.institucionReactivada) reactivados.current.institucion = true;
+      if (r.facilitadorReactivado) reactivados.current.facilitadores.add(r.facilitadorReactivado);
+      return r;
+    },
     eliminarFila: eliminarPreHorario,
-    onGuardado: () =>
-      Promise.all([
+    onGuardado: () => {
+      const { institucion, facilitadores: facs } = reactivados.current;
+      reactivados.current = { institucion: false, facilitadores: new Set() };
+      if (institucion || facs.size) {
+        const partes = [
+          ...(institucion ? [nombreInstitucion] : []),
+          ...(facs.size ? [[...facs].join(", ")] : []),
+        ];
+        toast.info(
+          `Se ${partes.length > 1 || facs.size > 1 ? "reactivaron" : "reactivó"} ${partes.join(" y ")}`,
+          {
+            description: institucion
+              ? "Las autoridades no se reactivan: se activan desde la pestaña Autoridades."
+              : undefined,
+            duration: 8000,
+          },
+        );
+      }
+      return Promise.all([
         qc.invalidateQueries({ queryKey: keysPreHorarios.institucion(idInstitucion) }),
         qc.invalidateQueries({ queryKey: keysPostulaciones.todo }),
         qc.invalidateQueries({ queryKey: keysInstituciones.todo }),
-      ]),
+        ...(facs.size ? [qc.invalidateQueries({ queryKey: keysFacilitadores.todo })] : []),
+      ]);
+    },
   };
   const edicion = useEdicionGrilla(opcionesEdicion);
 

@@ -33,10 +33,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AVISO_INACTIVAR,
   eliminarAnioLectivo,
   guardarAnioLectivo,
   keysAniosLectivos,
   listarAniosLectivos,
+  textoInactivados,
   type AnioLectivo,
   type DatosAnioLectivo,
 } from "@/lib/anios-lectivos";
@@ -120,10 +122,15 @@ function AniosLectivosPage() {
         fecha_desde: a.desde,
         fecha_hasta: a.hasta,
       }),
-    onSuccess: (_r, a) => {
-      // Cambió el año de todo el sistema: horarios, pre-horarios, combos…
+    onSuccess: (r, a) => {
+      // Cambió el año de todo el sistema: horarios, pre-horarios, combos… y,
+      // si había otro vigente, las instituciones y facilitadores inactivados.
       qc.invalidateQueries();
-      toast.success(`${a.anio} es el año vigente`);
+      const inactivados = textoInactivados(r);
+      toast.success(
+        `${a.anio} es el año vigente`,
+        inactivados ? { description: inactivados, duration: 8000 } : undefined,
+      );
       setActivando(null);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo activar"),
@@ -234,6 +241,11 @@ function AniosLectivosPage() {
               {vigente ? `${vigente.anio} deja de ser el vigente. ` : ""}
               Horarios, pre-horarios, postulaciones y los combos de evaluaciones pasan a usar{" "}
               {activando?.anio}.
+              {vigente && (
+                <span className="mt-2 block font-medium text-amber-700 dark:text-amber-400">
+                  {AVISO_INACTIVAR}
+                </span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
@@ -464,15 +476,21 @@ function Editor({
       return guardarAnioLectivo(anio?.id ?? null, d);
     },
     onSuccess: (r) => {
-      // Si cambió cuál es el vigente, cambió el año de todo el sistema.
-      if (esVigente !== inicial.vigente || (esVigente && numero !== inicial.anio)) {
+      // Si cambió cuál es el vigente, cambió el año de todo el sistema (y se
+      // inactivaron instituciones y facilitadores).
+      const inactivados = textoInactivados(r);
+      if (esVigente !== inicial.vigente || (esVigente && numero !== inicial.anio) || inactivados) {
         qc.invalidateQueries();
       } else {
         qc.invalidateQueries({ queryKey: keysAniosLectivos.todo });
       }
+      const detalle = [
+        ...(r.desactivado ? [`${r.desactivado} dejó de ser el vigente.`] : []),
+        ...(inactivados ? [inactivados] : []),
+      ].join(" ");
       toast.success(
         nuevo ? `${n} agregado` : "Cambios guardados",
-        r.desactivado ? { description: `${r.desactivado} dejó de ser el vigente.` } : undefined,
+        detalle ? { description: detalle, duration: inactivados ? 8000 : undefined } : undefined,
       );
       onCerrar();
     },
@@ -607,6 +625,12 @@ function Editor({
                     : inicial.vigente
                       ? "Sin año vigente, horarios y pre-horarios no sabrán qué año cargar."
                       : "Queda inactivo."}
+                  {((esVigente && vigente && vigente.id !== anio?.id) ||
+                    (!esVigente && inicial.vigente)) && (
+                    <span className="mt-1 block font-medium text-amber-700 dark:text-amber-400">
+                      {AVISO_INACTIVAR}
+                    </span>
+                  )}
                 </span>
               </span>
             </button>

@@ -336,6 +336,15 @@ para no romperlas al adaptar.
 **Form. 1**
 - Las postulaciones **activas** (estado distinto de `Inactivo`) de la institución y el año, por
   turno, con subtotal amarillo y total celeste. Con pre-horarios: todos, confirmados o no.
+- **Las autoridades del encabezado** son los directores y coordinadores **activos**
+  (`ESTADO = 'A'`) con `PERIODO` = el año.
+- **Al cambiar el año vigente se quedan sin autoridades** (desde el 23/11/2026). El trigger
+  `TRG_ANIOS_LECTIVOS_INACTIVAR` inactiva todas las instituciones, y `TRG_UPD_ESTADO_INSTITUCIONES`
+  inactiva sus directores y coordinadores, así que su Form. 1 sale **sin autoridades, también el
+  de años anteriores**. Confirmar un pre-horario reactiva la institución, **pero no sus
+  autoridades**: se activan aparte, en la pestaña Autoridades. Reactivarla a mano desde su ficha
+  sí las trae todas, también las de períodos viejos. Ver `backend/README.md` → *Al cambiar el
+  año vigente*.
 - Archivo: "Form. 1 - Institución - año".
 
 **Form. 2**

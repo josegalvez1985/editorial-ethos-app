@@ -232,6 +232,105 @@ BEGIN
 END;
 /
 
+--==============================================================================
+-- TRG_ANIOS_LECTIVOS_INACTIVAR  —  23/11/2026, pedido de Jose
+--==============================================================================
+--
+-- Cuando el año VIGENTE deja de serlo (ESTADO 'A' -> cualquier otro), se
+-- inactivan TODAS las instituciones y TODOS los facilitadores:
+--
+--   INSTITUCIONES.ESTADO  -> 'I'   las activas ('A' o NULL, que cuenta como activa)
+--   FACILITADORES.ACTIVO  -> 'NO'  las que empiezan con S ('SI')
+--
+-- SOLO INACTIVA. Este trigger no reactiva nada. Se reactivan al confirmarles
+-- un pre-horario (TRG_PRE_HORARIOS_REACTIVAR, en pre_horarios.sql, sin las
+-- autoridades) o a mano desde su ficha.
+--
+-- CUANDO SALTA
+--
+--   Es un trigger de la tabla, no del paquete: vale para el sitio y para APEX.
+--   En el sitio, el vigente deja de serlo en tres casos, y los tres disparan:
+--     - se crea un año nuevo como vigente (guardar desactiva el anterior);
+--     - "Hacer vigente" otro año ya cargado (idem);
+--     - se edita el vigente y se le apaga "Año vigente".
+--   Guardar un año inactivo, o editar el vigente sin cambiarle el estado, no
+--   dispara nada.
+--
+-- POR QUE COMPUESTO
+--
+--   Un trigger de fila sobre ANIOS_LECTIVOS que actualiza otras tablas hace
+--   saltar los triggers de ESAS tablas mientras ANIOS_LECTIVOS esta mutando:
+--   si alguno lee el año vigente (FN_ANIO_LECTIVO_ACTUAL), revienta con
+--   ORA-04091. En el AFTER STATEMENT la tabla ya no muta: la fila solo marca,
+--   y los UPDATE van al final de la sentencia.
+--
+-- LO QUE ARRASTRA (triggers que ya estaban, no se tocan)
+--
+--   - TRG_UPD_ESTADO_INSTITUCIONES pone el mismo estado a las autoridades de
+--     cada institucion (INSTITUCIONES_DIRECTORES e INSTITUCIONES_COORDNADORES):
+--     quedan todas en 'I'. Compara con !=, asi que las instituciones que tenian
+--     ESTADO NULL pasan a 'I' pero sus autoridades no se tocan. Ojo al
+--     reactivar una institucion: el mismo trigger reactiva TODAS sus
+--     autoridades, tambien las de periodos viejos.
+--   - Los _JNTRG de INSTITUCIONES y FACILITADORES anotan cada cambio en la
+--     bitacora con el usuario que cambio el año (CLIENT_IDENTIFIER).
+--
+-- Todo va en la misma transaccion que el cambio de año: si algo falla, no se
+-- cambia el año ni se inactiva nada.
+--------------------------------------------------------------------------------
+
+CREATE OR REPLACE TRIGGER trg_anios_lectivos_inactivar
+FOR UPDATE OF estado ON anios_lectivos
+COMPOUND TRIGGER
+
+  g_dejo_vigente BOOLEAN := FALSE;
+
+  AFTER EACH ROW IS
+  BEGIN
+    IF UPPER(TRIM(:OLD.estado)) = 'A' AND NVL(UPPER(TRIM(:NEW.estado)), 'I') <> 'A' THEN
+      g_dejo_vigente := TRUE;
+    END IF;
+  END AFTER EACH ROW;
+
+  AFTER STATEMENT IS
+  BEGIN
+    IF g_dejo_vigente THEN
+      UPDATE instituciones
+         SET estado = 'I'
+       WHERE NVL(UPPER(TRIM(estado)), 'A') = 'A';
+
+      UPDATE facilitadores
+         SET activo = 'NO'
+       WHERE UPPER(SUBSTR(TRIM(activo), 1, 1)) = 'S';
+    END IF;
+  END AFTER STATEMENT;
+
+END trg_anios_lectivos_inactivar;
+/
+
+SHOW ERRORS TRIGGER trg_anios_lectivos_inactivar
+
+DECLARE
+  l_estado user_objects.status%TYPE;
+BEGIN
+  SELECT status INTO l_estado FROM user_objects
+   WHERE object_name = 'TRG_ANIOS_LECTIVOS_INACTIVAR' AND object_type = 'TRIGGER';
+  IF l_estado = 'VALID' THEN
+    DBMS_OUTPUT.PUT_LINE('[OK]   TRG_ANIOS_LECTIVOS_INACTIVAR: al dejar de ser vigente un año,');
+    DBMS_OUTPUT.PUT_LINE('       inactiva todas las instituciones y todos los facilitadores.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[ERROR] TRG_ANIOS_LECTIVOS_INACTIVAR quedo INVALID:');
+    FOR e IN (SELECT line, text FROM user_errors
+               WHERE name = 'TRG_ANIOS_LECTIVOS_INACTIVAR' ORDER BY sequence) LOOP
+      DBMS_OUTPUT.PUT_LINE('        L' || e.line || ': ' || e.text);
+    END LOOP;
+  END IF;
+EXCEPTION
+  WHEN NO_DATA_FOUND THEN
+    DBMS_OUTPUT.PUT_LINE('[ERROR] TRG_ANIOS_LECTIVOS_INACTIVAR no se creo.');
+END;
+/
+
 
 --==============================================================================
 -- ABM DE AÑOS LECTIVOS (pagina 57 de APEX y su modal 59)  —  09/10/2026
@@ -265,6 +364,10 @@ END;
 --   - ESTADO 'A' = el anio vigente (ver "EL CRITERIO" arriba). Guardar un anio
 --     como 'A' DESACTIVA al que lo era, en la misma transaccion: el indice
 --     unico no deja dos activos, y asi "hacer vigente" es un solo paso.
+--   - Cuando el vigente deja de serlo, TRG_ANIOS_LECTIVOS_INACTIVAR (arriba)
+--     inactiva todas las instituciones y todos los facilitadores (23/11/2026).
+--     guardar devuelve cuantos: instituciones_inactivadas y
+--     facilitadores_inactivados.
 --   - ANIO entero de 4 cifras, sin repetir (409).
 --   - FECHA_DESDE <= FECHA_HASTA, las dos obligatorias.
 --   - ESTADO solo 'A' o 'I' (la lista ACTIVO_INACTIVO). Vacio = 'I'.
@@ -528,6 +631,19 @@ CREATE OR REPLACE PACKAGE BODY PKG_ANIOS_LECTIVOS_ETHOS AS
     l_hijas    t_hijas;
     l_usos     VARCHAR2(4000);
     l_n        PLS_INTEGER;
+    -- Activas antes y despues: lo que inactivo TRG_ANIOS_LECTIVOS_INACTIVAR.
+    l_inst_antes PLS_INTEGER;
+    l_fac_antes  PLS_INTEGER;
+    l_inst_desp  PLS_INTEGER;
+    l_fac_desp   PLS_INTEGER;
+
+    PROCEDURE contar_activos(p_inst OUT PLS_INTEGER, p_fac OUT PLS_INTEGER) IS
+    BEGIN
+      SELECT COUNT(*) INTO p_inst FROM instituciones
+       WHERE NVL(UPPER(TRIM(estado)), 'A') = 'A';
+      SELECT COUNT(*) INTO p_fac FROM facilitadores
+       WHERE UPPER(SUBSTR(TRIM(activo), 1, 1)) = 'S';
+    END contar_activos;
   BEGIN
     IF NOT exigir(p_token, CASE WHEN p_id IS NULL THEN 'I' ELSE 'U' END) THEN RETURN; END IF;
     IF p_id IS NOT NULL AND l_id IS NULL THEN
@@ -579,8 +695,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_ANIOS_LECTIVOS_ETHOS AS
       END IF;
     END IF;
 
+    contar_activos(l_inst_antes, l_fac_antes);
+
     -- Vigente: primero se desactiva el que lo era (el indice unico no deja
-    -- dos activos ni por un instante).
+    -- dos activos ni por un instante). Ese UPDATE dispara
+    -- TRG_ANIOS_LECTIVOS_INACTIVAR.
     IF l_estado = 'A' THEN
       BEGIN
         SELECT anio INTO l_vigente FROM anios_lectivos
@@ -603,6 +722,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_ANIOS_LECTIVOS_ETHOS AS
              fecha_desde = l_desde, fecha_hasta = l_hasta
        WHERE id_anio = l_id;
     END IF;
+
+    contar_activos(l_inst_desp, l_fac_desp);
     COMMIT;
 
     abrir_json;
@@ -611,6 +732,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_ANIOS_LECTIVOS_ETHOS AS
     APEX_JSON.WRITE('id_anio', l_id);
     -- El que dejo de ser vigente, si hubo: la pantalla lo avisa.
     APEX_JSON.WRITE('desactivado', l_vigente);
+    -- Lo que inactivo el trigger (0 si el vigente no cambio).
+    APEX_JSON.WRITE('instituciones_inactivadas', GREATEST(l_inst_antes - l_inst_desp, 0));
+    APEX_JSON.WRITE('facilitadores_inactivados', GREATEST(l_fac_antes - l_fac_desp, 0));
     APEX_JSON.WRITE('message', CASE WHEN p_id IS NULL THEN UNISTR('A\00f1o') || ' lectivo creado'
                                     ELSE 'Cambios guardados' END);
     APEX_JSON.CLOSE_OBJECT;

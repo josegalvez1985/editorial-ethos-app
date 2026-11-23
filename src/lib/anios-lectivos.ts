@@ -56,24 +56,67 @@ export async function listarAniosLectivos(): Promise<AnioLectivo[]> {
   }));
 }
 
+export type ResultadoGuardarAnio = {
+  id: number;
+  /** El año que dejó de ser el vigente, si hubo. */
+  desactivado: number | null;
+  /**
+   * Lo que inactivó `TRG_ANIOS_LECTIVOS_INACTIVAR` (23/11/2026): cuando el
+   * vigente deja de serlo, todas las instituciones y todos los facilitadores
+   * pasan a inactivos. 0 si el vigente no cambió.
+   */
+  institucionesInactivadas: number;
+  facilitadoresInactivados: number;
+};
+
 /**
- * Alta (`id` null) o modificación. Devuelve el id y, si se guardó como
- * vigente, el año que dejó de serlo.
+ * Alta (`id` null) o modificación. Devuelve el id, el año que dejó de ser el
+ * vigente y cuántas instituciones y facilitadores se inactivaron.
  */
 export async function guardarAnioLectivo(
   id: number | null,
   d: DatosAnioLectivo,
-): Promise<{ id: number; desactivado: number | null }> {
+): Promise<ResultadoGuardarAnio> {
   const r = (await authFetch(id == null ? "anios-lectivos" : `anios-lectivos/${id}`, {
     method: id == null ? "POST" : "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(d),
-  })) as { id_anio?: number; desactivado?: number | null };
+  })) as {
+    id_anio?: number;
+    desactivado?: number | null;
+    instituciones_inactivadas?: number;
+    facilitadores_inactivados?: number;
+  };
   return {
     id: Number(r.id_anio ?? id ?? 0),
     desactivado: r.desactivado == null ? null : Number(r.desactivado),
+    institucionesInactivadas: Number(r.instituciones_inactivadas ?? 0),
+    facilitadoresInactivados: Number(r.facilitadores_inactivados ?? 0),
   };
 }
+
+/**
+ * "Se inactivaron 120 instituciones y 35 facilitadores", o `null` si no se
+ * inactivó nada.
+ */
+export function textoInactivados(r: ResultadoGuardarAnio): string | null {
+  const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+  const partes = [
+    ...(r.institucionesInactivadas
+      ? [plural(r.institucionesInactivadas, "institución", "instituciones")]
+      : []),
+    ...(r.facilitadoresInactivados
+      ? [plural(r.facilitadoresInactivados, "facilitador", "facilitadores")]
+      : []),
+  ];
+  if (!partes.length) return null;
+  const uno = r.institucionesInactivadas + r.facilitadoresInactivados === 1;
+  return `Se ${uno ? "inactivó" : "inactivaron"} ${partes.join(" y ")}.`;
+}
+
+/** Lo que pasa al dejar de ser vigente un año: va en las confirmaciones. */
+export const AVISO_INACTIVAR =
+  "Además se inactivan todas las instituciones y todos los facilitadores. Vuelven a activarse al confirmarles un pre-horario del año nuevo, o a mano desde su ficha.";
 
 /** Baja. 409 si es el vigente o si tiene datos. */
 export async function eliminarAnioLectivo(id: number): Promise<void> {
