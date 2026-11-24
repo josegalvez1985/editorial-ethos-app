@@ -74,16 +74,18 @@
 -- LOS ARCHIVOS
 --------------------------------------------------------------------------------
 --
---   *_URL      Cloudinary: FOTO, CEDULA_FRENTE, CEDULA_DORSO y los documentos
---              de SECUNDARIO, TECNICO, LICENCIATURA y POSGRADO. El sitio los
---              sube, reemplaza y quita. Un enlace NUEVO tiene que ser de
+--   Los 11 son de Cloudinary (Jose, 24/11/2026: nada en OneDrive):
+--   *_URL      FOTO, CEDULA_FRENTE, CEDULA_DORSO y los documentos de
+--              SECUNDARIO, TECNICO, LICENCIATURA y POSGRADO.
+--   *_ARCHIVO  CV, certificado de no agresor y antecedentes judicial y
+--              policial.
+--              El sitio los sube, reemplaza y quita. Un enlace NUEVO tiene que ser de
 --              nuestro cloud (es_url_propia); uno que no cambia se acepta
 --              como venga. Al reemplazar o quitar, el viejo se borra de
 --              Cloudinary despues del COMMIT, salvo que otra fila de la tabla
 --              lo use. Si Cloudinary falla, se avisa (aviso) y nada mas.
---   *_ARCHIVO  OneDrive: CV, certificado de no agresor y antecedentes judicial
---              y policial. Son enlaces o rutas de texto; el sitio los guarda y
---              los abre, no los sube ni los borra.
+--              Un valor viejo que no es de nuestro cloud (un enlace de OneDrive
+--              de antes) se muestra como enlace y, al reemplazarlo, no se toca.
 --
 -- LA REVISION
 --
@@ -184,7 +186,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULANTES_FAC_ETHOS AS
   -- Paraguay es UTC-3 todo el año (desde 2024).
   c_desfase CONSTANT NUMBER        := -3 / 24;
 
-  TYPE t_urls IS TABLE OF VARCHAR2(500) INDEX BY PLS_INTEGER;
+  TYPE t_urls IS TABLE OF VARCHAR2(4000) INDEX BY PLS_INTEGER;
 
   PROCEDURE abrir_json IS
   BEGIN
@@ -273,33 +275,60 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULANTES_FAC_ETHOS AS
     RETURN TRUE;
   END exigir;
 
-  -- Las 7 columnas de Cloudinary de una fila, en este orden.
+  -- Las 11 columnas de Cloudinary de una fila, en este orden.
   PROCEDURE urls_de(p_id IN NUMBER, p_urls OUT t_urls, p_bloquear IN BOOLEAN DEFAULT FALSE) IS
   BEGIN
     IF p_bloquear THEN
       SELECT foto_url, cedula_frente_url, cedula_dorso_url, secundario_doc_url,
-             tecnico_doc_url, licenciatura_doc_url, posgrado_doc_url
-        INTO p_urls(1), p_urls(2), p_urls(3), p_urls(4), p_urls(5), p_urls(6), p_urls(7)
+             tecnico_doc_url, licenciatura_doc_url, posgrado_doc_url,
+             cv_archivo, certificado_no_agresor_archivo,
+             antecedente_judicial_archivo, antecedente_policial_archivo
+        INTO p_urls(1), p_urls(2), p_urls(3), p_urls(4), p_urls(5), p_urls(6), p_urls(7),
+             p_urls(8), p_urls(9), p_urls(10), p_urls(11)
         FROM postulantes_facilitadores WHERE id = p_id FOR UPDATE;
     ELSE
       SELECT foto_url, cedula_frente_url, cedula_dorso_url, secundario_doc_url,
-             tecnico_doc_url, licenciatura_doc_url, posgrado_doc_url
-        INTO p_urls(1), p_urls(2), p_urls(3), p_urls(4), p_urls(5), p_urls(6), p_urls(7)
+             tecnico_doc_url, licenciatura_doc_url, posgrado_doc_url,
+             cv_archivo, certificado_no_agresor_archivo,
+             antecedente_judicial_archivo, antecedente_policial_archivo
+        INTO p_urls(1), p_urls(2), p_urls(3), p_urls(4), p_urls(5), p_urls(6), p_urls(7),
+             p_urls(8), p_urls(9), p_urls(10), p_urls(11)
         FROM postulantes_facilitadores WHERE id = p_id;
     END IF;
   END urls_de;
 
+  -- Un enlace de Cloudinary (de cualquier cuenta). Lo demas (un enlace de
+  -- OneDrive de antes, una ruta) no es un archivo que el sitio pueda borrar.
+  FUNCTION es_cloudinary(p_url IN VARCHAR2) RETURN BOOLEAN IS
+  BEGIN
+    RETURN LOWER(TRIM(p_url)) LIKE 'https://res.cloudinary.com/%';
+  END es_cloudinary;
+
   -- Borra de Cloudinary un archivo que ya no usa ninguna fila. NULL si quedo
   -- borrado (o no habia nada); si no, el motivo. Despues del COMMIT, nunca lanza.
+  -- Un enlace que no es de Cloudinary (OneDrive de antes) no se toca y no es
+  -- un error. Uno de OTRA cuenta de Cloudinary SI se avisa: no se puede borrar
+  -- con nuestras credenciales y no tiene que pasar en silencio.
   FUNCTION limpiar(p_url IN VARCHAR2) RETURN VARCHAR2 IS
     l_n PLS_INTEGER;
   BEGIN
-    IF p_url IS NULL THEN RETURN NULL; END IF;
+    IF p_url IS NULL OR NOT es_cloudinary(p_url) THEN RETURN NULL; END IF;
+    IF NOT PKG_CLOUDINARY_ETHOS.es_url_propia(p_url) THEN
+      RETURN 'esta en otra cuenta (' || REGEXP_SUBSTR(p_url, '^https://res\.cloudinary\.com/([^/]+)', 1, 1, 'i', 1)
+             || '), no en la del sistema: ' || SUBSTR(p_url, 1, 200);
+    END IF;
     SELECT COUNT(*) INTO l_n FROM postulantes_facilitadores
      WHERE p_url IN (foto_url, cedula_frente_url, cedula_dorso_url, secundario_doc_url,
-                     tecnico_doc_url, licenciatura_doc_url, posgrado_doc_url);
+                     tecnico_doc_url, licenciatura_doc_url, posgrado_doc_url,
+                     cv_archivo, certificado_no_agresor_archivo,
+                     antecedente_judicial_archivo, antecedente_policial_archivo);
     IF l_n > 0 THEN RETURN NULL; END IF;
-    RETURN PKG_CLOUDINARY_ETHOS.borrar(p_url);
+    -- La otra app puede guardar el enlace con transformaciones
+    -- (.../upload/f_auto,q_auto/v123/...). borrar() saca el archivo del enlace
+    -- y con ellas no lo encuentra ('not found' = "ya no estaba", sin aviso):
+    -- se le pasa sin ellas, como los enlaces que sube el sitio.
+    RETURN PKG_CLOUDINARY_ETHOS.borrar(
+             REGEXP_REPLACE(p_url, '/upload/([^/]+/)*?(v[0-9]+/)', '/upload/\2', 1, 1));
   EXCEPTION
     WHEN OTHERS THEN RETURN SQLERRM;
   END limpiar;
@@ -586,11 +615,15 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULANTES_FAC_ETHOS AS
     l_nuevas(5) := s('tecnico_doc_url');
     l_nuevas(6) := s('licenciatura_doc_url');
     l_nuevas(7) := s('posgrado_doc_url');
-    FOR i IN 1 .. 7 LOOP
+    l_nuevas(8) := s('cv_archivo');
+    l_nuevas(9) := s('certificado_no_agresor_archivo');
+    l_nuevas(10) := s('antecedente_judicial_archivo');
+    l_nuevas(11) := s('antecedente_policial_archivo');
+    FOR i IN 1 .. 11 LOOP
       IF l_nuevas(i) IS NOT NULL AND NVL(l_viejas(i), '-') <> l_nuevas(i)
          AND NOT PKG_CLOUDINARY_ETHOS.es_url_propia(l_nuevas(i)) THEN
         ROLLBACK;
-        p_error(400, 'Bad Request', 'Los archivos nuevos tienen que estar subidos al Cloudinary del sistema');
+        p_error(400, 'Bad Request', 'Los archivos nuevos tienen que subirse desde el sistema');
         RETURN;
       END IF;
     END LOOP;
@@ -661,10 +694,10 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULANTES_FAC_ETHOS AS
     r.tecnico_doc_url := l_nuevas(5);
     r.licenciatura_doc_url := l_nuevas(6);
     r.posgrado_doc_url := l_nuevas(7);
-    r.cv_archivo := s('cv_archivo');
-    r.certificado_no_agresor_archivo := s('certificado_no_agresor_archivo');
-    r.antecedente_judicial_archivo := s('antecedente_judicial_archivo');
-    r.antecedente_policial_archivo := s('antecedente_policial_archivo');
+    r.cv_archivo := l_nuevas(8);
+    r.certificado_no_agresor_archivo := l_nuevas(9);
+    r.antecedente_judicial_archivo := l_nuevas(10);
+    r.antecedente_policial_archivo := l_nuevas(11);
 
     UPDATE postulantes_facilitadores SET
       correo_electronico             = r.correo_electronico,
@@ -740,7 +773,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULANTES_FAC_ETHOS AS
 
     -- Despues del COMMIT: los archivos reemplazados o quitados se borran de
     -- Cloudinary. Si falla, la ficha ya quedo bien y solo se avisa.
-    FOR i IN 1 .. 7 LOOP
+    FOR i IN 1 .. 11 LOOP
       IF l_viejas(i) IS NOT NULL AND NVL(l_nuevas(i), '-') <> l_viejas(i) THEN
         l_motivo := limpiar(l_viejas(i));
         IF l_motivo IS NOT NULL THEN
@@ -754,7 +787,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULANTES_FAC_ETHOS AS
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('message', 'Cambios guardados');
     IF l_aviso IS NOT NULL THEN
-      APEX_JSON.WRITE('aviso', 'Algun archivo anterior no se pudo borrar de Cloudinary: ' || l_aviso);
+      APEX_JSON.WRITE('aviso', 'Algun archivo anterior no se pudo borrar: ' || l_aviso);
     END IF;
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION
@@ -849,8 +882,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULANTES_FAC_ETHOS AS
     COMMIT;
 
     -- Despues del COMMIT: sus archivos se borran de Cloudinary.
-    FOR i IN 1 .. 7 LOOP
-      IF l_urls(i) IS NOT NULL THEN
+    FOR i IN 1 .. 11 LOOP
+      IF es_cloudinary(l_urls(i)) THEN
         l_motivo := limpiar(l_urls(i));
         IF l_motivo IS NULL THEN
           l_borr := l_borr + 1;
@@ -866,7 +899,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_POSTULANTES_FAC_ETHOS AS
     APEX_JSON.WRITE('message', 'Postulaci' || UNISTR('\00f3') || 'n eliminada');
     APEX_JSON.WRITE('archivos_borrados', l_borr);
     IF l_aviso IS NOT NULL THEN
-      APEX_JSON.WRITE('aviso', 'Algun archivo no se pudo borrar de Cloudinary: ' || l_aviso);
+      APEX_JSON.WRITE('aviso', 'Algun archivo no se pudo borrar: ' || l_aviso);
     END IF;
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION

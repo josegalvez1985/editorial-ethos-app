@@ -26,7 +26,12 @@ import {
   miniatura,
   TIPOS_ARCHIVO,
 } from "@/lib/cloudinary";
-import { esEnlace, nombreDescarga, subirArchivoPostulante } from "@/lib/postulantes";
+import {
+  esDeCloudinary,
+  esEnlace,
+  nombreDescarga,
+  subirArchivoPostulante,
+} from "@/lib/postulantes";
 import { campo, cn } from "@/lib/utils";
 
 /**
@@ -69,6 +74,9 @@ export function DocCloudinary({
   const quitado = !url && !!original;
   const nuevo = !!url && url !== original;
   const visible = url || original;
+  // Un valor viejo de antes (un enlace de OneDrive, una ruta): sin miniatura,
+  // se abre como enlace. Se puede reemplazar por un archivo subido.
+  const externo = !!visible && !esDeCloudinary(visible);
 
   const subir = async (f: File) => {
     setProgreso(0);
@@ -106,12 +114,28 @@ export function DocCloudinary({
     >
       <button
         type="button"
-        onClick={() => visible && !quitado && setViendo(true)}
-        disabled={!visible || quitado}
+        onClick={() => {
+          if (!visible || quitado) return;
+          if (externo) {
+            if (esEnlace(visible)) window.open(visible, "_blank", "noopener,noreferrer");
+          } else setViendo(true);
+        }}
+        disabled={!visible || quitado || (externo && !esEnlace(visible))}
         className="relative grid aspect-[4/3] place-items-center overflow-hidden bg-muted/40"
         aria-label={visible ? `Ver ${nombre}` : nombre}
       >
-        {visible ? (
+        {externo ? (
+          <span
+            className={cn(
+              "flex flex-col items-center gap-1 px-3 text-center text-[12px] font-medium text-muted-foreground",
+              quitado && "opacity-40",
+            )}
+          >
+            <ExternalLink className="size-6 opacity-60" />
+            {esEnlace(visible) ? "Abrir enlace" : "Ruta guardada"}
+            <span className="line-clamp-2 text-[10px] break-all opacity-70">{visible}</span>
+          </span>
+        ) : visible ? (
           <img
             src={miniatura(visible, 360)}
             alt={nombre}
@@ -124,7 +148,7 @@ export function DocCloudinary({
             {corresponde ? "Falta" : "No corresponde"}
           </span>
         )}
-        {visible && esPdf(visible) && (
+        {visible && !externo && esPdf(visible) && (
           <span className="absolute top-2 left-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">
             PDF
           </span>
@@ -162,8 +186,12 @@ export function DocCloudinary({
           editable && <Accion icono={Undo2} titulo="Deshacer" onClick={() => onCambio(original)} />
         ) : url ? (
           <>
-            <Accion icono={Eye} titulo="Ver" onClick={() => setViendo(true)} />
-            <Accion icono={Download} titulo="Descargar" onClick={() => void descargar()} />
+            {!externo && (
+              <>
+                <Accion icono={Eye} titulo="Ver" onClick={() => setViendo(true)} />
+                <Accion icono={Download} titulo="Descargar" onClick={() => void descargar()} />
+              </>
+            )}
             {editable && (
               <>
                 <Accion
@@ -202,7 +230,7 @@ export function DocCloudinary({
       {(nuevo || quitado) && (
         <p className="px-2.5 pb-2 text-[10.5px] leading-snug text-muted-foreground">
           {quitado
-            ? "Se borra de Cloudinary al guardar."
+            ? "Se borra al guardar."
             : original
               ? "Reemplaza al anterior, que se borra al guardar."
               : "Se guarda con la ficha."}
@@ -220,7 +248,7 @@ export function DocCloudinary({
         }}
       />
 
-      {viendo && url && (
+      {viendo && url && !externo && (
         <Visor
           nombre={nombre}
           url={url}
@@ -312,54 +340,6 @@ function Visor({
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/**
- * Un documento de OneDrive: un enlace (o una ruta) de texto. Se edita y, si es
- * un enlace, se abre.
- */
-export function DocOneDrive({
-  nombre,
-  valor,
-  editable,
-  onCambio,
-}: {
-  nombre: string;
-  valor: string;
-  editable: boolean;
-  onCambio: (v: string) => void;
-}) {
-  const v = valor.trim();
-  return (
-    <div className="rounded-xl border border-border/60 p-3">
-      <div className="mb-1.5 flex items-center gap-2">
-        <span
-          className={cn("size-2 shrink-0 rounded-full", v ? "bg-emerald-500" : "bg-amber-500")}
-          aria-hidden
-        />
-        <p className="min-w-0 flex-1 truncate text-[13px] font-semibold">{nombre}</p>
-        {v && esEnlace(v) && (
-          <a
-            href={v}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex h-8 items-center gap-1 rounded-lg px-2 text-[12px] font-semibold text-primary hover:bg-primary-soft"
-          >
-            <ExternalLink className="size-3.5" />
-            Abrir
-          </a>
-        )}
-      </div>
-      <input
-        value={valor}
-        onChange={(e) => onCambio(e.target.value)}
-        disabled={!editable}
-        maxLength={1000}
-        placeholder="Enlace o ruta en OneDrive"
-        className={`${campo} h-10 text-[13px]`}
-      />
-    </div>
   );
 }
 

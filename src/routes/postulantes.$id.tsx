@@ -20,7 +20,7 @@ import { AppShell } from "@/components/app-shell";
 import { Pastillas, Quitar, Seccion, Texto } from "@/components/ficha-ui";
 import { MapaPunto } from "@/components/mapa-punto";
 import { PickerModal } from "@/components/picker-modal";
-import { Avatar, DocCloudinary, DocOneDrive } from "@/components/postulante-documentos";
+import { Avatar, DocCloudinary } from "@/components/postulante-documentos";
 import {
   Dialog,
   DialogContent,
@@ -39,8 +39,8 @@ import {
   DIA_CORTO,
   DIAS,
   DOCS_CLOUDINARY,
-  DOCS_ONEDRIVE,
   documentos,
+  esDeCloudinary,
   edadDe,
   eliminarPostulante,
   ESTADO_CIVIL,
@@ -226,9 +226,13 @@ function Formulario({ p }: { p: Postulante }) {
     mutationFn: () => eliminarPostulante(p.id),
     onSuccess: (r) => {
       invalidar();
+      const borrados = `${r.borrados} archivo${r.borrados === 1 ? "" : "s"} borrado${r.borrados === 1 ? "" : "s"}.`;
       if (r.aviso)
-        toast.warning("Postulación eliminada", { description: r.aviso, duration: 10000 });
-      else toast.success("Postulación eliminada");
+        toast.warning("Postulación eliminada", {
+          description: `${borrados} ${r.aviso}`,
+          duration: 15000,
+        });
+      else toast.success("Postulación eliminada", { description: borrados });
       navigate({ to: "/postulantes", replace: true });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar"),
@@ -739,9 +743,9 @@ function Formulario({ p }: { p: Postulante }) {
             <>
               <section className="space-y-3 rounded-2xl border border-border/60 bg-card p-4 shadow-soft lg:col-span-2">
                 <div>
-                  <h2 className="font-display text-lg font-bold">En Cloudinary</h2>
+                  <h2 className="font-display text-lg font-bold">Documentos</h2>
                   <p className="text-[11.5px] text-muted-foreground">
-                    Fotos y PDF. Lo que reemplaces o quites se borra de Cloudinary al guardar.
+                    Fotos y PDF. Lo que reemplaces o quites se borra al guardar.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
@@ -760,19 +764,6 @@ function Formulario({ p }: { p: Postulante }) {
                   ))}
                 </div>
               </section>
-              <Seccion titulo="En OneDrive" ayuda="Enlaces o rutas de la carpeta compartida.">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:col-span-2">
-                  {DOCS_ONEDRIVE.map((d) => (
-                    <DocOneDrive
-                      key={d.campo}
-                      nombre={d.nombre}
-                      valor={f[d.campo]}
-                      editable={puedeGuardar}
-                      onCambio={(v) => set(d.campo, v)}
-                    />
-                  ))}
-                </div>
-              </Seccion>
             </>
           )}
         </fieldset>
@@ -788,8 +779,8 @@ function Formulario({ p }: { p: Postulante }) {
             <p className="text-[11px] text-muted-foreground">
               {confirmarBorrado
                 ? `Se borra la postulación y ${
-                    DOCS_CLOUDINARY.filter((d) => p.ficha[d.campo]).length
-                  } archivo(s) de Cloudinary. Tocá de nuevo para confirmar.`
+                    DOCS_CLOUDINARY.filter((d) => esDeCloudinary(p.ficha[d.campo])).length
+                  } archivo(s). Tocá de nuevo para confirmar.`
                 : "Eliminar esta postulación."}
             </p>
           </div>

@@ -1574,12 +1574,13 @@ las del formulario). Los valores de las listas son los `CHECK` de la tabla (`SI`
 - **Revisión:** `ESTADO` `PENDIENTE` / `APROBADA` / `RECHAZADA`, con `OBSERVACION_ADMIN` y
   `FECHA_REVISION` (hora de Paraguay; `NULL` al volver a pendiente). Rechazar pide motivo. Va en
   `PUT revision-postulantes/:id/estado`: guardar la ficha no la toca.
-- **Archivos:** los `*_URL` son de Cloudinary y se suben como las fotos de facturas
+- **Archivos:** los 11 son de Cloudinary (nada en OneDrive): los `*_URL` (foto, cédula, títulos)
+  y los `*_ARCHIVO` (CV, no agresor, antecedentes). Se suben como las fotos de facturas
   (`PKG_CLOUDINARY_ETHOS.escribir_firma`, carpeta `postulaciones-facilitadores`). Un enlace
   **nuevo** tiene que ser de nuestro cloud; uno que no cambia se acepta como venga. Lo
   reemplazado o quitado, y todo al borrar la postulación, se borra de Cloudinary **después del
-  COMMIT**, salvo que otra fila use el mismo enlace; si falla, solo se avisa. Los `*_ARCHIVO`
-  son enlaces o rutas de OneDrive: se guardan como texto.
+  COMMIT**, salvo que otra fila use el mismo enlace; si falla, solo se avisa. Un valor viejo que
+  no es de nuestro cloud (un enlace de OneDrive de antes) se muestra como enlace y no se borra.
 - **La ficha viaja cruda** (`:body_text`, JSON): `AREAS_MINISTERIO` es CLOB. País y
   departamento salen de la ciudad (la FK es a `CIUDADES` por las tres columnas).
 - **No hay alta:** las postulaciones llegan por la otra app.

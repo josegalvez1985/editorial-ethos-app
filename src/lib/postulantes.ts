@@ -6,12 +6,11 @@
  * facilitadores). El sitio revisa (aprobar / rechazar), corrige la ficha,
  * maneja los archivos de Cloudinary y borra; no da de alta.
  *
- * Los archivos son de dos clases:
- * - `*_url`: **Cloudinary** (foto, cédula y títulos). Se suben como las fotos
- *   de facturas (la firma la da el backend); al reemplazar o quitar uno, el
- *   backend borra el viejo de Cloudinary después de guardar.
- * - `*_archivo`: **OneDrive** (CV, certificados). Enlaces de texto: se abren y
- *   se editan, no se suben.
+ * Todos los archivos son de **Cloudinary** (nada en OneDrive): los `*_url`
+ * (foto, cédula y títulos) y los `*_archivo` (CV, certificado de no agresor y
+ * antecedentes). Se suben como las fotos de facturas (la firma la da el
+ * backend); al reemplazar o quitar uno, el backend borra el viejo de
+ * Cloudinary después de guardar.
  */
 
 import { authFetch } from "@/lib/api";
@@ -173,6 +172,8 @@ export type CampoArchivo =
   | "antecedente_judicial_archivo"
   | "antecedente_policial_archivo";
 
+export type CampoDoc = CampoUrl | CampoArchivo;
+
 type ConEstudios = {
   secundario_estado: string;
   tecnico_estado: string;
@@ -181,12 +182,12 @@ type ConEstudios = {
 };
 
 /**
- * Los de Cloudinary. `corresponde`: si se le pide (el título técnico solo si
+ * Los documentos, todos en Cloudinary. `corresponde`: si se le pide (el título técnico solo si
  * el técnico está concluido o en curso, por ejemplo); los que no corresponden
  * y están vacíos no cuentan como faltantes.
  */
 export const DOCS_CLOUDINARY: {
-  campo: CampoUrl;
+  campo: CampoDoc;
   nombre: string;
   archivo: string;
   corresponde: (p: ConEstudios) => boolean;
@@ -228,28 +229,42 @@ export const DOCS_CLOUDINARY: {
     archivo: "posgrado",
     corresponde: (p) => estudia(p.posgrado_estado),
   },
-];
-
-export const DOCS_ONEDRIVE: { campo: CampoArchivo; nombre: string }[] = [
-  { campo: "cv_archivo", nombre: "Currículum" },
-  { campo: "certificado_no_agresor_archivo", nombre: "Certificado de no agresor" },
-  { campo: "antecedente_judicial_archivo", nombre: "Antecedente judicial" },
-  { campo: "antecedente_policial_archivo", nombre: "Antecedente policial" },
+  { campo: "cv_archivo", nombre: "Currículum", archivo: "cv", corresponde: () => true },
+  {
+    campo: "certificado_no_agresor_archivo",
+    nombre: "Certificado de no agresor",
+    archivo: "no-agresor",
+    corresponde: () => true,
+  },
+  {
+    campo: "antecedente_judicial_archivo",
+    nombre: "Antecedente judicial",
+    archivo: "antecedente-judicial",
+    corresponde: () => true,
+  },
+  {
+    campo: "antecedente_policial_archivo",
+    nombre: "Antecedente policial",
+    archivo: "antecedente-policial",
+    corresponde: () => true,
+  },
 ];
 
 /** Cuántos documentos tiene de los que le corresponden. */
-export function documentos(p: ConEstudios & Record<CampoUrl | CampoArchivo, string>) {
+export function documentos(p: ConEstudios & Record<CampoDoc, string>) {
   const cloud = DOCS_CLOUDINARY.filter((d) => d.corresponde(p) || p[d.campo]);
-  const tiene =
-    cloud.filter((d) => p[d.campo]).length + DOCS_ONEDRIVE.filter((d) => p[d.campo]).length;
-  return { tiene, esperados: cloud.length + DOCS_ONEDRIVE.length };
+  return { tiene: cloud.filter((d) => p[d.campo]).length, esperados: cloud.length };
 }
 
 /** "4512330-cedula-frente.jpg". */
 export const nombreDescarga = (cedula: string, archivo: string, ext: string) =>
   `${cedula.replace(/\D/g, "") || "postulante"}-${archivo}.${ext}`;
 
-/** Un enlace que se puede abrir (OneDrive); una ruta de carpeta no. */
+/**
+ * Un archivo de Cloudinary (tiene miniatura). Un valor viejo de antes (un
+ * enlace de OneDrive, una ruta) no: se muestra como enlace.
+ */
+export const esDeCloudinary = (s: string) => /^https:\/\/res\.cloudinary\.com\//i.test(s.trim());
 export const esEnlace = (s: string) => /^https?:\/\//i.test(s.trim());
 
 /* -------------------------------------------------------------------------- */
@@ -262,7 +277,7 @@ const n = (v: unknown) => (v == null || v === "" ? null : Number(v));
 export type AnioPostulantes = { idAnio: number; anio: number; vigente: boolean; cantidad: number };
 
 export type ResumenPostulante = ConEstudios &
-  Record<CampoUrl | CampoArchivo, string> & {
+  Record<CampoDoc, string> & {
     id: number;
     fecha_registro: string;
     nombre_completo: string;
@@ -301,7 +316,6 @@ const CAMPOS_RESUMEN_TEXTO = [
   "licenciatura_estado",
   "posgrado_estado",
   ...DOCS_CLOUDINARY.map((d) => d.campo),
-  ...DOCS_ONEDRIVE.map((d) => d.campo),
 ] as const;
 
 export async function listarPostulantes(idAnio: number | null): Promise<{
@@ -394,7 +408,6 @@ export const CAMPOS_TEXTO = [
   "factura_emisor",
   "ruc",
   ...DOCS_CLOUDINARY.map((d) => d.campo),
-  ...DOCS_ONEDRIVE.map((d) => d.campo),
 ] as const;
 
 export type CampoTexto = (typeof CAMPOS_TEXTO)[number];
@@ -487,11 +500,12 @@ export async function revisarPostulante(
 }
 
 /** Borra la postulación y sus archivos de Cloudinary. */
-export async function eliminarPostulante(id: number): Promise<{ aviso: string }> {
+export async function eliminarPostulante(id: number): Promise<{ aviso: string; borrados: number }> {
   const r = (await authFetch(`revision-postulantes/${id}`, { method: "DELETE" })) as {
     aviso?: string;
+    archivos_borrados?: number;
   };
-  return { aviso: s(r.aviso) };
+  return { aviso: s(r.aviso), borrados: Number(r.archivos_borrados ?? 0) };
 }
 
 /** Sube una foto o un PDF a Cloudinary, como las facturas. Devuelve el enlace. */
