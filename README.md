@@ -14,6 +14,7 @@ Sistema de gestión sobre Oracle APEX/ORDS: un sitio web que también se instala
 | raíz (`src/`) | Sitio web — TanStack Start + Vite + React Query | <https://www.ethospy.online/>, en GitHub Pages |
 | [`android/`](android/) | APK de Capacitor: una cáscara que abre el sitio publicado | APK que se reparte a mano |
 | [`mobile/`](mobile/) | App Expo / React Native de una etapa anterior | **ya no se compila** |
+| [`.claude/`](.claude/) y [`CLAUDE.md`](CLAUDE.md) | Agentes, skills y reglas para Claude Code | no se publica: ver *4. Claude Code* |
 
 **Hay un solo frontend vivo: el sitio.** El APK no tiene pantallas propias —su WebView carga el
 sitio— y `mobile/` quedó con login, inicio y cuenta. Un cambio de UI se hace una sola vez, en
@@ -933,3 +934,83 @@ compilar en [`APK.md`](APK.md).
 > **En la PC actual todavía no se puede compilar** (verificado el 24/09/2026): faltan el JDK
 > 21, el SDK de Android y, lo más delicado, la clave de firma. Ver [`APK.md`](APK.md) →
 > *Requisitos*.
+
+## 4. Claude Code: agentes y skills
+
+Desde el 24/11/2026 el repo trae la configuración para trabajar con **Claude Code** con un
+equipo de subagentes especializados. **No cambia nada del sitio, del backend ni del APK**: son
+archivos que solo lee Claude Code, y no se publican.
+
+| Archivo | Qué es |
+| --- | --- |
+| [`CLAUDE.md`](CLAUDE.md) | Las reglas del proyecto para Claude: qué no se hace sin pedido (push, correr SQL, tocar datos), qué agentes usar según el pedido, cómo validar y cómo entregar |
+| [`.claude/agents/`](.claude/agents/) | 10 subagentes, uno por especialidad |
+| [`.claude/skills/`](.claude/skills/) | 9 skills: los procedimientos de este repo, cada uno un resumen que apunta a la sección de esta guía o de [`backend/README.md`](backend/README.md) que lo explica |
+
+La sesión principal de Claude **coordina**: lee el pedido, elige el mínimo equipo que lo cubre,
+delega, junta los resultados y avisa qué se hizo. Un cambio chico lo hace sola, sin agentes.
+
+### Los agentes
+
+| Agente | Modelo | Puede editar | Cuándo |
+| --- | --- | --- | --- |
+| `ux-ui-designer` | opus | no | Antes de programar una pantalla nueva o un rediseño: diagnóstico, propuesta y criterios de aceptación |
+| `frontend-developer` | sonnet | `src/` | Implementar pantallas y componentes |
+| `backend-developer` | sonnet | `backend/*.sql` | Paquetes PL/SQL y endpoints ORDS. **Escribe** el `.sql`; lo corre Jose en APEX |
+| `database-architect` | opus | no | Tablas, constraints, triggers, verificación previa y rollback. Entrega el script en su informe |
+| `api-specialist` | sonnet | no | Que `backend/<tabla>.sql` y `src/lib/<tabla>.ts` digan lo mismo |
+| `qa-engineer` | sonnet | no (corre comandos) | Validar, buscar regresiones, reproducir un error |
+| `security-engineer` | opus | no (corre comandos) | Auditoría defensiva: token, permisos, SQL dinámico, IA, Cloudinary, secretos |
+| `devops-engineer` | sonnet | configuración | Workflow de Pages, build, dominio. **No pushea** ni compila el APK |
+| `code-reviewer` | opus | no (corre comandos) | Revisar el diff antes de entregar |
+| `technical-writer` | haiku | documentación | Esta guía y las demás, con lo ya verificado |
+
+Los modelos van por **alias** (`opus`, `sonnet`, `haiku`) para que Claude Code use la versión
+vigente. `fable` no está asignado a ninguno: se usa solo con una justificación explícita (un
+rediseño muy amplio o una decisión de alto impacto).
+
+**Por qué no son los de la especificación genérica.** La especificación de la que salieron
+pensaba en Node/NestJS, PostgreSQL, GraphQL y Docker. Acá no hay nada de eso, así que se
+adaptaron al stack real: `backend-developer` escribe PL/SQL y ORDS, `database-architect` es de
+Oracle, `devops-engineer` es GitHub Pages y `qa-engineer` sabe que no hay pruebas
+automatizadas ni ambiente de prueba. Los nombres se mantuvieron para que coincidan con la
+especificación.
+
+### Los skills
+
+| Skill | Para qué | En lugar de (los genéricos) |
+| --- | --- | --- |
+| `backend-ords` | Escribir o revisar `backend/*.sql` | nestjs, nodejs, postgresql, rest-api-design, database-migrations |
+| `frontend-sitio` | Convenciones de `src/`: diseño, marca, responsive, accesibilidad | react, typescript, responsive-design, modern-ui-ux, accessibility-audit |
+| `modulo-apex` | Pasar una página de APEX o crear una pantalla nueva, de punta a punta | legacy-modernization, requirements-analysis |
+| `validar-cambios` | Qué se puede correr (type-check, ESLint, build) y qué no se puede verificar desde la PC | test-driven-development, unit/e2e-testing |
+| `diagnosticar-error` | Ubicar la capa de un error antes de corregir | debugging-systematic |
+| `seguridad-app` | El checklist de seguridad de este sistema | application-security, authentication-authorization, database-security, dependency-audit |
+| `deploy-web` | Publicar en Pages, el orden con el SQL, verificar y volver atrás | ci-cd, github-workflows, deployment, production-readiness |
+| `documentar-cambios` | Dónde y cómo se documenta cada cambio | technical-decision-records, documentation-engineering |
+| `build-apk` | Compilar el APK (ya existía) | — |
+
+**No se crearon** skills de NestJS, GraphQL, PostgreSQL ni Docker: no hay ese código, y un
+skill que habla de otro stack empuja a Claude a proponerlo. Tampoco de code-review,
+security-review ni web-research: Claude Code ya los trae (`/code-review`, `/security-review`).
+
+### Cómo se usa
+
+- Se pide como siempre; Claude elige los agentes. También se puede nombrar uno: *"que el
+  `code-reviewer` revise esto"*.
+- Los agentes y skills se cargan **al abrir una sesión**: después de agregarlos o cambiarlos,
+  abrir una sesión nueva de Claude Code. En una sesión, `/agents` muestra los agentes y
+  `/tasks` los que están corriendo y con qué modelo.
+- Los subagentes no ven la memoria personal de Claude, pero **sí `CLAUDE.md`**: una regla que
+  tienen que respetar todos va ahí.
+
+### Mantenerlos al día
+
+- **Las skills resumen esta guía, no la reemplazan.** Si cambia una convención (una regla de
+  diseño, una trampa de ORDS, cómo se publica), se actualiza acá **y** en la skill que la
+  resume. Cada skill dice al principio qué secciones resume.
+- Si un agente o skill no aparece, revisar su frontmatter: `name` y `description` son
+  obligatorios y el YAML tiene que ser válido. **Ojo con `: ` dentro de la descripción**: en
+  YAML abre un mapa nuevo y el archivo deja de ser válido (pasó el 24/11/2026 con siete de
+  ellos; se reemplazó por `—`).
+- Llevar el equipo a otro proyecto: ver [`GUIA_AGENTES_CLAUDE.md`](GUIA_AGENTES_CLAUDE.md).

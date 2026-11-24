@@ -1829,9 +1829,12 @@ sitio*. Del lado de Oracle, lo que ya se aprendió:
   sugeridas desde las postulaciones*.
 - **Datos viejos desalineados** (una ciudad con otro país que su departamento): la verificación
   los cuenta e imprime el `UPDATE` que los alinea, sin correrlo sola.
-- **Fin de línea de las guías:** `README.md` y `backend/README.md` son LF; `src/routes/README.md`
-  es CRLF. Un script que las edite tiene que respetar el de cada una: si separa por el que no es,
-  no encuentra las líneas y pega el texto al final del archivo (pasó el 08/10/2026).
+- **Fin de línea de las guías:** git las guarda en LF, pero con `core.autocrlf=true` (el de esta
+  PC) en el disco quedan **CRLF**, todas. Antes de editarlas con un script, mirar el de cada una
+  con `git ls-files --eol` y respetarlo: si separa por el que no es, no encuentra las líneas y
+  pega el texto al final del archivo (pasó el 08/10/2026). Hasta el 24/11/2026 esta nota decía
+  que `README.md` y `backend/README.md` eran LF y `src/routes/README.md` CRLF: eso era el disco
+  de entonces, no una regla.
 
 ## Agregar un endpoint de negocio
 
