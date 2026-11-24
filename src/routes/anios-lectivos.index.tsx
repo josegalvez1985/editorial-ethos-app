@@ -1,30 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  AlertTriangle,
-  CalendarRange,
-  CheckCircle2,
-  ChevronRight,
-  Loader2,
-  Lock,
-  Plus,
-} from "lucide-react";
+import { CalendarRange, ChevronRight, Loader2, Lock, Plus, ScrollText } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { BotonBorrar, Cargando, Fallo, SoloLectura } from "@/components/admin-ui";
 import { AppShell } from "@/components/app-shell";
+import { EditorProcesoPostulacion } from "@/components/editor-proceso-postulacion";
 import { Texto } from "@/components/ficha-ui";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -43,7 +26,7 @@ import {
   type DatosAnioLectivo,
 } from "@/lib/anios-lectivos";
 import { textoUsos } from "@/lib/facilitadores";
-import { diaISO, fechaCorta, hoyISO } from "@/lib/fechas";
+import { fechaCorta } from "@/lib/fechas";
 import { usePermisos } from "@/lib/permisos";
 
 export const Route = createFileRoute("/anios-lectivos/")({
@@ -64,42 +47,21 @@ const sumarAnios = (f: string, n: number) => (f ? `${Number(f.slice(0, 4)) + n}$
 /** "128 postulaciones y 40 pre horarios", o null. */
 const usos = (a: AnioLectivo) => textoUsos(a.usos)?.replace(/^en /, "") ?? null;
 
-/** Dónde está hoy respecto del período. */
-function avance(a: AnioLectivo) {
-  const h = diaISO(hoyISO());
-  const d = diaISO(a.desde);
-  const t = diaISO(a.hasta);
-  if (h < d) return { estado: "antes" as const, dias: d - h, pct: 0 };
-  if (h > t) return { estado: "despues" as const, dias: h - t, pct: 100 };
-  const total = Math.max(1, t - d);
-  return { estado: "durante" as const, dias: t - h, pct: Math.round(((h - d) / total) * 100) };
-}
-
 /**
  * Años Lectivos: la página 57 de APEX (un IG sobre `ANIOS_LECTIVOS`) y su
  * modal 59 (Crea Año Lectivo), que acá es el diálogo de la pantalla con los
- * permisos de la 57. Backend: el ABM nuevo de `backend/anios_lectivos.sql`. El
- * ícono es el que ya tenía en el menú (`CalendarRange`).
+ * permisos de la 57. Backend: `backend/anios_lectivos.sql`. El ícono es el que
+ * ya tenía en el menú (`CalendarRange`).
  *
- * Lo que agrega el sitio sobre APEX:
- *
- * - **El año vigente arriba, destacado**: su período, cuánto va del año
- *   (o si ya terminó, o todavía no empezó) y qué datos tiene cargados. Si no
- *   hay ninguno vigente se avisa qué pasa con eso.
- * - **"Hacer vigente" en un toque**, con confirmación. El backend desactiva
- *   el anterior en la misma operación: en APEX había que desactivar uno y
- *   activar el otro a mano, y el índice único no dejaba hacerlo al revés.
- * - El alta **propone el año siguiente**, su descripción y las mismas fechas
- *   un año después. Avisa si las fechas caen en otro año o se pisan con otro.
- * - Cada año dice **qué datos tiene** (postulaciones, pre-horarios,
- *   horarios). Con datos no se borra ni cambia de número, y el vigente no se
- *   borra: el diálogo lo explica en vez de dejar que falle.
+ * Desde el 24/11/2026, **igual de simple que Materias** (pedido de Jose):
+ * tarjetas en grilla y un diálogo. El vigente lleva su marca y se cambia con
+ * el interruptor "Año vigente" del diálogo (el backend desactiva el anterior
+ * en la misma operación). El **proceso de postulación** (`PROCESO_POSTULACION`,
+ * en Markdown, lo lee otra app) se abre desde el diálogo de cada año.
  */
 function AniosLectivosPage() {
-  const qc = useQueryClient();
   const { puedeRuta } = usePermisos();
   const puedeAgregar = puedeRuta(RUTA, "insertar");
-  const puedeActualizar = puedeRuta(RUTA, "actualizar");
 
   const { data, isLoading, error } = useQuery({
     queryKey: keysAniosLectivos.todo,
@@ -107,46 +69,30 @@ function AniosLectivosPage() {
   });
   /** `null` cerrado, `"nuevo"` alta, o el año que se abre. */
   const [abierto, setAbierto] = useState<AnioLectivo | "nuevo" | null>(null);
-  const [activando, setActivando] = useState<AnioLectivo | null>(null);
+  /** El año cuyo proceso de postulación se edita. */
+  const [proceso, setProceso] = useState<AnioLectivo | null>(null);
 
   const anios = data ?? [];
-  const vigente = anios.find((a) => a.vigente);
-  const otros = anios.filter((a) => !a.vigente);
-
-  const activar = useMutation({
-    mutationFn: (a: AnioLectivo) =>
-      guardarAnioLectivo(a.id, {
-        anio: a.anio,
-        descripcion: a.descripcion,
-        estado: "A",
-        fecha_desde: a.desde,
-        fecha_hasta: a.hasta,
-      }),
-    onSuccess: (r, a) => {
-      // Cambió el año de todo el sistema: horarios, pre-horarios, combos… y,
-      // si había otro vigente, las instituciones y facilitadores inactivados.
-      qc.invalidateQueries();
-      const inactivados = textoInactivados(r);
-      toast.success(
-        `${a.anio} es el año vigente`,
-        inactivados ? { description: inactivados, duration: 8000 } : undefined,
-      );
-      setActivando(null);
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo activar"),
-  });
+  const hayVigente = anios.some((a) => a.vigente);
 
   return (
     <AppShell>
       <div className="px-5 pt-5 pb-24">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="font-display text-2xl font-bold">Años Lectivos</h1>
+            <h1 className="font-display flex items-center gap-2 text-2xl font-bold">
+              Años Lectivos
+              {data && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground tabular-nums">
+                  {anios.length}
+                </span>
+              )}
+            </h1>
             <p className="text-xs text-muted-foreground">
               El vigente decide el año de horarios, pre-horarios, postulaciones y evaluaciones.
             </p>
           </div>
-          {puedeAgregar && !isLoading && !error && (
+          {puedeAgregar && (
             <button
               type="button"
               onClick={() => setAbierto("nuevo")}
@@ -179,43 +125,20 @@ function AniosLectivosPage() {
             )}
           </div>
         ) : (
-          <div className="space-y-6">
-            {vigente ? (
-              <Vigente a={vigente} onAbrir={() => setAbierto(vigente)} />
-            ) : (
-              <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-800 dark:text-amber-300">
-                <AlertTriangle className="mt-0.5 size-5 shrink-0" />
-                <div className="text-sm">
-                  <p className="font-semibold">No hay un año vigente</p>
-                  <p className="mt-0.5 text-[12.5px] leading-snug">
-                    Horarios y pre-horarios no saben qué año cargar, y los combos de evaluaciones
-                    dejan de filtrar por año. Elegí uno abajo y tocá “Hacer vigente”.
-                  </p>
-                </div>
-              </div>
+          <>
+            {!hayVigente && (
+              <p className="mb-3 rounded-xl bg-amber-500/10 px-3 py-2 text-[12.5px] text-amber-800 dark:text-amber-300">
+                No hay un año vigente: abrí uno y activá “Año vigente”.
+              </p>
             )}
-
-            {otros.length > 0 && (
-              <section>
-                <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
-                  {vigente ? "Otros años" : "Años cargados"}
-                </h2>
-                <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
-                  {otros.map((a) => (
-                    <li key={a.id}>
-                      <Tarjeta
-                        a={a}
-                        sugerido={sugerido(a, vigente, otros)}
-                        puedeActivar={puedeActualizar}
-                        onAbrir={() => setAbierto(a)}
-                        onActivar={() => setActivando(a)}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-          </div>
+            <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
+              {anios.map((a) => (
+                <li key={a.id}>
+                  <Tarjeta a={a} onAbrir={() => setAbierto(a)} />
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
 
@@ -225,167 +148,58 @@ function AniosLectivosPage() {
           anio={abierto === "nuevo" ? null : abierto}
           todos={anios}
           onCerrar={() => setAbierto(null)}
+          onProceso={(a) => {
+            setAbierto(null);
+            setProceso(a);
+          }}
         />
       )}
 
-      <AlertDialog
-        open={activando != null}
-        onOpenChange={(o) => !o && !activar.isPending && setActivando(null)}
-      >
-        <AlertDialogContent className="max-w-[calc(100vw-2.5rem)] rounded-2xl sm:max-w-sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-display">
-              ¿Hacer vigente {activando?.anio}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {vigente ? `${vigente.anio} deja de ser el vigente. ` : ""}
-              Horarios, pre-horarios, postulaciones y los combos de evaluaciones pasan a usar{" "}
-              {activando?.anio}.
-              {vigente && (
-                <span className="mt-2 block font-medium text-amber-700 dark:text-amber-400">
-                  {AVISO_INACTIVAR}
-                </span>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel className="h-11 rounded-xl" disabled={activar.isPending}>
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="h-11 rounded-xl"
-              disabled={activar.isPending}
-              onClick={(e) => {
-                // Se cierra al terminar, no antes: si falla queda abierto.
-                e.preventDefault();
-                if (activando) activar.mutate(activando);
-              }}
-            >
-              {activar.isPending && <Loader2 className="size-4 animate-spin" />}
-              Hacer vigente
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {proceso && (
+        <EditorProcesoPostulacion
+          key={proceso.id}
+          anio={proceso}
+          anterior={anios.find((a) => a.anio < proceso.anio && a.proceso.trim())}
+          puedeEditar={puedeRuta(RUTA, "actualizar")}
+          onCerrar={() => setProceso(null)}
+        />
+      )}
     </AppShell>
   );
 }
 
-/**
- * El que conviene activar: el siguiente al vigente cuando el vigente ya
- * terminó, o el más nuevo si no hay vigente.
- */
-function sugerido(a: AnioLectivo, vigente: AnioLectivo | undefined, otros: AnioLectivo[]) {
-  if (!vigente) return a.id === otros[0]?.id;
-  return a.anio === vigente.anio + 1 && avance(vigente).estado === "despues";
-}
-
-function Vigente({ a, onAbrir }: { a: AnioLectivo; onAbrir: () => void }) {
-  const av = avance(a);
+function Tarjeta({ a, onAbrir }: { a: AnioLectivo; onAbrir: () => void }) {
   const datos = usos(a);
   return (
     <button
       type="button"
       onClick={onAbrir}
-      className="tap block w-full overflow-hidden rounded-3xl border border-primary/25 bg-card text-left shadow-soft hover:border-primary/50"
-    >
-      <div className="bg-hero-gradient flex items-end justify-between gap-3 px-5 pt-4 pb-3 text-on-brand">
-        <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-[12px] font-semibold opacity-90">
-            <CheckCircle2 className="size-4" />
-            Año vigente
-          </p>
-          <p className="font-display text-5xl leading-none font-bold tabular-nums">{a.anio}</p>
-        </div>
-        <ChevronRight className="mb-1 size-5 shrink-0 opacity-80" />
-      </div>
-      <div className="space-y-3 px-5 py-4">
-        <div>
-          <p className="text-sm font-semibold">{a.descripcion}</p>
-          <p className="text-[12.5px] text-muted-foreground">
-            {fechaCorta(a.desde)} → {fechaCorta(a.hasta)}
-          </p>
-        </div>
-        <div>
-          <div className="h-2 overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary" style={{ width: `${av.pct}%` }} />
-          </div>
-          <p
-            className={`mt-1.5 text-[12px] ${
-              av.estado === "despues"
-                ? "font-semibold text-amber-700 dark:text-amber-400"
-                : "text-muted-foreground"
-            }`}
-          >
-            {av.estado === "antes"
-              ? `Empieza en ${av.dias} ${av.dias === 1 ? "día" : "días"}`
-              : av.estado === "durante"
-                ? `${av.pct}% del año · ${av.dias === 0 ? "termina hoy" : `faltan ${av.dias} ${av.dias === 1 ? "día" : "días"}`}`
-                : `Terminó hace ${av.dias} ${av.dias === 1 ? "día" : "días"}: ¿ya toca activar ${a.anio + 1}?`}
-          </p>
-        </div>
-        <p className="text-[12px] text-muted-foreground">
-          {datos ? `Tiene ${datos}.` : "Todavía no tiene datos cargados."}
-        </p>
-      </div>
-    </button>
-  );
-}
-
-function Tarjeta({
-  a,
-  sugerido,
-  puedeActivar,
-  onAbrir,
-  onActivar,
-}: {
-  a: AnioLectivo;
-  sugerido: boolean;
-  puedeActivar: boolean;
-  onAbrir: () => void;
-  onActivar: () => void;
-}) {
-  const datos = usos(a);
-  return (
-    <div
-      className={`flex h-full flex-col rounded-2xl border bg-card shadow-soft ${
-        sugerido ? "border-primary/40" : "border-border/60"
+      className={`tap flex h-full w-full items-center gap-3 rounded-2xl border bg-card p-3 text-left shadow-soft hover:border-primary/40 ${
+        a.vigente ? "border-primary/40" : "border-border/60"
       }`}
     >
-      <button
-        type="button"
-        onClick={onAbrir}
-        className="tap flex flex-1 items-center gap-3 p-3 text-left"
+      <span
+        className={`grid h-10 w-14 shrink-0 place-items-center rounded-xl text-base font-bold tabular-nums ${
+          a.vigente ? "bg-primary text-primary-foreground" : "bg-primary-soft text-primary"
+        }`}
       >
-        <span className="grid h-11 w-14 shrink-0 place-items-center rounded-xl bg-muted text-base font-bold tabular-nums">
-          {a.anio}
+        {a.anio}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="truncate text-sm font-semibold">{a.descripcion}</span>
+          {a.vigente && (
+            <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10.5px] font-semibold text-primary">
+              Vigente
+            </span>
+          )}
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold">{a.descripcion}</span>
-          <span className="block text-[12px] text-muted-foreground">
-            {fechaCorta(a.desde)} → {fechaCorta(a.hasta)}
-          </span>
-          <span className="block truncate text-[11.5px] text-muted-foreground">
-            {datos ? `Con ${datos}` : "Sin datos"}
-          </span>
+        <span className="block truncate text-[11.5px] text-muted-foreground">
+          {fechaCorta(a.desde)} → {fechaCorta(a.hasta)} · {datos ? `Con ${datos}` : "Sin uso"}
         </span>
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-      </button>
-      {puedeActivar && (
-        <button
-          type="button"
-          onClick={onActivar}
-          className={`tap mx-3 mb-3 flex h-9 items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold ${
-            sugerido
-              ? "bg-primary text-primary-foreground"
-              : "border border-border/60 text-primary hover:border-primary/40"
-          }`}
-        >
-          <CheckCircle2 className="size-4" />
-          Hacer vigente
-        </button>
-      )}
-    </div>
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+    </button>
   );
 }
 
@@ -397,10 +211,12 @@ function Editor({
   anio,
   todos,
   onCerrar,
+  onProceso,
 }: {
   anio: AnioLectivo | null;
   todos: AnioLectivo[];
   onCerrar: () => void;
+  onProceso: (a: AnioLectivo) => void;
 }) {
   const qc = useQueryClient();
   const { puedeRuta } = usePermisos();
@@ -437,12 +253,6 @@ function Editor({
   // Con datos no cambia de número (el backend lo frena igual: 409).
   const numeroBloqueado = conDatos;
   const fechasMal = !!desde && !!hasta && desde > hasta;
-  const fueraDelAnio =
-    numeroValido &&
-    !!desde &&
-    !!hasta &&
-    Number(desde.slice(0, 4)) !== n &&
-    Number(hasta.slice(0, 4)) !== n;
   const pisa =
     desde && hasta && !fechasMal
       ? otros.find((a) => a.desde && a.hasta && desde <= a.hasta && hasta >= a.desde)
@@ -463,6 +273,9 @@ function Editor({
     hasta === inicial.hasta &&
     esVigente === inicial.vigente;
   const listo = puedeGuardar && !faltan.length && !repetido && !fechasMal && !sinCambios;
+  // El vigente cambia al guardar: avisar lo que se inactiva.
+  const cambiaVigente =
+    (esVigente && !!vigente && vigente.id !== anio?.id) || (!esVigente && inicial.vigente);
 
   const guardar = useMutation({
     mutationFn: () => {
@@ -508,6 +321,7 @@ function Editor({
   });
 
   const ocupado = guardar.isPending || borrar.isPending;
+  const conProceso = !!anio?.proceso.trim();
 
   return (
     <Dialog open onOpenChange={(o) => !o && !ocupado && onCerrar()}>
@@ -538,25 +352,23 @@ function Editor({
         >
           <fieldset disabled={!puedeGuardar || ocupado} className="space-y-4">
             <div className="grid grid-cols-[7rem_1fr] gap-3">
-              <div>
-                <label className="block">
-                  <span className="mb-1.5 block text-sm font-medium">
-                    Año <span className="text-destructive">*</span>
-                  </span>
-                  <input
-                    value={numero}
-                    onChange={(e) => {
-                      const v = e.target.value.replace(/\D/g, "").slice(0, 4);
-                      setNumero(v);
-                      if (!descripcionTocada) setDescripcion(`Año lectivo ${v}`);
-                    }}
-                    inputMode="numeric"
-                    disabled={numeroBloqueado}
-                    autoComplete="off"
-                    className="h-11 w-full rounded-xl border border-input bg-background px-3 text-base font-semibold tabular-nums outline-none focus:border-primary/40 disabled:opacity-60 lg:text-sm"
-                  />
-                </label>
-              </div>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium">
+                  Año <span className="text-destructive">*</span>
+                </span>
+                <input
+                  value={numero}
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, "").slice(0, 4);
+                    setNumero(v);
+                    if (!descripcionTocada) setDescripcion(`Año lectivo ${v}`);
+                  }}
+                  inputMode="numeric"
+                  disabled={numeroBloqueado}
+                  autoComplete="off"
+                  className="h-11 w-full rounded-xl border border-input bg-background px-3 text-base font-semibold tabular-nums outline-none focus:border-primary/40 disabled:opacity-60 lg:text-sm"
+                />
+              </label>
               <Texto
                 etiqueta="Descripción"
                 req
@@ -585,11 +397,9 @@ function Editor({
                 “Desde” no puede ser después de “Hasta”.
               </p>
             ) : (
-              (fueraDelAnio || pisa) && (
+              pisa && (
                 <p className="-mt-2 text-xs text-amber-700 dark:text-amber-400">
-                  {fueraDelAnio
-                    ? `Ojo: las fechas no caen en ${n}.`
-                    : `Ojo: se pisa con ${pisa!.anio} (${fechaCorta(pisa!.desde)} → ${fechaCorta(pisa!.hasta)}).`}
+                  Ojo: se pisa con {pisa.anio}.
                 </p>
               )
             )}
@@ -618,15 +428,12 @@ function Editor({
               <span className="min-w-0">
                 <span className="block text-sm font-semibold">Año vigente</span>
                 <span className="block text-[11.5px] leading-snug text-muted-foreground">
-                  {esVigente
-                    ? vigente && vigente.id !== anio?.id
-                      ? `${vigente.anio} deja de ser el vigente al guardar.`
-                      : "Es el año de horarios, pre-horarios, postulaciones y evaluaciones."
-                    : inicial.vigente
-                      ? "Sin año vigente, horarios y pre-horarios no sabrán qué año cargar."
+                  {esVigente && vigente && vigente.id !== anio?.id
+                    ? `${vigente.anio} deja de ser el vigente al guardar.`
+                    : esVigente
+                      ? "Es el año que usa todo el sistema."
                       : "Queda inactivo."}
-                  {((esVigente && vigente && vigente.id !== anio?.id) ||
-                    (!esVigente && inicial.vigente)) && (
+                  {cambiaVigente && (
                     <span className="mt-1 block font-medium text-amber-700 dark:text-amber-400">
                       {AVISO_INACTIVAR}
                     </span>
@@ -635,6 +442,29 @@ function Editor({
               </span>
             </button>
           </fieldset>
+
+          {/* Proceso de postulación: se edita aparte (Markdown, lo lee otra app). */}
+          {!nuevo && (
+            <button
+              type="button"
+              onClick={() => onProceso(anio)}
+              disabled={ocupado || !sinCambios}
+              className="tap flex w-full items-center gap-3 rounded-xl border border-border/60 p-3 text-left hover:border-primary/40 disabled:opacity-60"
+            >
+              <ScrollText className="size-5 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">Proceso de postulación</span>
+                <span className="block text-[11.5px] text-muted-foreground">
+                  {!sinCambios
+                    ? "Guardá los cambios del año antes de abrirlo."
+                    : conProceso
+                      ? "Cargado. Tocá para verlo o editarlo."
+                      : "Sin cargar."}
+                </span>
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+            </button>
+          )}
 
           {!puedeGuardar && (
             <SoloLectura

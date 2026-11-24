@@ -3,7 +3,7 @@
 | Archivo | Qué trae | Orden |
 | --- | --- | --- |
 | **[`auth.sql`](auth.sql)** | Tokens, `PKG_AUTH_ETHOS`, módulo ORDS `ethos`, `auth/*` | 1º, obligatorio |
-| **[`anios_lectivos.sql`](anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` + `TRG_ANIOS_LECTIVOS_INACTIVAR` (23/11/2026: al dejar de ser vigente un año, inactiva todas las instituciones y todos los facilitadores) + el ABM de `/anios-lectivos` (`PKG_ANIOS_LECTIVOS_ETHOS`, `anios-lectivos[/:id]`; el paquete necesita `roles_paginas.sql`: en una instalación nueva, correrlo de nuevo después) | 2º |
+| **[`anios_lectivos.sql`](anios_lectivos.sql)** | `ANIOS_LECTIVOS` + `FN_ANIO_LECTIVO_ACTUAL()` + `TRG_ANIOS_LECTIVOS_INACTIVAR` (23/11/2026: al dejar de ser vigente un año, inactiva todas las instituciones y todos los facilitadores) + el ABM de `/anios-lectivos` (`PKG_ANIOS_LECTIVOS_ETHOS`, `anios-lectivos[/:id]` y, desde el 24/11/2026, `anios-lectivos/:id/proceso` para `PROCESO_POSTULACION`, columna que agregó otra app que comparte la base: el script no la toca si ya está; el paquete necesita `roles_paginas.sql`: en una instalación nueva, correrlo de nuevo después) | 2º |
 | **[`evaluaciones_facilitadores.sql`](evaluaciones_facilitadores.sql)** | CRUD de `EVALUACIONES_FACILITADORES` + listas de valores de los combos y de la tarjeta de dirección (`PKG_EVAL_FACILITADORES_ETHOS`) | 3º |
 | **[`intervenciones.sql`](intervenciones.sql)** | Puntualidad: atraso de los facilitadores sobre `V_HISTORIAL_INTERVENCIONES` (`PKG_INTERVENCIONES_ETHOS`); desde el 09/10/2026 también el mapa de la página 25 (`intervenciones/mapa`, `intervenciones/mapa/facilitadores`), el detalle de un día del gráfico de Actividad (`intervenciones/por-dia/detalle`) y desde el 12/10/2026 las páginas 52, Intervenciones Realizadas (`intervenciones/realizadas`), 53, Resumen de Intervenciones (`intervenciones/resumen-periodo`), 55, Totales por Facilitador (`intervenciones/resumen-periodo`, desde el 27/10/2026), y 69, Intervenciones no realizadas (`intervenciones/no-realizadas`) | independiente |
 | **[`intervenciones_crud.sql`](intervenciones_crud.sql)** | Carga manual de intervenciones (`PKG_INTERV_CRUD_ETHOS`) | independiente |
@@ -13,7 +13,7 @@
 | **[`sucursales.sql`](sucursales.sql)** | ABM de sucursales (`PKG_SUCURSALES_ETHOS`) + corrige `SUCURSALES_JNTRG` | independiente |
 | **[`envios_graficas.sql`](envios_graficas.sql)** | Envíos de gráficas a las sucursales, cabecera y detalle: crea `ENVIOS_CABECERA`, `ENVIOS_GRAFICAS` y sus bitácoras si faltan, los dos `_JNTRG` con el usuario de la app y el ABM (`PKG_ENVIOS_GRAFICAS_ETHOS`) | después de `roles_paginas.sql`, `ciudades.sql` y `sucursales.sql` |
 | **[`ia_asistente.sql`](ia_asistente.sql)** | El asistente con IA: crea `IA_CONFIG` e `IA_CONSULTAS` si faltan y `PKG_IA_ETHOS`, que llama a la API de Claude y corre sus consultas en solo lectura (`ia/preguntar`). Después, a mano: la clave de la API | después de `auth.sql` |
-| **[`cloudinary.sql`](cloudinary.sql)** | Subida de archivos a Cloudinary firmada desde Oracle (04/11/2026): crea `CLOUDINARY_CONFIG` (privada) y `PKG_CLOUDINARY_ETHOS`, que firma las subidas del navegador y valida que un enlace sea de nuestro cloud. Sin endpoints propios. Después, a mano: la clave y el secreto | después de `auth.sql` |
+| **[`cloudinary.sql`](cloudinary.sql)** | Subida de archivos a Cloudinary firmada desde Oracle (04/11/2026): crea `CLOUDINARY_CONFIG` (privada) y `PKG_CLOUDINARY_ETHOS`, que firma las subidas del navegador, valida que un enlace sea de nuestro cloud y borra archivos. Sin endpoints propios: lo usan `facturas_facilitadores.sql` y, desde el 24/11/2026, `postulantes_facilitadores.sql` (sin cambiar este script). Después, a mano: la clave y el secreto | después de `auth.sql` |
 | **[`facturas_facilitadores.sql`](facturas_facilitadores.sql)** | Las facturas de los facilitadores (28/10/2026, no viene de APEX), un diálogo de Totales por Facilitador: crea `FACTURAS_FACILITADORES` y su `_JN` si faltan, `FOTO_URL` si falta (04/11/2026), el `_JNTRG` con el usuario de la app y el ABM (`PKG_FACTURAS_FACIL_ETHOS`, `facturas-facilitadores[/:id]`, `facturas-facilitadores/firma-foto`, y `facturas-facilitadores/pagos` para Pagos a Facilitadores, 04/11/2026) | después de `roles_paginas.sql`, `facilitadores.sql` y `cloudinary.sql` |
 | **[`auditoria.sql`](auditoria.sql)** | Consulta de las bitácoras `_JN` (`PKG_AUDITORIA_ETHOS`) + `pr_crear_trigger_auditoria` | independiente |
 | **[`auditoria_intervenciones.sql`](auditoria_intervenciones.sql)** | La bitácora `INTERVENCIONES_JN` con todas sus columnas, para la página 58, Auditoría de Intervenciones (`PKG_AUDITORIA_INTERV_ETHOS`, `auditoria-intervenciones`) | independiente |
@@ -39,7 +39,9 @@
 | **[`enfasis.sql`](enfasis.sql)** | ABM de énfasis (`PKG_ENFASIS_ETHOS`) | después de `roles_paginas.sql` |
 | **[`indices.sql`](indices.sql)** | ABM de los índices de los manuales (`PKG_INDICES_ETHOS`) | después de `roles_paginas.sql` |
 | **[`feriados.sql`](feriados.sql)** | ABM de los feriados nacionales y "copiar de un año a otro" (`PKG_FERIADOS_ETHOS`) | después de `roles_paginas.sql` |
+| **[`postulantes_facilitadores.sql`](postulantes_facilitadores.sql)** | Revisión de las postulaciones de facilitadores (`PKG_POSTULANTES_FAC_ETHOS`, `revision-postulantes[/:id[/estado]]`, `revision-postulantes/firma`) + `TRG_POSTULANTES_FAC_APROBAR`. **`POSTULANTES_FACILITADORES` es de otra app**: el script no la crea ni le hace DDL; antes de correrlo, la *verificación previa* de su encabezado (24/11/2026) | después de `roles_paginas.sql` y `cloudinary.sql` |
 | **[`etapas.sql`](etapas.sql)** | ABM de etapas, con en qué tablas se usa cada una (`PKG_ETAPAS_ETHOS`) | después de `roles_paginas.sql` |
+| **[`periodos_postulacion.sql`](periodos_postulacion.sql)** | ABM de `/periodos-postulacion` (`PKG_PERIODOS_POST_ETHOS`, `periodos-postulacion[/:id]`). **`PERIODOS_POSTULACION` es compartida con otra app** sobre la misma base: el script solo la crea si no existe y nunca le hace un `ALTER`; antes de correrlo, la *verificación previa* de su encabezado (24/11/2026) | después de `anios_lectivos.sql` y `roles_paginas.sql` |
 | **[`areas_evaluaciones.sql`](areas_evaluaciones.sql)** | ABM de áreas de evaluación (`PKG_AREAS_EVAL_ETHOS`) | después de `roles_paginas.sql` |
 | **[`evaluaciones.sql`](evaluaciones.sql)** | ABM de los ítems de evaluación, tabla `EVALUACIONES` (no confundir con `evaluaciones_facilitadores.sql`), endpoints `items-evaluacion[/:id]` (`PKG_ITEMS_EVAL_ETHOS`) | después de `roles_paginas.sql` |
 | **[`escalas_evaluaciones.sql`](escalas_evaluaciones.sql)** | La escala de calificación: ABM por fila y `PUT escalas-evaluacion/tramos`, que reescribe la escala entera por tramos (`PKG_ESCALAS_EVAL_ETHOS`) | después de `roles_paginas.sql` |
@@ -1245,9 +1247,23 @@ no deja salir a `api.anthropic.com` y el asistente no puede correr en Oracle.
 
 ## Cloudinary (`cloudinary.sql`)
 
-El servicio para subir archivos (04/11/2026). Hoy lo usan solo las fotos de las facturas.
+El servicio para subir archivos (04/11/2026). Lo usan:
+
+| Módulo | Ruta de firma | Carpeta | Permiso |
+| --- | --- | --- | --- |
+| Facturas de los facilitadores | `POST facturas-facilitadores/firma-foto` | `facturas-facilitadores` | sesión |
+| Postulantes (24/11/2026) | `POST revision-postulantes/firma` | `postulaciones-facilitadores` (la de la otra app, pedido de Jose) | actualizar en `/postulantes` |
+
 **No publica endpoints**: cada módulo expone su propia ruta de firma, con sus permisos, y
-llama al paquete.
+llama al paquete. **Sumar un módulo no toca `cloudinary.sql`** (Jose, 24/11/2026): se llama a
+`escribir_firma(<carpeta>)` como facturas, con el preset de `CLOUDINARY_CONFIG`.
+
+**En el sitio, todo lo de Cloudinary está en
+[`src/lib/cloudinary.ts`](../src/lib/cloudinary.ts)** desde el 24/11/2026 (antes vivía en
+`lib/facturas-facilitadores.ts`): `subirACloudinary(archivo, rutaDeFirma, …)` achica la foto,
+pide la firma y sube con progreso; `miniatura`, `esPdf`, `extension` y
+`descargarDeCloudinary`. Facturas conserva sus nombres (`subirFotoFactura`, `TOPE_PDF_MB` 3)
+y Postulantes acepta PDF de hasta 10 MB (un título escaneado pesa más).
 
 El preset (`fc`) es **Signed**: Cloudinary rechaza una subida sin firma, y la firma lleva el
 API secret, que no puede ir al navegador. Por eso el archivo va **directo del navegador a
@@ -1510,6 +1526,77 @@ viejo queda en la tabla `_JN`.
 
 `ASPECTOS_POSITIVOS` y `ASPECTOS_MEJORAR` son `CLOB`: sin tope de largo. El límite
 práctico lo pone el bind de ORDS (~32 KB por campo), no la columna.
+
+## Tablas compartidas con otra app (24/11/2026)
+
+`PERIODOS_POSTULACION` y la columna `ANIOS_LECTIVOS.PROCESO_POSTULACION` las creó y las usa
+**otra app sobre la misma base** (el formulario del postulante). El sitio las edita sin tocar su
+estructura: ver el [`README`](../README.md) → *Una tabla que comparte otra app*.
+
+### `PERIODOS_POSTULACION` ([`periodos_postulacion.sql`](periodos_postulacion.sql))
+
+| Columna | Qué es |
+| --- | --- |
+| `ID` | identidad (`GENERATED BY DEFAULT ON NULL`) |
+| `ID_ANIO` | FK a `ANIOS_LECTIVOS.ID_ANIO` (**el id, no el número del año**). `UNIQUE`: un período por año |
+| `FECHA_INICIO`, `FECHA_FIN` | el rango en que se acepta postulación; `CHECK fin >= inicio` |
+| `HABILITACION_EXTRAORDINARIA` | `'SI'` abre la postulación aunque hoy esté fuera del rango; `'NO'` (default) deja solo el rango |
+| `MOTIVO_HABILITACION` | por qué se habilitó fuera de fecha (hasta 500) |
+
+- **Abierta hoy** = hoy entre `FECHA_INICIO` y `FECHA_FIN`, **o** `HABILITACION_EXTRAORDINARIA = 'SI'`.
+  La pantalla lo calcula en el navegador con la fecha local.
+- `PKG_PERIODOS_POST_ETHOS`: `GET periodos-postulacion` trae **todos los años lectivos** con su
+  período o `null`; `POST` (con `id_anio`), `PUT periodos-postulacion/:id` (sin `id_anio`: el año
+  no cambia) y `DELETE`. Permisos de la página de `/periodos-postulacion`.
+- Reglas del paquete, no de la tabla: con `'SI'` el motivo es obligatorio; con `'NO'` se guarda
+  como venga (no se borra). Un `ORA-02292` al borrar (una hija de la otra app) sale como 409.
+- **No frena nada todavía:** es configuración. Si el período tiene que bloquear algo del sitio,
+  está pendiente de definir con Jose.
+
+### `ANIOS_LECTIVOS.PROCESO_POSTULACION` ([`anios_lectivos.sql`](anios_lectivos.sql))
+
+- `CLOB` en **Markdown**: etapas, documentos y requisitos que el postulante acepta.
+- Se guarda **aparte**: `PUT anios-lectivos/:id/proceso`, con el Markdown **crudo** en el cuerpo
+  (`text/plain`), leído con `:body_text` para no tener el tope de 32K de un bind. Vacío = `NULL`.
+  `GET anios-lectivos` lo trae en `proceso_postulacion`.
+- `guardar` (el del año) **no lo toca**, y guardar el proceso no cambia `ESTADO`: no salta
+  `TRG_ANIOS_LECTIVOS_INACTIVAR`.
+- El script solo agrega la columna si faltara (instalación nueva).
+
+### `POSTULANTES_FACILITADORES` ([`postulantes_facilitadores.sql`](postulantes_facilitadores.sql))
+
+Las respuestas del formulario de postulación de facilitadores (JV26 y la app de facilitadores):
+una fila por postulante y año lectivo (`ID_ANIO` → `ANIOS_LECTIVOS.ID_ANIO`). `ID_FACILITADOR`
+tiene valor si ya trabajó con la fundación. `USUARIO` es quien la cargó desde la app (nulo en
+las del formulario). Los valores de las listas son los `CHECK` de la tabla (`SI`/`NO`,
+`MANANA`, `CONYUGE`…), y la pantalla los escribe igual.
+
+- **Revisión:** `ESTADO` `PENDIENTE` / `APROBADA` / `RECHAZADA`, con `OBSERVACION_ADMIN` y
+  `FECHA_REVISION` (hora de Paraguay; `NULL` al volver a pendiente). Rechazar pide motivo. Va en
+  `PUT revision-postulantes/:id/estado`: guardar la ficha no la toca.
+- **Archivos:** los `*_URL` son de Cloudinary y se suben como las fotos de facturas
+  (`PKG_CLOUDINARY_ETHOS.escribir_firma`, carpeta `postulaciones-facilitadores`). Un enlace
+  **nuevo** tiene que ser de nuestro cloud; uno que no cambia se acepta como venga. Lo
+  reemplazado o quitado, y todo al borrar la postulación, se borra de Cloudinary **después del
+  COMMIT**, salvo que otra fila use el mismo enlace; si falla, solo se avisa. Los `*_ARCHIVO`
+  son enlaces o rutas de OneDrive: se guardan como texto.
+- **La ficha viaja cruda** (`:body_text`, JSON): `AREAS_MINISTERIO` es CLOB. País y
+  departamento salen de la ciudad (la FK es a `CIUDADES` por las tres columnas).
+- **No hay alta:** las postulaciones llegan por la otra app.
+- **Las rutas ORDS son `revision-postulantes/*`.** Una versión anterior del script publicaba
+  `postulantes/*` y una segunda corrida chocó con esas mismas rutas (ORA-00001, ORA-00060). El
+  script las borra solo si todos sus handlers llaman a `PKG_POSTULANTES_FAC_ETHOS`.
+- **Aprobar la pasa a `FACILITADORES`** (`TRG_POSTULANTES_FAC_APROBAR`, pedido de Jose, el único
+  DDL sobre la tabla compartida). Al pasar `ESTADO` a `APROBADA`, desde el sitio o desde la otra
+  app: si no tiene `ID_FACILITADOR` y no hay un facilitador con la misma cédula, **crea** uno;
+  si lo tiene (o lo encuentra por cédula), **actualiza** sus datos (lo vacío no borra lo que
+  había). Queda `ACTIVO = 'SI'`, el id en `ID_FACILITADOR`, el `USUARIO` de la app si nadie lo
+  usa, y los estudios concluidos o en curso en `FACILITADORES_ESTUDIOS` (sin repetir niveles).
+  Rechazar o volver a pendiente no deshace nada.
+- **Los valores de las listas de APEX** (sí/no, estado civil, con quién vive, nivel académico,
+  tipo de factura) salen de los que **ya hay** en `FACILITADORES`: `valor_lista` elige el más
+  usado que coincide con el código de la postulación. El script imprime la equivalencia al
+  final; revisarla después de correrlo.
 
 ## Monitoreo de Facilitadores (la página 87): sin SQL propio
 
@@ -1795,3 +1882,6 @@ expiración por status **y** por mensaje; no quites esa red de seguridad.
 - **Los tramos de la calificación están copiados en el sitio** (`ESCALA` en
   `src/lib/evaluaciones.ts`). Si cambia `ESCALAS_EVALUACIONES`, hay que tocar ese archivo; la
   salida de fondo es un `GET listas/escalas`.
+- **El período de postulación no frena nada en el sitio** (24/11/2026). `PERIODOS_POSTULACION`
+  es solo configuración: si tiene que bloquear algo (cargar postulaciones fuera de fecha, por
+  ejemplo) o eso lo controla solo la otra app, está por definir con Jose.

@@ -46,8 +46,10 @@ export const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
  * Y el mismo día otra vez, cuando cada destino ganó `comentario`.
  * El 19/10/2026 cada docente ganó `ubicaciones` (institución, ciudad y año): una
  * lista vieja sin ese campo hacía reventar el diálogo de Docentes.
+ * El 24/11/2026 cada año lectivo ganó `proceso` (PROCESO_POSTULACION): una lista
+ * vieja sin ese campo hacía reventar Años Lectivos (`a.proceso.trim()`).
  */
-export const CACHE_BUSTER = "docentes-ubicaciones-v1";
+export const CACHE_BUSTER = "anios-proceso-v1";
 
 /** En SSR no hay `localStorage`: un persister que no hace nada. */
 const enMemoria: Persister = {

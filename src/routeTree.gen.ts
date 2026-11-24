@@ -65,8 +65,11 @@ import { Route as NacionalidadesIndexRouteImport } from './routes/nacionalidades
 import { Route as PaginasIndexRouteImport } from './routes/paginas.index'
 import { Route as PagosFacilitadoresIndexRouteImport } from './routes/pagos-facilitadores.index'
 import { Route as PaisesIndexRouteImport } from './routes/paises.index'
+import { Route as PeriodosPostulacionIndexRouteImport } from './routes/periodos-postulacion.index'
 import { Route as PermisosIndexRouteImport } from './routes/permisos.index'
 import { Route as PostulacionesIndexRouteImport } from './routes/postulaciones.index'
+import { Route as PostulantesIndexRouteImport } from './routes/postulantes.index'
+import { Route as PostulantesIdRouteImport } from './routes/postulantes.$id'
 import { Route as ReporteDiarioFacilitadorIndexRouteImport } from './routes/reporte-diario-facilitador.index'
 import { Route as ResumenIntervencionesIndexRouteImport } from './routes/resumen-intervenciones.index'
 import { Route as SucursalesIndexRouteImport } from './routes/sucursales.index'
@@ -374,6 +377,12 @@ const PaisesIndexRoute = PaisesIndexRouteImport.update({
   path: '/paises/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PeriodosPostulacionIndexRoute =
+  PeriodosPostulacionIndexRouteImport.update({
+    id: '/periodos-postulacion/',
+    path: '/periodos-postulacion/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const PermisosIndexRoute = PermisosIndexRouteImport.update({
   id: '/permisos/',
   path: '/permisos/',
@@ -382,6 +391,16 @@ const PermisosIndexRoute = PermisosIndexRouteImport.update({
 const PostulacionesIndexRoute = PostulacionesIndexRouteImport.update({
   id: '/postulaciones/',
   path: '/postulaciones/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PostulantesIndexRoute = PostulantesIndexRouteImport.update({
+  id: '/postulantes/',
+  path: '/postulantes/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PostulantesIdRoute = PostulantesIdRouteImport.update({
+  id: '/postulantes/$id',
+  path: '/postulantes/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReporteDiarioFacilitadorIndexRoute =
@@ -444,6 +463,7 @@ export interface FileRoutesByFullPath {
   '/instituciones/$id': typeof InstitucionesIdRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
+  '/postulantes/$id': typeof PostulantesIdRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agenda-semanal-facilitador/': typeof AgendaSemanalFacilitadorIndexRoute
@@ -491,8 +511,10 @@ export interface FileRoutesByFullPath {
   '/paginas/': typeof PaginasIndexRoute
   '/pagos-facilitadores/': typeof PagosFacilitadoresIndexRoute
   '/paises/': typeof PaisesIndexRoute
+  '/periodos-postulacion/': typeof PeriodosPostulacionIndexRoute
   '/permisos/': typeof PermisosIndexRoute
   '/postulaciones/': typeof PostulacionesIndexRoute
+  '/postulantes/': typeof PostulantesIndexRoute
   '/reporte-diario-facilitador/': typeof ReporteDiarioFacilitadorIndexRoute
   '/resumen-intervenciones/': typeof ResumenIntervencionesIndexRoute
   '/sucursales/': typeof SucursalesIndexRoute
@@ -513,6 +535,7 @@ export interface FileRoutesByTo {
   '/instituciones/$id': typeof InstitucionesIdRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
+  '/postulantes/$id': typeof PostulantesIdRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agenda-semanal-facilitador': typeof AgendaSemanalFacilitadorIndexRoute
@@ -560,8 +583,10 @@ export interface FileRoutesByTo {
   '/paginas': typeof PaginasIndexRoute
   '/pagos-facilitadores': typeof PagosFacilitadoresIndexRoute
   '/paises': typeof PaisesIndexRoute
+  '/periodos-postulacion': typeof PeriodosPostulacionIndexRoute
   '/permisos': typeof PermisosIndexRoute
   '/postulaciones': typeof PostulacionesIndexRoute
+  '/postulantes': typeof PostulantesIndexRoute
   '/reporte-diario-facilitador': typeof ReporteDiarioFacilitadorIndexRoute
   '/resumen-intervenciones': typeof ResumenIntervencionesIndexRoute
   '/sucursales': typeof SucursalesIndexRoute
@@ -583,6 +608,7 @@ export interface FileRoutesById {
   '/instituciones/$id': typeof InstitucionesIdRoute
   '/intervenciones/$id': typeof IntervencionesIdRoute
   '/intervenciones/nueva': typeof IntervencionesNuevaRoute
+  '/postulantes/$id': typeof PostulantesIdRoute
   '/transferencias/$id': typeof TransferenciasIdRoute
   '/transferencias/nueva': typeof TransferenciasNuevaRoute
   '/agenda-semanal-facilitador/': typeof AgendaSemanalFacilitadorIndexRoute
@@ -630,8 +656,10 @@ export interface FileRoutesById {
   '/paginas/': typeof PaginasIndexRoute
   '/pagos-facilitadores/': typeof PagosFacilitadoresIndexRoute
   '/paises/': typeof PaisesIndexRoute
+  '/periodos-postulacion/': typeof PeriodosPostulacionIndexRoute
   '/permisos/': typeof PermisosIndexRoute
   '/postulaciones/': typeof PostulacionesIndexRoute
+  '/postulantes/': typeof PostulantesIndexRoute
   '/reporte-diario-facilitador/': typeof ReporteDiarioFacilitadorIndexRoute
   '/resumen-intervenciones/': typeof ResumenIntervencionesIndexRoute
   '/sucursales/': typeof SucursalesIndexRoute
@@ -654,6 +682,7 @@ export interface FileRouteTypes {
     | '/instituciones/$id'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
+    | '/postulantes/$id'
     | '/transferencias/$id'
     | '/transferencias/nueva'
     | '/agenda-semanal-facilitador/'
@@ -701,8 +730,10 @@ export interface FileRouteTypes {
     | '/paginas/'
     | '/pagos-facilitadores/'
     | '/paises/'
+    | '/periodos-postulacion/'
     | '/permisos/'
     | '/postulaciones/'
+    | '/postulantes/'
     | '/reporte-diario-facilitador/'
     | '/resumen-intervenciones/'
     | '/sucursales/'
@@ -723,6 +754,7 @@ export interface FileRouteTypes {
     | '/instituciones/$id'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
+    | '/postulantes/$id'
     | '/transferencias/$id'
     | '/transferencias/nueva'
     | '/agenda-semanal-facilitador'
@@ -770,8 +802,10 @@ export interface FileRouteTypes {
     | '/paginas'
     | '/pagos-facilitadores'
     | '/paises'
+    | '/periodos-postulacion'
     | '/permisos'
     | '/postulaciones'
+    | '/postulantes'
     | '/reporte-diario-facilitador'
     | '/resumen-intervenciones'
     | '/sucursales'
@@ -792,6 +826,7 @@ export interface FileRouteTypes {
     | '/instituciones/$id'
     | '/intervenciones/$id'
     | '/intervenciones/nueva'
+    | '/postulantes/$id'
     | '/transferencias/$id'
     | '/transferencias/nueva'
     | '/agenda-semanal-facilitador/'
@@ -839,8 +874,10 @@ export interface FileRouteTypes {
     | '/paginas/'
     | '/pagos-facilitadores/'
     | '/paises/'
+    | '/periodos-postulacion/'
     | '/permisos/'
     | '/postulaciones/'
+    | '/postulantes/'
     | '/reporte-diario-facilitador/'
     | '/resumen-intervenciones/'
     | '/sucursales/'
@@ -862,6 +899,7 @@ export interface RootRouteChildren {
   InstitucionesIdRoute: typeof InstitucionesIdRoute
   IntervencionesIdRoute: typeof IntervencionesIdRoute
   IntervencionesNuevaRoute: typeof IntervencionesNuevaRoute
+  PostulantesIdRoute: typeof PostulantesIdRoute
   TransferenciasIdRoute: typeof TransferenciasIdRoute
   TransferenciasNuevaRoute: typeof TransferenciasNuevaRoute
   AgendaSemanalFacilitadorIndexRoute: typeof AgendaSemanalFacilitadorIndexRoute
@@ -909,8 +947,10 @@ export interface RootRouteChildren {
   PaginasIndexRoute: typeof PaginasIndexRoute
   PagosFacilitadoresIndexRoute: typeof PagosFacilitadoresIndexRoute
   PaisesIndexRoute: typeof PaisesIndexRoute
+  PeriodosPostulacionIndexRoute: typeof PeriodosPostulacionIndexRoute
   PermisosIndexRoute: typeof PermisosIndexRoute
   PostulacionesIndexRoute: typeof PostulacionesIndexRoute
+  PostulantesIndexRoute: typeof PostulantesIndexRoute
   ReporteDiarioFacilitadorIndexRoute: typeof ReporteDiarioFacilitadorIndexRoute
   ResumenIntervencionesIndexRoute: typeof ResumenIntervencionesIndexRoute
   SucursalesIndexRoute: typeof SucursalesIndexRoute
@@ -1314,6 +1354,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PaisesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/periodos-postulacion/': {
+      id: '/periodos-postulacion/'
+      path: '/periodos-postulacion'
+      fullPath: '/periodos-postulacion/'
+      preLoaderRoute: typeof PeriodosPostulacionIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/permisos/': {
       id: '/permisos/'
       path: '/permisos'
@@ -1326,6 +1373,20 @@ declare module '@tanstack/react-router' {
       path: '/postulaciones'
       fullPath: '/postulaciones/'
       preLoaderRoute: typeof PostulacionesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/postulantes/': {
+      id: '/postulantes/'
+      path: '/postulantes'
+      fullPath: '/postulantes/'
+      preLoaderRoute: typeof PostulantesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/postulantes/$id': {
+      id: '/postulantes/$id'
+      path: '/postulantes/$id'
+      fullPath: '/postulantes/$id'
+      preLoaderRoute: typeof PostulantesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reporte-diario-facilitador/': {
@@ -1406,6 +1467,7 @@ const rootRouteChildren: RootRouteChildren = {
   InstitucionesIdRoute: InstitucionesIdRoute,
   IntervencionesIdRoute: IntervencionesIdRoute,
   IntervencionesNuevaRoute: IntervencionesNuevaRoute,
+  PostulantesIdRoute: PostulantesIdRoute,
   TransferenciasIdRoute: TransferenciasIdRoute,
   TransferenciasNuevaRoute: TransferenciasNuevaRoute,
   AgendaSemanalFacilitadorIndexRoute: AgendaSemanalFacilitadorIndexRoute,
@@ -1454,8 +1516,10 @@ const rootRouteChildren: RootRouteChildren = {
   PaginasIndexRoute: PaginasIndexRoute,
   PagosFacilitadoresIndexRoute: PagosFacilitadoresIndexRoute,
   PaisesIndexRoute: PaisesIndexRoute,
+  PeriodosPostulacionIndexRoute: PeriodosPostulacionIndexRoute,
   PermisosIndexRoute: PermisosIndexRoute,
   PostulacionesIndexRoute: PostulacionesIndexRoute,
+  PostulantesIndexRoute: PostulantesIndexRoute,
   ReporteDiarioFacilitadorIndexRoute: ReporteDiarioFacilitadorIndexRoute,
   ResumenIntervencionesIndexRoute: ResumenIntervencionesIndexRoute,
   SucursalesIndexRoute: SucursalesIndexRoute,

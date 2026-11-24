@@ -26,6 +26,12 @@ export type AnioLectivo = {
   hasta: string;
   /** Las tablas con datos de ese año (postulaciones, pre-horarios, horarios…). */
   usos: Uso[];
+  /**
+   * `PROCESO_POSTULACION` (24/11/2026): etapas, documentos y requisitos que el
+   * postulante acepta en el formulario de la **otra app** que comparte la
+   * base. En **Markdown**, que es como esa app lo muestra. `""` = sin cargar.
+   */
+  proceso: string;
 };
 
 export type DatosAnioLectivo = {
@@ -53,7 +59,21 @@ export async function listarAniosLectivos(): Promise<AnioLectivo[]> {
       tabla: s(u.tabla),
       cantidad: Number(u.cantidad ?? 0),
     })),
+    proceso: s(x.proceso_postulacion),
   }));
+}
+
+/**
+ * Guarda el proceso de postulación de un año. Va en su propio endpoint y como
+ * texto crudo (el CLOB no tiene el tope de 32K de un campo JSON); guardar el
+ * año no lo toca. Vacío = sin proceso.
+ */
+export async function guardarProcesoPostulacion(id: number, texto: string): Promise<void> {
+  await authFetch(`anios-lectivos/${id}/proceso`, {
+    method: "PUT",
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+    body: texto.trim(),
+  });
 }
 
 export type ResultadoGuardarAnio = {
@@ -121,6 +141,14 @@ export const AVISO_INACTIVAR =
 /** Baja. 409 si es el vigente o si tiene datos. */
 export async function eliminarAnioLectivo(id: number): Promise<void> {
   await authFetch(`anios-lectivos/${id}`, { method: "DELETE" });
+}
+
+/**
+ * Las secciones del proceso: los títulos (`#`, `##`, `###`) del Markdown, para
+ * el resumen de la tarjeta ("Etapas · Documentos · Requisitos").
+ */
+export function seccionesProceso(texto: string): string[] {
+  return [...texto.matchAll(/^#{1,3}\s+(.+)$/gm)].map((m) => m[1].replace(/[*_`]/g, "").trim());
 }
 
 export const keysAniosLectivos = {

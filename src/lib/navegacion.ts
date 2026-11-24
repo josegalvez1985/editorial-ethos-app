@@ -51,6 +51,7 @@ import {
   Building,
   Building2,
   Calendar,
+  CalendarCheck2,
   CalendarClock,
   CalendarDays,
   CalendarRange,
@@ -229,6 +230,9 @@ const ICONOS_MENU: Record<string, LucideIcon> = {
   // de Tesorería. Un billete, elegido por Jose (Landmark, Wallet y Receipt ya
   // estaban usados).
   "/pagos-facilitadores": Banknote,
+  // Pantalla nueva, no de APEX (24/11/2026): Períodos de Postulación. Un
+  // calendario con tilde (ningún otro menú lo usa); se cambia a pedido.
+  "/periodos-postulacion": CalendarCheck2,
 };
 
 /**
@@ -267,6 +271,12 @@ export const PANTALLAS: Record<string, { descripcion: string }> = {
   },
   "/anios-lectivos": { descripcion: "Los años lectivos y cuál es el vigente" },
   "/feriados": { descripcion: "Los feriados nacionales de cada año" },
+  "/periodos-postulacion": {
+    descripcion: "Desde cuándo y hasta cuándo se puede postular en cada año lectivo",
+  },
+  "/postulantes": {
+    descripcion: "Las postulaciones de facilitadores: revisar, aprobar o rechazar",
+  },
   "/etapas": { descripcion: "Las etapas de cada año, con su inicio y su fin" },
   "/areas-evaluacion": { descripcion: "Las áreas de la evaluación de facilitadores" },
   "/items-evaluacion": { descripcion: "Los ítems que se califican, por área" },

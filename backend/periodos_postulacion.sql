@@ -1,0 +1,549 @@
+--------------------------------------------------------------------------------
+-- PERIODOS_POSTULACION  —  cuando se puede postular, por año lectivo
+--------------------------------------------------------------------------------
+--
+-- 24/11/2026, pedido de Jose. Tabla nueva, no viene de APEX. Pantalla del sitio:
+-- /periodos-postulacion (menu Nucleo de Datos).
+--
+-- !! TABLA COMPARTIDA !!
+--
+--   PERIODOS_POSTULACION ya existe y la usa OTRA APP sobre la misma base. Este
+--   script NO le cambia nada: ni columnas, ni constraints, ni triggers, ni
+--   comentarios, ni datos. Solo la crea si no existiera (instalacion nueva).
+--   Lo unico que agrega son objetos propios del sitio: el paquete
+--   PKG_PERIODOS_POST_ETHOS y las rutas periodos-postulacion del modulo ORDS
+--   ethos. Antes de correrlo, la consulta de VERIFICACION PREVIA de abajo.
+--
+-- QUE HACE ESTE SCRIPT
+--
+--   1. Crea PERIODOS_POSTULACION SOLO si no existe, con el DDL que paso Jose.
+--      Si ya estaba, no ejecuta ningun DDL sobre ella.
+--   2. El ABM de la pantalla: paquete PKG_PERIODOS_POST_ETHOS y los endpoints
+--      periodos-postulacion[/:id].
+--
+-- VERIFICACION PREVIA (solo lectura, correrla en SQL Commands y mirar):
+--
+--   -- a) Que el paquete y las rutas no existan ya para otra cosa.
+--   --    Esperado: ninguna fila (o solo las de este script, si ya se corrio).
+--   SELECT object_name, object_type, status, last_ddl_time
+--     FROM user_objects WHERE object_name = 'PKG_PERIODOS_POST_ETHOS';
+--   SELECT m.name modulo, t.uri_template
+--     FROM user_ords_templates t JOIN user_ords_modules m ON m.id = t.module_id
+--    WHERE LOWER(t.uri_template) LIKE 'periodos-postulacion%';
+--
+--   -- b) Lo que la otra app tiene colgado de la tabla. Sus triggers saltan
+--   --    tambien con los INSERT/UPDATE/DELETE del sitio.
+--   SELECT trigger_name, trigger_type, triggering_event, status
+--     FROM user_triggers WHERE table_name = 'PERIODOS_POSTULACION';
+--   SELECT c.table_name hija, c.constraint_name, c.delete_rule
+--     FROM user_constraints c JOIN user_constraints p
+--       ON p.constraint_name = c.r_constraint_name
+--    WHERE p.table_name = 'PERIODOS_POSTULACION' AND c.constraint_type = 'R';
+--   SELECT name, type FROM user_dependencies
+--    WHERE referenced_name = 'PERIODOS_POSTULACION' ORDER BY type, name;
+--
+-- CORRER DESPUES de anios_lectivos.sql (la FK) y roles_paginas.sql (permisos).
+--
+--   SQL Workshop -> SQL Scripts -> Upload -> este archivo -> Run
+--
+--------------------------------------------------------------------------------
+-- LA TABLA
+--------------------------------------------------------------------------------
+--
+--   ID_ANIO                      FK a ANIOS_LECTIVOS.ID_ANIO (el id, NO el
+--                                numero del año). UNIQUE: un periodo por año.
+--   FECHA_INICIO / FECHA_FIN     el rango en que se acepta postulacion.
+--                                FIN >= INICIO (check).
+--   HABILITACION_EXTRAORDINARIA  'SI' habilita aunque hoy este fuera del rango;
+--                                'NO' (default) deja solo el rango.
+--   MOTIVO_HABILITACION          por que se habilito fuera de fecha.
+--
+-- REGLAS DEL ABM (las que agrega el paquete sobre la tabla)
+--
+--   - Con habilitacion 'SI' el motivo es obligatorio. Con 'NO' el motivo se
+--     guarda tal cual venga: NO se borra solo, porque la otra app puede
+--     mostrarlo.
+--   - El año de un periodo no cambia: PUT no recibe id_anio. Para pasarlo a
+--     otro año se borra y se carga de nuevo.
+--   - Borrar: si la otra app tiene una tabla hija con FK a esta, Oracle lo
+--     frena (ORA-02292) y la pantalla lo dice como 409.
+--
+-- POR AHORA NO FRENA NADA: la tabla es configuracion. Que las postulaciones
+-- (o lo que corresponda) respeten el periodo es otro paso, a definir con Jose.
+--
+-- PERMISOS
+--
+--   GET     solo sesion.
+--   POST    PUEDE_INSERTAR   en la pagina de /periodos-postulacion
+--   PUT     PUEDE_ACTUALIZAR
+--   DELETE  PUEDE_BORRAR
+--
+--------------------------------------------------------------------------------
+
+SET SERVEROUTPUT ON
+SET DEFINE OFF
+
+DECLARE
+  l_existe PLS_INTEGER;
+
+  PROCEDURE ejecutar(p_sql IN VARCHAR2) IS
+  BEGIN
+    EXECUTE IMMEDIATE p_sql;
+    DBMS_OUTPUT.PUT_LINE('  OK   ' || SUBSTR(p_sql, 1, 90));
+  EXCEPTION
+    WHEN OTHERS THEN
+      -- -955 ya existe | -2275 esa FK ya existe | -2261 UNIQUE/PK ya existe
+      IF SQLCODE IN (-955, -2275, -2261, -2260, -1408) THEN
+        DBMS_OUTPUT.PUT_LINE('  skip ' || SUBSTR(p_sql, 1, 60) || ' (ya estaba)');
+      ELSE
+        DBMS_OUTPUT.PUT_LINE('  FALLO ' || SUBSTR(p_sql, 1, 70));
+        DBMS_OUTPUT.PUT_LINE('        ' || SQLERRM);
+        RAISE;
+      END IF;
+  END ejecutar;
+BEGIN
+  DBMS_OUTPUT.PUT_LINE('--- PERIODOS_POSTULACION ---');
+
+  SELECT COUNT(*) INTO l_existe
+    FROM user_tables WHERE table_name = 'PERIODOS_POSTULACION';
+
+  IF l_existe = 0 THEN
+    ejecutar(
+      'CREATE TABLE periodos_postulacion ('
+      || ' id NUMBER GENERATED BY DEFAULT ON NULL AS IDENTITY'
+      || '    MINVALUE 1 INCREMENT BY 1 START WITH 1 CACHE 20 NOT NULL,'
+      || ' id_anio NUMBER NOT NULL,'
+      || ' fecha_inicio DATE NOT NULL,'
+      || ' fecha_fin DATE NOT NULL,'
+      || ' habilitacion_extraordinaria VARCHAR2(2 CHAR) DEFAULT ''NO'' NOT NULL,'
+      || ' motivo_habilitacion VARCHAR2(500 CHAR),'
+      || ' CONSTRAINT periodos_post_ck_habil'
+      || '   CHECK (habilitacion_extraordinaria IN (''SI'', ''NO'')),'
+      || ' CONSTRAINT periodos_post_ck_fechas CHECK (fecha_fin >= fecha_inicio),'
+      || ' CONSTRAINT periodos_post_pk PRIMARY KEY (id),'
+      || ' CONSTRAINT periodos_post_uk_anio UNIQUE (id_anio),'
+      || ' CONSTRAINT periodos_post_fk_anio FOREIGN KEY (id_anio)'
+      || '   REFERENCES anios_lectivos (id_anio))');
+
+    EXECUTE IMMEDIATE q'~COMMENT ON TABLE periodos_postulacion IS 'Rango de fechas en que se puede postular a facilitador para cada año lectivo, con opción de habilitación extraordinaria por el administrador.'~';
+    EXECUTE IMMEDIATE q'~COMMENT ON COLUMN periodos_postulacion.id IS 'Identificador interno autogenerado del período.'~';
+    EXECUTE IMMEDIATE q'~COMMENT ON COLUMN periodos_postulacion.id_anio IS 'Año lectivo al que pertenece el período de postulación. Referencia a ANIOS_LECTIVOS.ID_ANIO. Solo un período por año.'~';
+    EXECUTE IMMEDIATE q'~COMMENT ON COLUMN periodos_postulacion.fecha_inicio IS 'Primer día en que se acepta postulación para el año lectivo.'~';
+    EXECUTE IMMEDIATE q'~COMMENT ON COLUMN periodos_postulacion.fecha_fin IS 'Último día en que se acepta postulación para el año lectivo.'~';
+    EXECUTE IMMEDIATE q'~COMMENT ON COLUMN periodos_postulacion.habilitacion_extraordinaria IS 'SI habilita la postulación aunque esté fuera del rango de fechas; NO la deja sujeta solo al rango.'~';
+    EXECUTE IMMEDIATE q'~COMMENT ON COLUMN periodos_postulacion.motivo_habilitacion IS 'Motivo por el que el administrador habilitó la postulación fuera de fecha.'~';
+  ELSE
+    -- Tabla compartida con otra app: ni un ALTER. Ver "TABLA COMPARTIDA".
+    DBMS_OUTPUT.PUT_LINE('  skip periodos_postulacion: ya existe (la usa otra app), no se toca');
+  END IF;
+END;
+/
+
+--------------------------------------------------------------------------------
+-- PAQUETE
+--------------------------------------------------------------------------------
+
+CREATE OR REPLACE PACKAGE PKG_PERIODOS_POST_ETHOS AS
+
+  -- Un elemento por año lectivo (tenga periodo o no), del mas nuevo al mas viejo.
+  PROCEDURE listar(p_token IN VARCHAR2);
+
+  -- p_id NULL = alta (usa p_id_anio). Con p_id, p_id_anio se ignora.
+  PROCEDURE guardar(
+    p_token  IN VARCHAR2,
+    p_id     IN VARCHAR2,
+    p_id_anio IN VARCHAR2,
+    p_inicio IN VARCHAR2,
+    p_fin    IN VARCHAR2,
+    p_habil  IN VARCHAR2,
+    p_motivo IN VARCHAR2);
+
+  PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN VARCHAR2);
+
+END PKG_PERIODOS_POST_ETHOS;
+/
+
+CREATE OR REPLACE PACKAGE BODY PKG_PERIODOS_POST_ETHOS AS
+
+  c_ruta   CONSTANT VARCHAR2(30) := '/periodos-postulacion';
+  c_motivo CONSTANT PLS_INTEGER  := 500;
+
+  PROCEDURE abrir_json IS
+  BEGIN
+    OWA_UTIL.MIME_HEADER('application/json', FALSE);
+    HTP.P('Cache-Control: no-store');
+    HTP.P('Access-Control-Allow-Origin: *');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+  END abrir_json;
+
+  -- SOLO antes de haber abierto la respuesta: emite headers.
+  PROCEDURE p_error(p_status IN NUMBER, p_titulo IN VARCHAR2, p_detalle IN VARCHAR2) IS
+  BEGIN
+    OWA_UTIL.STATUS_LINE(p_status, p_titulo, FALSE);
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', FALSE);
+    APEX_JSON.WRITE('message', p_detalle);
+    APEX_JSON.CLOSE_OBJECT;
+  END p_error;
+
+  PROCEDURE p_error_oracle IS
+  BEGIN
+    CASE
+      WHEN SQLCODE = -1 THEN
+        p_error(409, 'Conflict', 'Ese ' || UNISTR('a\00f1o') || ' ya tiene su per' || UNISTR('\00ed') || 'odo de postulaci' || UNISTR('\00f3') || 'n');
+      WHEN SQLCODE = -2291 THEN
+        p_error(400, 'Bad Request', 'El ' || UNISTR('a\00f1o') || ' lectivo no existe');
+      WHEN SQLCODE = -2292 THEN
+        p_error(409, 'Conflict', 'No se puede eliminar: hay datos que dependen de este per'
+                || UNISTR('\00ed') || 'odo');
+      WHEN SQLCODE = -2290 THEN
+        p_error(400, 'Bad Request', 'La fecha de fin no puede ser anterior a la de inicio');
+      WHEN SQLCODE IN (-12899, -1401) THEN
+        p_error(400, 'Bad Request', 'El motivo no puede pasar de ' || c_motivo || ' caracteres');
+      ELSE
+        p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+    END CASE;
+  END p_error_oracle;
+
+  FUNCTION f_usuario(p_token IN VARCHAR2) RETURN VARCHAR2 IS
+  BEGIN
+    RETURN PKG_AUTH_ETHOS.VALIDAR_TOKEN(p_token);
+  EXCEPTION
+    WHEN OTHERS THEN RETURN NULL;
+  END f_usuario;
+
+  FUNCTION f_numero(p_valor IN VARCHAR2) RETURN NUMBER IS
+    l_n NUMBER;
+  BEGIN
+    l_n := TO_NUMBER(TRIM(p_valor));
+    RETURN CASE WHEN l_n > 0 AND l_n = TRUNC(l_n) THEN l_n END;
+  EXCEPTION
+    WHEN OTHERS THEN RETURN NULL;
+  END f_numero;
+
+  FUNCTION f_fecha(p_valor IN VARCHAR2) RETURN DATE IS
+  BEGIN
+    RETURN TO_DATE(SUBSTR(TRIM(p_valor), 1, 10), 'YYYY-MM-DD');
+  EXCEPTION
+    WHEN OTHERS THEN RETURN NULL;
+  END f_fecha;
+
+  ------------------------------------------------------------------------------
+  -- Sesion + permiso. 'C' pide solo sesion; 'I', 'U', 'D' la accion en la
+  -- pagina de /periodos-postulacion. FALSE = ya respondio el error.
+  ------------------------------------------------------------------------------
+  FUNCTION exigir(p_token IN VARCHAR2, p_accion IN VARCHAR2) RETURN BOOLEAN IS
+    l_usuario VARCHAR2(255) := f_usuario(p_token);
+    l_pagina  NUMBER;
+  BEGIN
+    IF l_usuario IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado');
+      RETURN FALSE;
+    END IF;
+    IF p_accion <> 'C' THEN
+      l_pagina := PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta(c_ruta);
+      IF l_pagina IS NULL
+         OR PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, p_accion) <> 'S' THEN
+        p_error(403, 'Forbidden', 'No tenes permiso para '
+          || CASE p_accion WHEN 'I' THEN 'agregar'
+                           WHEN 'U' THEN 'modificar'
+                           ELSE 'eliminar' END
+          || ' per' || UNISTR('\00ed') || 'odos de postulaci' || UNISTR('\00f3') || 'n');
+        RETURN FALSE;
+      END IF;
+    END IF;
+    RETURN TRUE;
+  END exigir;
+
+  /* ---------------------------------------------------------------------- */
+  /* LISTAR                                                                 */
+  /* ---------------------------------------------------------------------- */
+
+  PROCEDURE listar(p_token IN VARCHAR2) IS
+  BEGIN
+    IF NOT exigir(p_token, 'C') THEN RETURN; END IF;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.OPEN_ARRAY('data');
+    FOR r IN (SELECT a.id_anio, a.anio, a.descripcion,
+                     CASE WHEN UPPER(TRIM(a.estado)) = 'A' THEN 'S' ELSE 'N' END AS es_vigente,
+                     p.id,
+                     TO_CHAR(p.fecha_inicio, 'YYYY-MM-DD') AS inicio,
+                     TO_CHAR(p.fecha_fin,    'YYYY-MM-DD') AS fin,
+                     p.habilitacion_extraordinaria AS habil,
+                     p.motivo_habilitacion AS motivo
+                FROM anios_lectivos a
+                LEFT JOIN periodos_postulacion p ON p.id_anio = a.id_anio
+               ORDER BY a.anio DESC) LOOP
+      APEX_JSON.OPEN_OBJECT;
+      APEX_JSON.WRITE('id_anio',     r.id_anio);
+      APEX_JSON.WRITE('anio',        r.anio);
+      APEX_JSON.WRITE('descripcion', r.descripcion);
+      APEX_JSON.WRITE('es_vigente',  r.es_vigente);
+      -- Sin periodo: estos van null (APEX_JSON.WRITE de NULL escribe null).
+      APEX_JSON.WRITE('id',                          r.id, TRUE);
+      APEX_JSON.WRITE('fecha_inicio',                r.inicio, TRUE);
+      APEX_JSON.WRITE('fecha_fin',                   r.fin, TRUE);
+      APEX_JSON.WRITE('habilitacion_extraordinaria', r.habil, TRUE);
+      APEX_JSON.WRITE('motivo_habilitacion',         r.motivo, TRUE);
+      APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+  END listar;
+
+  /* ---------------------------------------------------------------------- */
+  /* GUARDAR                                                                */
+  /* ---------------------------------------------------------------------- */
+
+  PROCEDURE guardar(
+    p_token  IN VARCHAR2,
+    p_id     IN VARCHAR2,
+    p_id_anio IN VARCHAR2,
+    p_inicio IN VARCHAR2,
+    p_fin    IN VARCHAR2,
+    p_habil  IN VARCHAR2,
+    p_motivo IN VARCHAR2)
+  IS
+    l_id     NUMBER := f_numero(p_id);
+    l_anio   NUMBER := f_numero(p_id_anio);
+    l_inicio DATE   := f_fecha(p_inicio);
+    l_fin    DATE   := f_fecha(p_fin);
+    l_habil  VARCHAR2(2) := CASE WHEN UPPER(SUBSTR(TRIM(p_habil), 1, 1)) = 'S' THEN 'SI' ELSE 'NO' END;
+    -- 32767: el tope real se valida abajo con mensaje (ver materias.sql).
+    l_motivo VARCHAR2(32767) := TRIM(REGEXP_REPLACE(p_motivo, '[ \t]+', ' '));
+    l_n      PLS_INTEGER;
+  BEGIN
+    IF NOT exigir(p_token, CASE WHEN p_id IS NULL THEN 'I' ELSE 'U' END) THEN RETURN; END IF;
+    IF p_id IS NOT NULL AND l_id IS NULL THEN
+      p_error(400, 'Bad Request', 'Id invalido'); RETURN;
+    END IF;
+    IF l_id IS NULL AND l_anio IS NULL THEN
+      p_error(400, 'Bad Request', 'Falta el ' || UNISTR('a\00f1o') || ' lectivo'); RETURN;
+    END IF;
+    IF l_inicio IS NULL OR l_fin IS NULL THEN
+      p_error(400, 'Bad Request', 'Las fechas de inicio y fin son obligatorias'); RETURN;
+    END IF;
+    IF l_fin < l_inicio THEN
+      p_error(400, 'Bad Request', 'La fecha de fin no puede ser anterior a la de inicio'); RETURN;
+    END IF;
+    IF l_habil = 'SI' AND l_motivo IS NULL THEN
+      p_error(400, 'Bad Request', 'La habilitaci' || UNISTR('\00f3') || 'n extraordinaria necesita un motivo');
+      RETURN;
+    END IF;
+    IF LENGTH(l_motivo) > c_motivo THEN
+      p_error(400, 'Bad Request', 'El motivo no puede pasar de ' || c_motivo || ' caracteres');
+      RETURN;
+    END IF;
+
+    IF l_id IS NULL THEN
+      SELECT COUNT(*) INTO l_n FROM anios_lectivos WHERE id_anio = l_anio;
+      IF l_n = 0 THEN
+        p_error(404, 'Not Found', 'El ' || UNISTR('a\00f1o') || ' lectivo no existe'); RETURN;
+      END IF;
+      INSERT INTO periodos_postulacion
+        (id_anio, fecha_inicio, fecha_fin, habilitacion_extraordinaria, motivo_habilitacion)
+      VALUES (l_anio, l_inicio, l_fin, l_habil, l_motivo)
+      RETURNING id INTO l_id;
+    ELSE
+      UPDATE periodos_postulacion
+         SET fecha_inicio = l_inicio, fecha_fin = l_fin,
+             habilitacion_extraordinaria = l_habil, motivo_habilitacion = l_motivo
+       WHERE id = l_id;
+      IF SQL%ROWCOUNT = 0 THEN
+        p_error(404, 'Not Found', 'El per' || UNISTR('\00ed') || 'odo no existe'); RETURN;
+      END IF;
+    END IF;
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('id', l_id);
+    APEX_JSON.WRITE('message', CASE WHEN p_id IS NULL THEN 'Per' || UNISTR('\00ed') || 'odo creado'
+                                    ELSE 'Cambios guardados' END);
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      ROLLBACK;
+      p_error_oracle;
+  END guardar;
+
+  /* ---------------------------------------------------------------------- */
+  /* ELIMINAR                                                               */
+  /* ---------------------------------------------------------------------- */
+
+  PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN VARCHAR2) IS
+    l_id NUMBER := f_numero(p_id);
+  BEGIN
+    IF NOT exigir(p_token, 'D') THEN RETURN; END IF;
+    IF l_id IS NULL THEN
+      p_error(400, 'Bad Request', 'Id invalido'); RETURN;
+    END IF;
+
+    DELETE FROM periodos_postulacion WHERE id = l_id;
+    IF SQL%ROWCOUNT = 0 THEN
+      p_error(404, 'Not Found', 'El per' || UNISTR('\00ed') || 'odo no existe'); RETURN;
+    END IF;
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('message', 'Per' || UNISTR('\00ed') || 'odo eliminado');
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      ROLLBACK;
+      p_error_oracle;
+  END eliminar;
+
+END PKG_PERIODOS_POST_ETHOS;
+/
+
+--------------------------------------------------------------------------------
+-- ENDPOINTS ORDS
+--------------------------------------------------------------------------------
+
+DECLARE
+  c_token CONSTANT VARCHAR2(400) := '
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), ''BEARER '');
+        IF l_pos > 0 THEN
+            l_token := TRIM(SUBSTR(l_token, l_pos + 7));
+        END IF;
+    END IF;';
+
+  c_decl CONSTANT VARCHAR2(100) :=
+    'DECLARE l_token VARCHAR2(256); l_pos PLS_INTEGER; BEGIN';
+
+  c_campos CONSTANT VARCHAR2(300) := '
+        p_inicio => :fecha_inicio, p_fin => :fecha_fin,
+        p_habil => :habilitacion_extraordinaria, p_motivo => :motivo_habilitacion);';
+
+  PROCEDURE auth_param(p_pattern IN VARCHAR2, p_method IN VARCHAR2) IS
+  BEGIN
+    ORDS.DEFINE_PARAMETER(
+        p_module_name        => 'ethos',
+        p_pattern            => p_pattern,
+        p_method             => p_method,
+        p_name               => 'Authorization',
+        p_bind_variable_name => 'authorization',
+        p_source_type        => 'HEADER',
+        p_param_type         => 'STRING',
+        p_access_method      => 'IN');
+  END auth_param;
+
+  PROCEDURE handler(p_pattern IN VARCHAR2, p_method IN VARCHAR2, p_llamada IN VARCHAR2) IS
+  BEGIN
+    ORDS.DEFINE_HANDLER(
+        p_module_name => 'ethos',
+        p_pattern     => p_pattern,
+        p_method      => p_method,
+        p_source_type => 'plsql/block',
+        p_source      => c_decl || c_token || CHR(10) || p_llamada || CHR(10) || 'END;');
+    auth_param(p_pattern, p_method);
+  END handler;
+BEGIN
+  FOR r IN (SELECT 'periodos-postulacion' AS p FROM dual
+            UNION ALL SELECT 'periodos-postulacion/:id' FROM dual) LOOP
+    FOR m IN (SELECT 'GET' AS v FROM dual UNION ALL SELECT 'POST' FROM dual
+              UNION ALL SELECT 'PUT' FROM dual UNION ALL SELECT 'DELETE' FROM dual
+              UNION ALL SELECT 'OPTIONS' FROM dual) LOOP
+      BEGIN ORDS.DELETE_HANDLER('ethos', r.p, m.v); EXCEPTION WHEN OTHERS THEN NULL; END;
+    END LOOP;
+    BEGIN ORDS.DELETE_TEMPLATE('ethos', r.p); EXCEPTION WHEN OTHERS THEN NULL; END;
+  END LOOP;
+
+  ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'periodos-postulacion',
+                       p_priority => 0, p_etag_type => 'NONE');
+  ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'periodos-postulacion/:id',
+                       p_priority => 1, p_etag_type => 'NONE');
+
+  handler('periodos-postulacion', 'GET', '
+    PKG_PERIODOS_POST_ETHOS.LISTAR(p_token => l_token);');
+
+  handler('periodos-postulacion', 'POST', '
+    PKG_PERIODOS_POST_ETHOS.GUARDAR(p_token => l_token, p_id => NULL, p_id_anio => :id_anio,' || c_campos);
+
+  handler('periodos-postulacion/:id', 'PUT', '
+    PKG_PERIODOS_POST_ETHOS.GUARDAR(p_token => l_token, p_id => :id, p_id_anio => NULL,' || c_campos);
+
+  handler('periodos-postulacion/:id', 'DELETE', '
+    PKG_PERIODOS_POST_ETHOS.ELIMINAR(p_token => l_token, p_id => :id);');
+
+  COMMIT;
+  DBMS_OUTPUT.PUT_LINE('[OK]   Handlers de periodos-postulacion publicados.');
+EXCEPTION
+  WHEN OTHERS THEN
+    ROLLBACK;
+    DBMS_OUTPUT.PUT_LINE('[ERROR] No se pudo publicar: ' || SQLERRM);
+    DBMS_OUTPUT.PUT_LINE('        Revisa que el modulo ORDS ethos exista (corre backend/auth.sql).');
+    RAISE;
+END;
+/
+
+-- Preflight CORS: produccion (Pages) y el APK le pegan DIRECTO a ORDS.
+DECLARE
+  PROCEDURE preflight(p_pattern IN VARCHAR2) IS
+  BEGIN
+    ORDS.DEFINE_HANDLER(
+        p_module_name => 'ethos',
+        p_pattern     => p_pattern,
+        p_method      => 'OPTIONS',
+        p_source_type => 'plsql/block',
+        p_source      => q'~
+BEGIN
+    OWA_UTIL.MIME_HEADER('text/plain', FALSE);
+    HTP.P('Access-Control-Allow-Origin: *');
+    HTP.P('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    HTP.P('Access-Control-Allow-Headers: Authorization, Content-Type');
+    HTP.P('Access-Control-Max-Age: 86400');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+END;
+~');
+  END preflight;
+BEGIN
+  preflight('periodos-postulacion');
+  preflight('periodos-postulacion/:id');
+  COMMIT;
+  DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado.');
+EXCEPTION
+  WHEN OTHERS THEN
+    ROLLBACK;
+    DBMS_OUTPUT.PUT_LINE('[WARN] Preflight OPTIONS no se pudo publicar: ' || SQLERRM);
+END;
+/
+
+DECLARE
+  l_estado user_objects.status%TYPE;
+BEGIN
+  SELECT status INTO l_estado
+    FROM user_objects
+   WHERE object_name = 'PKG_PERIODOS_POST_ETHOS' AND object_type = 'PACKAGE BODY';
+  IF l_estado = 'VALID' THEN
+    DBMS_OUTPUT.PUT_LINE('[OK]   PKG_PERIODOS_POST_ETHOS compilado.');
+    DBMS_OUTPUT.PUT_LINE('       GET    periodos-postulacion');
+    DBMS_OUTPUT.PUT_LINE('       POST   periodos-postulacion');
+    DBMS_OUTPUT.PUT_LINE('       PUT    periodos-postulacion/:id');
+    DBMS_OUTPUT.PUT_LINE('       DELETE periodos-postulacion/:id');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[ERROR] PKG_PERIODOS_POST_ETHOS quedo INVALID.');
+    DBMS_OUTPUT.PUT_LINE('        Si falta PKG_ROLES_PAGINAS_ETHOS, corre roles_paginas.sql y este de nuevo.');
+    FOR e IN (SELECT line, text FROM user_errors
+               WHERE name = 'PKG_PERIODOS_POST_ETHOS' ORDER BY type, sequence) LOOP
+      DBMS_OUTPUT.PUT_LINE('        L' || e.line || ': ' || e.text);
+    END LOOP;
+  END IF;
+EXCEPTION
+  WHEN NO_DATA_FOUND THEN
+    DBMS_OUTPUT.PUT_LINE('[ERROR] PKG_PERIODOS_POST_ETHOS no se creo.');
+END;
+/

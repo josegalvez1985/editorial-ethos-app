@@ -116,9 +116,25 @@ BEGIN
       || ' estado      VARCHAR2(10)   DEFAULT ''A'','
       || ' fecha_desde DATE           NOT NULL,'
       || ' fecha_hasta DATE           NOT NULL,'
+      || ' proceso_postulacion CLOB,'
       || ' CONSTRAINT anios_lectivos_pk PRIMARY KEY (id_anio))');
   ELSE
     DBMS_OUTPUT.PUT_LINE('  skip CREATE TABLE anios_lectivos (ya estaba)');
+  END IF;
+
+  ----------------------------------------------------------------------------
+  -- 1b. PROCESO_POSTULACION (24/11/2026): el texto en Markdown que el
+  --     postulante acepta en el formulario de la OTRA APP que comparte la base.
+  --     La columna ya existe (la agrego esa app): solo se crea si faltara, en
+  --     una instalacion nueva. Si esta, no se ejecuta ningun DDL.
+  ----------------------------------------------------------------------------
+  SELECT COUNT(*) INTO l_existe FROM user_tab_columns
+   WHERE table_name = 'ANIOS_LECTIVOS' AND column_name = 'PROCESO_POSTULACION';
+  IF l_existe = 0 THEN
+    ejecutar('ALTER TABLE anios_lectivos ADD (proceso_postulacion CLOB)');
+    EXECUTE IMMEDIATE q'~COMMENT ON COLUMN anios_lectivos.proceso_postulacion IS 'Etapas, documentos y requisitos del proceso de postulación del año lectivo. Texto que el postulante acepta al completar el formulario.'~';
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('  skip proceso_postulacion (ya estaba)');
   END IF;
 
   ----------------------------------------------------------------------------
@@ -349,6 +365,13 @@ END;
 --                                  fecha_hasta} -> {id_anio}
 --   PUT     anios-lectivos/:id    lo mismo
 --   DELETE  anios-lectivos/:id    solo si no es el vigente y nada lo usa
+--   PUT     anios-lectivos/:id/proceso
+--                                 (24/11/2026) PROCESO_POSTULACION: el cuerpo
+--                                 es el Markdown crudo (text/plain), vacio =
+--                                 NULL. Permiso PUEDE_ACTUALIZAR. GET lo trae
+--                                 en proceso_postulacion. Lo lee la OTRA APP
+--                                 que comparte la base (el formulario del
+--                                 postulante): por eso va en Markdown.
 --
 --   Fechas como 'YYYY-MM-DD' (lo que da un <input type="date">).
 --
@@ -414,6 +437,11 @@ CREATE OR REPLACE PACKAGE PKG_ANIOS_LECTIVOS_ETHOS AS
 
   PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN VARCHAR2);
 
+  -- PROCESO_POSTULACION (24/11/2026). p_texto es el cuerpo crudo del PUT
+  -- (Markdown, :body_text): CLOB para no tener el tope de 32K de un bind.
+  -- Vacio = NULL. Solo toca esa columna.
+  PROCEDURE guardar_proceso(p_token IN VARCHAR2, p_id IN VARCHAR2, p_texto IN CLOB);
+
 END PKG_ANIOS_LECTIVOS_ETHOS;
 /
 
@@ -451,6 +479,12 @@ CREATE OR REPLACE PACKAGE BODY PKG_ANIOS_LECTIVOS_ETHOS AS
     CASE
       WHEN SQLCODE = -1 THEN
         p_error(409, 'Conflict', 'Ya existe ese ' || UNISTR('a\00f1o') || ' lectivo');
+      -- Una tabla con FK a ANIOS_LECTIVOS.ID_ANIO (24/11/2026: PERIODOS_POSTULACION,
+      -- que no tiene columna ANIO y por eso no sale en "EN USO").
+      WHEN SQLCODE = -2292 THEN
+        p_error(409, 'Conflict', 'No se puede eliminar: el ' || UNISTR('a\00f1o')
+                || ' tiene datos relacionados (por ejemplo, su per' || UNISTR('\00ed')
+                || 'odo de postulaci' || UNISTR('\00f3') || 'n)');
       WHEN SQLCODE IN (-12899, -1401) THEN
         p_error(400, 'Bad Request', 'La descripcion no puede pasar de ' || c_largo || ' caracteres');
       ELSE
@@ -575,7 +609,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_ANIOS_LECTIVOS_ETHOS AS
     FOR r IN (SELECT id_anio, anio, descripcion, estado,
                      TO_CHAR(fecha_desde, 'YYYY-MM-DD') AS desde,
                      TO_CHAR(fecha_hasta, 'YYYY-MM-DD') AS hasta,
-                     CASE WHEN UPPER(TRIM(estado)) = 'A' THEN 'S' ELSE 'N' END AS es_vigente
+                     CASE WHEN UPPER(TRIM(estado)) = 'A' THEN 'S' ELSE 'N' END AS es_vigente,
+                     proceso_postulacion
                 FROM anios_lectivos
                ORDER BY anio DESC) LOOP
       l_k := TO_CHAR(r.anio);
@@ -587,6 +622,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_ANIOS_LECTIVOS_ETHOS AS
       APEX_JSON.WRITE('es_vigente',  r.es_vigente);
       APEX_JSON.WRITE('fecha_desde', r.desde);
       APEX_JSON.WRITE('fecha_hasta', r.hasta);
+      APEX_JSON.WRITE('proceso_postulacion', r.proceso_postulacion, TRUE);
       APEX_JSON.OPEN_ARRAY('usos');
       FOR i IN 1 .. l_hijas.COUNT LOOP
         IF l_hijas(i).cuentas.EXISTS(l_k) THEN
@@ -791,6 +827,41 @@ CREATE OR REPLACE PACKAGE BODY PKG_ANIOS_LECTIVOS_ETHOS AS
       p_error_oracle;
   END eliminar;
 
+  /* ---------------------------------------------------------------------- */
+  /* PROCESO DE POSTULACION                                                 */
+  /* ---------------------------------------------------------------------- */
+
+  PROCEDURE guardar_proceso(p_token IN VARCHAR2, p_id IN VARCHAR2, p_texto IN CLOB) IS
+    l_id NUMBER := f_numero(p_id);
+  BEGIN
+    IF NOT exigir(p_token, 'U') THEN RETURN; END IF;
+    IF l_id IS NULL THEN
+      p_error(400, 'Bad Request', 'Id invalido'); RETURN;
+    END IF;
+
+    -- Solo esta columna: no cambia ESTADO, asi que no salta
+    -- TRG_ANIOS_LECTIVOS_INACTIVAR (es FOR UPDATE OF estado).
+    UPDATE anios_lectivos
+       SET proceso_postulacion =
+             -- El sitio manda el texto ya recortado: vacio = sin proceso.
+             CASE WHEN NVL(DBMS_LOB.GETLENGTH(p_texto), 0) = 0 THEN NULL ELSE p_texto END
+     WHERE id_anio = l_id;
+    IF SQL%ROWCOUNT = 0 THEN
+      p_error(404, 'Not Found', 'El ' || UNISTR('a\00f1o') || ' lectivo no existe'); RETURN;
+    END IF;
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('message', 'Proceso de postulaci' || UNISTR('\00f3') || 'n guardado');
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      ROLLBACK;
+      p_error_oracle;
+  END guardar_proceso;
+
 END PKG_ANIOS_LECTIVOS_ETHOS;
 /
 
@@ -840,7 +911,8 @@ DECLARE
   END handler;
 BEGIN
   FOR r IN (SELECT 'anios-lectivos' AS p FROM dual
-            UNION ALL SELECT 'anios-lectivos/:id' FROM dual) LOOP
+            UNION ALL SELECT 'anios-lectivos/:id' FROM dual
+            UNION ALL SELECT 'anios-lectivos/:id/proceso' FROM dual) LOOP
     FOR m IN (SELECT 'GET' AS v FROM dual UNION ALL SELECT 'POST' FROM dual
               UNION ALL SELECT 'PUT' FROM dual UNION ALL SELECT 'DELETE' FROM dual
               UNION ALL SELECT 'OPTIONS' FROM dual) LOOP
@@ -852,6 +924,8 @@ BEGIN
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'anios-lectivos',
                        p_priority => 0, p_etag_type => 'NONE');
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'anios-lectivos/:id',
+                       p_priority => 1, p_etag_type => 'NONE');
+  ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'anios-lectivos/:id/proceso',
                        p_priority => 1, p_etag_type => 'NONE');
 
   handler('anios-lectivos', 'GET', '
@@ -865,6 +939,10 @@ BEGIN
 
   handler('anios-lectivos/:id', 'DELETE', '
     PKG_ANIOS_LECTIVOS_ETHOS.ELIMINAR(p_token => l_token, p_id => :id);');
+
+  -- El cuerpo es el Markdown crudo (text/plain): :body_text llega como CLOB.
+  handler('anios-lectivos/:id/proceso', 'PUT', '
+    PKG_ANIOS_LECTIVOS_ETHOS.GUARDAR_PROCESO(p_token => l_token, p_id => :id, p_texto => :body_text);');
 
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Handlers de anios-lectivos publicados.');
@@ -900,6 +978,7 @@ END;
 BEGIN
   preflight('anios-lectivos');
   preflight('anios-lectivos/:id');
+  preflight('anios-lectivos/:id/proceso');
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado.');
 EXCEPTION
@@ -921,6 +1000,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('       POST   anios-lectivos');
     DBMS_OUTPUT.PUT_LINE('       PUT    anios-lectivos/:id');
     DBMS_OUTPUT.PUT_LINE('       DELETE anios-lectivos/:id');
+    DBMS_OUTPUT.PUT_LINE('       PUT    anios-lectivos/:id/proceso');
   ELSE
     DBMS_OUTPUT.PUT_LINE('[ERROR] PKG_ANIOS_LECTIVOS_ETHOS quedo INVALID.');
     DBMS_OUTPUT.PUT_LINE('        Si falta PKG_ROLES_PAGINAS_ETHOS, corre roles_paginas.sql y este de nuevo.');
