@@ -4,6 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
+import { BuscadorPaginas } from "@/components/buscador-paginas";
 import { ActividadChart } from "@/components/actividad-chart";
 import { ActividadDiaModal } from "@/components/actividad-dia-modal";
 import { Cumpleanios } from "@/components/cumpleanios";
@@ -54,11 +55,15 @@ export const Route = createFileRoute("/home")({
  * (`components/cumpleanios.tsx`): felicita a los facilitadores que cumplen hoy
  * y no ocupa lugar los días que no cumple nadie. Pide el listado de
  * facilitadores, el mismo (y con la misma caché) que su pantalla.
+ *
+ * Desde el 24/11/2026, arriba de todo va **el buscador de páginas**
+ * (`components/buscador-paginas.tsx`): busca entre las del menú del usuario.
  */
 function HomePage() {
   return (
     <AppShell>
       <div className="px-5 pt-5">
+        <BuscadorPaginas />
         <Cumpleanios />
         <Puntualidad />
       </div>
