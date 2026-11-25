@@ -252,7 +252,7 @@ sesión. Ver [`backend/README.md`](backend/README.md) → *Menú y permisos*.
 | Administrador (fija) | **Crear páginas**, con un buscador por nombre, ruta, menú o número (12/10/2026) | `/paginas` | `menu_paginas.sql`, `roles_paginas.sql` |
 | Núcleo de Datos | **Países**: alta, modificación y baja (solo si nada lo usa). Páginas 4 y 5 (modal) de APEX | `/paises` | `paises.sql` |
 | Núcleo de Datos | **Nacionalidades**: alta, modificación y baja (solo si nada la usa). Páginas 12 y 13 (modal) de APEX | `/nacionalidades` | `nacionalidades.sql` |
-| Núcleo de Datos | **Facilitadores**: listado con filtro activos/inactivos y la ficha completa (personales, ubicación, iglesia, herramientas, banco, nominado por, referencias, estudios y situación laboral) en una pantalla con un solo Guardar. Páginas 14, 15 y 63 a 66 (modales) de APEX. **Horarios bloqueados** (tabla nueva, 14/10/2026, no viene de APEX): un modal por facilitador, desde el botón al costado de su tarjeta (con cuántas franjas tiene en el año vigente) o desde su ficha; por año lectivo en pastillas, de lunes a viernes, varias franjas desde–hasta por día, "Copiar los de {año}" y **sin permisos propios**: quien entra a Facilitadores lo usa entero | `/facilitadores` | `facilitadores.sql`, `facilitadores_dias_bloqueos.sql` |
+| Núcleo de Datos | **Facilitadores**: listado con filtro activos/inactivos y la ficha completa (personales, ubicación, iglesia, herramientas, banco, nominado por, referencias, estudios y situación laboral) en una pantalla con un solo Guardar. Páginas 14, 15 y 63 a 66 (modales) de APEX. **Horarios bloqueados** (tabla nueva, 14/10/2026, no viene de APEX): un modal por facilitador, desde el botón al costado de su tarjeta (con cuántas franjas tiene en el año vigente) o desde su ficha; por año lectivo en pastillas, de lunes a viernes, varias franjas desde–hasta por día, "Copiar los de {año}" y **sin permisos propios**: quien entra a Facilitadores lo usa entero. **Foto carnet** (25/11/2026, `FOTO_CARNET`, aparte de la de perfil): arriba de Datos personales, **Subir, Reemplazar y Quitar**, en Cloudinary (carpeta `foto_carnet`), achicada en el navegador como las de facturas; tocarla la abre en grande. Se guarda con la ficha y la anterior se borra de Cloudinary al guardar (o al eliminar al facilitador). El listado la muestra en el círculo de cada tarjeta, en lugar de las iniciales | `/facilitadores` | `facilitadores.sql`, `facilitadores_dias_bloqueos.sql`, `cloudinary.sql` |
 | Núcleo de Datos | **Departamentos**: los de cada país, filtrados y agrupados por país; alta, modificación y baja (solo si nada lo usa). Páginas 6 y 7 (modal) de APEX | `/departamentos` | `departamentos.sql` |
 | Núcleo de Datos | **Ciudades**: las de cada departamento, filtradas y agrupadas por departamento; el país sale del departamento. Alta, modificación y baja (solo si nada la usa). Páginas 8 y 9 (modal) de APEX | `/ciudades` | `ciudades.sql` |
 | Núcleo de Datos | **Barrios**: los de cada ciudad, filtrados y agrupados por ciudad; departamento y país salen de la ciudad. Alta, modificación y baja (solo si nada lo usa). Páginas 10 y 11 (modal) de APEX | `/barrios` | `barrios.sql` |
@@ -839,6 +839,16 @@ Vale igual en la web y en el APK, que es el mismo sitio:
   las tablas. **Ni las de Pagos a Facilitadores ni las de Postulantes** (24/11/2026): traen
   cédulas y cuentas bancarias. **Tampoco el menú ni los permisos** (`META_PERMISOS`): un permiso quitado tiene
   que dejar de verse en el próximo arranque, no cuando venza la caché.
+- **Una pantalla espera a tener `data`, no a que `isLoading` dé `false`** (25/11/2026).
+  Mientras `PersistQueryClientProvider` restaura la caché, las consultas quedan pendientes
+  **sin pedir**: `isLoading` es `false` y `data` todavía no existe. La ficha de Facilitadores
+  decidía con `isLoading`, se montaba en ese instante con `opciones` undefined y reventaba
+  (`Cannot read properties of undefined (reading 'estado_civil')`). Peor: se armaba con la
+  ficha **vacía** en vez de la del facilitador, y como el formulario copia los datos a su estado
+  al montarse, no se volvía a llenar. Pasó al subir `CACHE_BUSTER`, que deja a todos sin caché.
+  El patrón: `error ? <Fallo/> : !datos ? <Cargando/> : <Formulario inicial={datos}/>`, sin
+  `data!` ni `data ?? vacio()` para un registro que existe. Todavía lo tienen
+  `instituciones.$id.tsx`, `postulaciones-institucion.tsx` y `autoridades-institucion.tsx`.
 - **No hay biometría.** Se implementó en el APK y se quitó el 31/07/2026; ver
   [`APK.md`](APK.md) → *No hay acceso biométrico*. La app Expo de `mobile/` la tenía, pero ya
   no se compila.
@@ -954,20 +964,28 @@ delega, junta los resultados y avisa qué se hizo. Un cambio chico lo hace sola,
 
 | Agente | Modelo | Puede editar | Cuándo |
 | --- | --- | --- | --- |
-| `ux-ui-designer` | opus | no | Antes de programar una pantalla nueva o un rediseño: diagnóstico, propuesta y criterios de aceptación |
+| `ux-ui-designer` | sonnet | no | Antes de programar una pantalla nueva o un rediseño: diagnóstico, propuesta y criterios de aceptación |
 | `frontend-developer` | sonnet | `src/` | Implementar pantallas y componentes |
 | `backend-developer` | sonnet | `backend/*.sql` | Paquetes PL/SQL y endpoints ORDS. **Escribe** el `.sql`; lo corre Jose en APEX |
-| `database-architect` | opus | no | Tablas, constraints, triggers, verificación previa y rollback. Entrega el script en su informe |
+| `database-architect` | sonnet | no | Tablas, constraints, triggers, verificación previa y rollback. Entrega el script en su informe |
 | `api-specialist` | sonnet | no | Que `backend/<tabla>.sql` y `src/lib/<tabla>.ts` digan lo mismo |
-| `qa-engineer` | sonnet | no (corre comandos) | Validar, buscar regresiones, reproducir un error |
+| `qa-engineer` | sonnet (haiku si es rutina) | no (corre comandos) | Validar, buscar regresiones, reproducir un error |
 | `security-engineer` | opus | no (corre comandos) | Auditoría defensiva: token, permisos, SQL dinámico, IA, Cloudinary, secretos |
 | `devops-engineer` | sonnet | configuración | Workflow de Pages, build, dominio. **No pushea** ni compila el APK |
-| `code-reviewer` | opus | no (corre comandos) | Revisar el diff antes de entregar |
+| `code-reviewer` | sonnet (opus si es sensible) | no (corre comandos) | Revisar el diff antes de entregar |
 | `technical-writer` | haiku | documentación | Esta guía y las demás, con lo ya verificado |
 
 Los modelos van por **alias** (`opus`, `sonnet`, `haiku`) para que Claude Code use la versión
 vigente. `fable` no está asignado a ninguno: se usa solo con una justificación explícita (un
 rediseño muy amplio o una decisión de alto impacto).
+
+**Consumo** (25/11/2026, a pedido de Jose): los subagentes salen del mismo límite de uso que la
+sesión principal. Por eso solo `security-engineer` va en `opus`; el resto en `sonnet`, y
+`technical-writer` en `haiku`. La sesión puede subir o bajar el modelo de una tarea puntual:
+`opus` para el `code-reviewer` en un cambio grande o sensible, `haiku` para el `qa-engineer`
+cuando solo corre las validaciones. Lo simple no se delega, dos agentes no investigan lo mismo
+y cada uno devuelve un resumen, no los archivos que leyó. Las reglas completas están en
+[`CLAUDE.md`](CLAUDE.md) → *Política de optimización de consumo*.
 
 **Por qué no son los de la especificación genérica.** La especificación de la que salieron
 pensaba en Node/NestJS, PostgreSQL, GraphQL y Docker. Acá no hay nada de eso, así que se

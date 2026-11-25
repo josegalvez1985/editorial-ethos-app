@@ -48,8 +48,11 @@ export const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
  * lista vieja sin ese campo hacía reventar el diálogo de Docentes.
  * El 24/11/2026 cada año lectivo ganó `proceso` (PROCESO_POSTULACION): una lista
  * vieja sin ese campo hacía reventar Años Lectivos (`a.proceso.trim()`).
+ * El 25/11/2026 cada facilitador ganó `foto` (la foto carnet) y su ficha
+ * `foto_carnet`: la ficha vieja sin el campo no reventaba, pero se sube igual
+ * para que nadie vea la lista sin las fotos hasta que venza la caché.
  */
-export const CACHE_BUSTER = "anios-proceso-v1";
+export const CACHE_BUSTER = "facilitadores-foto-v1";
 
 /** En SSR no hay `localStorage`: un persister que no hace nada. */
 const enMemoria: Persister = {

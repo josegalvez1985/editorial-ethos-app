@@ -52,10 +52,16 @@ stack con eso.
 
 | Modelo | Agentes | Por qué |
 | --- | --- | --- |
-| `opus` | ux-ui-designer, database-architect, security-engineer, code-reviewer | Criterio y razonamiento: diseño, datos, seguridad, revisión |
-| `sonnet` | frontend-developer, backend-developer, api-specialist, qa-engineer, devops-engineer | Implementación y verificación del día a día |
+| `opus` | security-engineer (y la sesión principal, que hace de arquitecto) | Auditorías importantes y decisiones complejas |
+| `sonnet` | ux-ui-designer, frontend-developer, backend-developer, database-architect, api-specialist, qa-engineer, devops-engineer, code-reviewer | Implementación, análisis y revisión del día a día |
 | `haiku` | technical-writer | Tarea acotada y de bajo riesgo |
 | `fable` | ninguno | Solo con justificación explícita, desde la sesión principal |
+
+Hasta el 25/11/2026 ux-ui-designer, database-architect y code-reviewer iban en `opus`; se
+bajaron a `sonnet` para ahorrar consumo. Para una tarea puntual la sesión pisa el modelo: `opus`
+al code-reviewer en un cambio grande o sensible, `haiku` al qa-engineer cuando solo corre las
+validaciones. Al llevar el equipo a otro proyecto, copiar también la *Política de optimización
+de consumo* de `CLAUDE.md`.
 
 Siempre por **alias**, nunca un ID de modelo escrito a mano: el alias toma la versión vigente.
 Si una documentación tiene la redacción delicada (como la de este repo, con muchas decisiones

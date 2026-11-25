@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Buscador, Cargando, Fallo } from "@/components/admin-ui";
 import { AppShell } from "@/components/app-shell";
 import { BloqueosFacilitador, BotonBloqueos } from "@/components/bloqueos-facilitador";
+import { miniatura } from "@/lib/cloudinary";
 import { keysFacilitadores, listarFacilitadores } from "@/lib/facilitadores";
 import {
   anioVigente,
@@ -159,14 +160,28 @@ function FacilitadoresPage() {
                   params={{ id: String(f.id) }}
                   className="tap flex min-w-0 flex-1 items-center gap-3 p-3"
                 >
-                  <span
-                    aria-hidden
-                    className={`grid size-11 shrink-0 place-items-center rounded-full text-[13px] font-semibold ${
-                      f.activo ? "bg-hero-gradient text-on-brand" : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {iniciales(f.nombre)}
-                  </span>
+                  {/* La foto carnet (25/11/2026), o las iniciales si no tiene. */}
+                  {f.foto ? (
+                    <img
+                      src={miniatura(f.foto, 120)}
+                      alt=""
+                      loading="lazy"
+                      className={`size-11 shrink-0 rounded-full object-cover ${
+                        f.activo ? "" : "opacity-60 grayscale"
+                      }`}
+                    />
+                  ) : (
+                    <span
+                      aria-hidden
+                      className={`grid size-11 shrink-0 place-items-center rounded-full text-[13px] font-semibold ${
+                        f.activo
+                          ? "bg-hero-gradient text-on-brand"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {iniciales(f.nombre)}
+                    </span>
+                  )}
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
                       <span className="truncate text-sm font-semibold">{f.nombre}</span>

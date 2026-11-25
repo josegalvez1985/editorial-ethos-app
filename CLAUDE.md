@@ -42,6 +42,8 @@ introducir tecnologías nuevas sin justificarlo y pedir aprobación.
 - Toda grilla con `grid-cols-1` de base; campos y botones `rounded-xl`.
 - Todo reporte con detalle lleva botón Excel que baja todo lo filtrado.
 - Si cambia la forma de datos persistidos por React Query, subir `CACHE_BUSTER`.
+- Una pantalla espera a tener `data`, no a que `isLoading` dé `false` (la caché se restaura).
+- En PL/SQL, ningún `BOOLEAN` dentro de un SQL: banderas `'S'`/`'N'`.
 - `src/routeTree.gen.ts` es generado. Los íconos de menú existentes no se tocan.
 - Antes de diagnosticar "no funciona", verificar que el código esté desplegado.
 
@@ -63,20 +65,45 @@ delega, integra y comunica. Los subagentes no se hablan entre sí ni lanzan otro
 
 | Agente | Modelo | Acceso | Para qué |
 | --- | --- | --- | --- |
-| `ux-ui-designer` | opus | solo lectura | Auditoría UX/UI, propuesta y criterios de aceptación |
+| `ux-ui-designer` | sonnet | solo lectura | Auditoría UX/UI, propuesta y criterios de aceptación |
 | `frontend-developer` | sonnet | edita | Implementar en `src/` |
 | `backend-developer` | sonnet | edita | `backend/*.sql`: paquetes PL/SQL y handlers ORDS |
-| `database-architect` | opus | solo lectura | Modelo Oracle, constraints, triggers, verificación previa, rollback |
+| `database-architect` | sonnet | solo lectura | Modelo Oracle, constraints, triggers, verificación previa, rollback |
 | `api-specialist` | sonnet | solo lectura | Contrato `backend/<tabla>.sql` ↔ `src/lib/<tabla>.ts` |
-| `qa-engineer` | sonnet | lectura + comandos | Criterios, validación, regresiones, reproducir errores |
+| `qa-engineer` | sonnet (haiku si es rutina) | lectura + comandos | Criterios, validación, regresiones, reproducir errores |
 | `security-engineer` | opus | lectura + comandos | Auditoría defensiva con evidencia |
 | `devops-engineer` | sonnet | edita config | Workflow de Pages, build, dominio; no publica |
-| `code-reviewer` | opus | lectura + comandos | Revisión independiente del diff |
+| `code-reviewer` | sonnet (opus si es sensible) | lectura + comandos | Revisión independiente del diff |
 | `technical-writer` | haiku | edita docs | README y guías, con información verificada |
 
-**Arquitectura / cambios transversales**: los planifica la sesión principal (o el agente
-integrado `Plan`). `fable` solo con justificación explícita (rediseño muy amplio o decisión
-de alto impacto); nunca como predeterminado.
+**Arquitectura / cambios transversales** (el "arquitecto de software"): los planifica la sesión
+principal, que corre en opus, o el agente integrado `Plan`. `fable` solo con justificación
+explícita (rediseño muy amplio o decisión de alto impacto); nunca como predeterminado.
+
+### Política de optimización de consumo
+
+Desde el 25/11/2026, a pedido de Jose. Los subagentes **no son gratis**: lo que consumen sale
+del mismo límite de uso. Ahorran contexto cuando uno especializado investiga solo lo relevante
+y devuelve un resumen; gastan de más cuando varios analizan lo mismo o todos corren en opus.
+
+1. **Ejecución directa para lo simple.** Un texto, un estilo, un bug evidente o algo que se
+   resuelve en dos pasos lo hace la sesión principal, sin agentes.
+2. **Delegar solo si aporta**: especialización, contexto independiente (revisar muchos archivos
+   y traer un resumen) o trabajo en paralelo de verdad.
+3. **Sin agentes duplicados**: nunca dos agentes investigando lo mismo, ni re-delegar un
+   análisis que ya se hizo en la sesión. Lo que ya se averiguó se le pasa al agente en el
+   pedido, para que no lo vuelva a buscar.
+4. **Modelo según la tarea** (el `model` del Agent pisa el del frontmatter):
+   - `haiku` para lo rutinario: correr `tsc`/`eslint`/`build` y reportar (qa-engineer),
+     documentar lo ya verificado (technical-writer).
+   - `sonnet` para implementar, revisar y analizar el día a día: es el predeterminado.
+   - `opus` solo para decisiones complejas y auditorías importantes: security-engineer, y el
+     code-reviewer cuando el cambio es grande o sensible (login, token, permisos, SQL dinámico,
+     tablas compartidas, asistente con IA, Cloudinary).
+5. **Skills mínimas**: cada agente precarga solo las 1 o 2 que necesita; no cargar otras.
+6. **Resúmenes, no copias**: todo subagente devuelve un informe conciso —hallazgos, decisiones,
+   archivos tocados y `archivo:línea`— sin pegar los archivos que leyó ni salidas enteras de
+   comandos (solo las líneas que importan).
 
 ### Qué agentes según el pedido
 
@@ -102,7 +129,7 @@ agentes.
 - Solo `backend-developer` edita `backend/*.sql`; `database-architect` y `api-specialist`
   entregan su propuesta en el informe.
 - Si hay desacuerdo técnico, presentar alternativas, impacto y recomendación.
-- Los subagentes consumen el mismo límite de uso: no delegar lo que se resuelve en dos pasos.
+- El consumo se rige por la *Política de optimización de consumo* de arriba.
 
 ## Protocolo de trabajo
 

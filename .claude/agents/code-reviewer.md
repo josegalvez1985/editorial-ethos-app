@@ -2,7 +2,7 @@
 name: code-reviewer
 description: Revisor independiente de cambios. Usar después de una implementación significativa (front, backend .sql o configuración) y antes de entregar, para buscar errores lógicos, regresiones, problemas de seguridad y desvíos de las convenciones del proyecto. Solo lectura — reporta hallazgos priorizados, no corrige.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 color: red
 skills:
   - validar-cambios

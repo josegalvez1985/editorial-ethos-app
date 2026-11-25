@@ -29,6 +29,9 @@ Pedir el mensaje exacto, el status HTTP y, si se puede, la pestaña Red de DevTo
 | "Token invalido o expirado" con un login recién hecho | ORDS | Falta `ORDS.DEFINE_PARAMETER` del header en ese handler |
 | 403 al guardar en pantalla nueva | Permisos | Página sin alta en Crear páginas o sin permisos en Roles de páginas |
 | 404 en un endpoint | Despliegue backend | El `.sql` no se corrió, o un re-run de `auth.sql` viejo borró handlers |
+| 405 en una ruta nueva (`POST modulo/accion`) | Despliegue backend | El `.sql` no se corrió: ORDS la toma como `modulo/:id`, que no tiene ese método (pasó con `facilitadores/firma-foto`, 25/11/2026) |
+| `Cannot read properties of undefined` al abrir una pantalla, sobre todo tras subir `CACHE_BUSTER` | Front | Se decide con `isLoading` en vez de esperar `data`: README → *Sesión y datos en el dispositivo* |
+| `[ERROR] PKG_… quedo INVALID` al correr un `.sql` | PL/SQL | `user_errors` que imprime el script; uno típico: un `BOOLEAN` dentro de un SQL |
 | Error de CORS solo en producción/APK | ORDS | Preflight `OPTIONS` del template; en dev pasa por el proxy y no se ve |
 | 500 genérico de ORDS | PL/SQL | Error no capturado; ver `backend/README.md` → *Si Auditoría responde el 500 genérico* |
 | 200 con `success:false` | `p_error` | `STATUS_LINE` después de `MIME_HEADER` |

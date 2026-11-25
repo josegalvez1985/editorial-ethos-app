@@ -23,6 +23,10 @@ is `src/routes/__root.tsx`.
 Si la pantalla reemplaza una página de APEX, seguí la guía del [`README`](../../README.md) →
 *Pasar una página de APEX al sitio*.
 
+**Una pantalla espera a tener `data`, no a que `isLoading` dé `false`** (25/11/2026): mientras
+se restaura la caché del navegador, `isLoading` es `false` sin datos. Ver el
+[`README`](../../README.md) → *Sesión y datos en el dispositivo*.
+
 ## Una ruta nueva no aparece sola en el menú
 
 El menú sale de la base (`MENU_PAGINAS` + `ROLES_PAGINAS`, desde el 08/10/2026). Crear el

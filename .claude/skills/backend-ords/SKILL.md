@@ -28,6 +28,11 @@ sección citada.
 - **Idempotente**: `[SKIP]` si el objeto existe; `CREATE OR REPLACE` en paquetes; nunca
   `ORDS.DEFINE_MODULE` (lo define solo `auth.sql`).
 - ASCII. Textos con ñ/tildes con `UNISTR('a\00f1o')`; en `UNION`, `TO_CHAR(UNISTR(...))`.
+- **Ningún `BOOLEAN` de PL/SQL dentro de un SQL** (ni `INSERTING`): antes de 23ai no compila y
+  deja INVALID el paquete entero. Banderas `VARCHAR2(1)` `'S'`/`'N'`.
+- Un archivo de Cloudinary en una ficha: seguir *Cloudinary* → *Un campo de archivo en una
+  ficha* de `backend/README.md` (solo si cambió + anterior → 409, borrar después del COMMIT y
+  no si otro módulo usa el enlace).
 - Encabezado que lista los endpoints que publica (método, ruta, parámetros, fecha).
 - Verificación final que imprime `[OK]` / `[WARN]` / `[INFO]`.
 

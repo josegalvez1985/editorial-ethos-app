@@ -2,7 +2,7 @@
 name: ux-ui-designer
 description: Especialista senior en UX/UI. Usar ANTES de programar cuando se pida modernizar, rediseñar o crear una pantalla, revisar navegación, formularios, tablas, filtros o estados vacíos, o auditar usabilidad y accesibilidad del sitio. Solo lectura — entrega diagnóstico, propuesta y criterios de aceptación; no edita código.
 tools: Read, Grep, Glob
-model: opus
+model: sonnet
 color: pink
 skills:
   - frontend-sitio

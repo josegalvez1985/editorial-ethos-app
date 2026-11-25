@@ -12,6 +12,7 @@
  */
 
 import { authFetch } from "@/lib/api";
+import { subirACloudinary } from "@/lib/cloudinary";
 import { nombreTabla, type ValorLista } from "@/lib/utils";
 
 export type Uso = { tabla: string; cantidad: number };
@@ -42,6 +43,8 @@ export type FacilitadorFila = {
   observacion: string;
   direccion: string;
   ubicacion: string;
+  /** La foto carnet (`FOTO_CARNET`, Cloudinary), o "". */
+  foto: string;
   usos: Uso[];
 };
 
@@ -110,6 +113,12 @@ export const CAMPOS_TEXTO = [
 export type CampoTexto = (typeof CAMPOS_TEXTO)[number];
 
 export type Ficha = Record<CampoTexto, string> & {
+  /**
+   * La foto carnet (25/11/2026): el enlace de Cloudinary, o "" sin foto. Es
+   * aparte de la foto de perfil. Viaja siempre en `datos`: "" la quita, y el
+   * backend borra de Cloudinary la reemplazada o quitada después de guardar.
+   */
+  foto_carnet: string;
   id_nacionalidad: number | null;
   id_ciudad: number | null;
   id_barrio: number | null;
@@ -132,6 +141,7 @@ export function fichaVacia(): Ficha {
   const f = Object.fromEntries(CAMPOS_TEXTO.map((c) => [c, ""])) as Record<CampoTexto, string>;
   return {
     ...f,
+    foto_carnet: "",
     id_nacionalidad: null,
     id_ciudad: null,
     id_barrio: null,
@@ -172,6 +182,7 @@ export async function listarFacilitadores(): Promise<FacilitadorFila[]> {
     observacion: s(x.observacion),
     direccion: s(x.direccion),
     ubicacion: s(x.ubicacion),
+    foto: s(x.foto_carnet),
     usos: usos(x.usos),
   }));
 }
@@ -206,6 +217,7 @@ export async function obtenerFacilitador(id: number): Promise<FichaGuardada> {
   return {
     ...(Object.fromEntries(CAMPOS_TEXTO.map((c) => [c, s(d[c])])) as Record<CampoTexto, string>),
     id: Number(d.id_facilitador),
+    foto_carnet: s(d.foto_carnet),
     id_nacionalidad: n(d.id_nacionalidad),
     id_ciudad: n(d.id_ciudad),
     id_barrio: n(d.id_barrio),
@@ -230,19 +242,60 @@ export async function obtenerFacilitador(id: number): Promise<FichaGuardada> {
   };
 }
 
-/** Alta (`id` null) o modificación, con sus cuatro listas. Devuelve el id. */
-export async function guardarFacilitador(id: number | null, ficha: Ficha): Promise<number> {
+/**
+ * Alta (`id` null) o modificación, con sus cuatro listas. Devuelve el id y el
+ * `aviso` del backend si no pudo borrar de Cloudinary la foto carnet anterior
+ * (lo guardado quedó bien igual).
+ *
+ * `fotoAnterior`: la foto carnet que tenía la ficha al abrirla (o al último
+ * guardado). La foto viaja **solo si cambió**, y con ella la anterior: si en la
+ * base ya es otra, el backend responde 409 en vez de pisarla. Así una ficha
+ * vieja (de la caché del navegador, de otra pestaña) no vuelve a poner un
+ * enlace ya borrado de Cloudinary ni borra el bueno.
+ */
+export async function guardarFacilitador(
+  id: number | null,
+  ficha: Ficha,
+  fotoAnterior: string,
+): Promise<{ id: number; aviso: string }> {
+  const { foto_carnet, ...resto } = ficha;
+  const foto = foto_carnet ?? "";
+  const datos =
+    foto === fotoAnterior
+      ? resto
+      : { ...resto, foto_carnet: foto, foto_carnet_anterior: fotoAnterior };
   const r = (await authFetch(id == null ? "facilitadores" : `facilitadores/${id}`, {
     method: id == null ? "POST" : "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ datos: JSON.stringify(ficha) }),
-  })) as { id_facilitador?: number };
-  return Number(r.id_facilitador ?? id ?? 0);
+    body: JSON.stringify({ datos: JSON.stringify(datos) }),
+  })) as { id_facilitador?: number; aviso?: string };
+  return { id: Number(r.id_facilitador ?? id ?? 0), aviso: s(r.aviso) };
 }
 
-/** Baja, con sus cuatro listas. El backend responde 409 si algo más lo usa. */
-export async function eliminarFacilitador(id: number): Promise<void> {
-  await authFetch(`facilitadores/${id}`, { method: "DELETE" });
+/**
+ * Baja, con sus cuatro listas. El backend responde 409 si algo más lo usa.
+ * Devuelve el `aviso` si no pudo borrar su foto carnet de Cloudinary.
+ */
+export async function eliminarFacilitador(id: number): Promise<string> {
+  const r = (await authFetch(`facilitadores/${id}`, { method: "DELETE" })) as { aviso?: string };
+  return s(r.aviso);
+}
+
+/**
+ * Sube la foto carnet a Cloudinary (carpeta `foto_carnet`, firmada por
+ * `facilitadores/firma-foto`) y devuelve su enlace. Solo fotos: se achica en el
+ * navegador antes de subir, como las de facturas. Queda en la ficha y se guarda
+ * con ella.
+ */
+export function subirFotoCarnet(archivo: File, onProgreso?: (p: number) => void) {
+  if (!archivo.type.startsWith("image/")) {
+    return Promise.reject(new Error("La foto carnet tiene que ser una imagen (JPG o PNG)"));
+  }
+  return subirACloudinary(archivo, "facilitadores/firma-foto", {
+    topePdfMb: 0,
+    queEs: "una foto carnet",
+    onProgreso,
+  });
 }
 
 /** "en 12 postulaciones y 3 evaluaciones", o `null` si no se usa. */

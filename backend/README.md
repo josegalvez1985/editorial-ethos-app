@@ -475,7 +475,22 @@ transacción. Todo con los permisos de la 14. Paquete `PKG_FACILITADORES_ETHOS`.
 | GET | `facilitadores/:id` | sesión | La ficha completa, con `nominados`, `referencias`, `estudios`, `laborales` y `usos` |
 | POST | `facilitadores` | insertar en la página de `/facilitadores` | `{datos}` → `{id_facilitador}` |
 | PUT | `facilitadores/:id` | actualizar | `{datos}` |
-| DELETE | `facilitadores/:id` | borrar | **409** si algo lo usa; sus cuatro listas se borran con él |
+| DELETE | `facilitadores/:id` | borrar | **409** si algo lo usa; sus cuatro listas se borran con él, y su foto carnet de Cloudinary |
+| POST | `facilitadores/firma-foto` | insertar **o** actualizar | La firma para subir la foto carnet a Cloudinary, carpeta `foto_carnet` (ver *Cloudinary*); 503 si falta configurarlo |
+
+> **La foto carnet (`FOTO_CARNET`, 25/11/2026).** Es una foto **aparte de la de perfil**. La
+> columna (`VARCHAR2(1000)`) la creó Jose en la base y `FACILITADORES_JNTRG` ya la registra: el
+> script **no le hace DDL**, solo avisa con `[ERROR]` si falta (sin ella el paquete no compila).
+> `GET facilitadores` y `GET facilitadores/:id` la devuelven como `foto_carnet`. Viaja dentro de
+> `datos`: **sin la clave, queda la que había** (un cliente viejo no la borra, y el sitio la manda
+> solo si cambió); vacía, se quita; con un enlace, se reemplaza, y uno nuevo tiene que ser de
+> nuestro cloud. Viaja con `foto_carnet_anterior`, la que había al abrir la ficha: si en la base
+> ya es otra, **409** y no se pisa (una ficha vieja volvía a poner un enlace ya borrado y borraba
+> el bueno; lo encontró el code-reviewer el 25/11/2026). La reemplazada o quitada, y la del
+> facilitador que se elimina, se borra de Cloudinary **después del COMMIT**, salvo que otro
+> facilitador, una factura o una postulación tengan el mismo enlace; si Cloudinary falla, lo
+> guardado queda y la respuesta trae `aviso`. Lo subido y nunca guardado queda en Cloudinary,
+> como en Facturas y Postulantes.
 
 - **La ficha viaja entera en un solo campo, `datos`, con el JSON como texto**: son ~45 campos y
   4 listas, y ORDS bindea solo campos escalares. El paquete lo lee con `APEX_JSON`.
@@ -1253,6 +1268,7 @@ El servicio para subir archivos (04/11/2026). Lo usan:
 | --- | --- | --- | --- |
 | Facturas de los facilitadores | `POST facturas-facilitadores/firma-foto` | `facturas-facilitadores` | sesión |
 | Postulantes (24/11/2026) | `POST revision-postulantes/firma` | `postulaciones-facilitadores` (la de la otra app, pedido de Jose) | actualizar en `/postulantes` |
+| Foto carnet de los facilitadores (25/11/2026) | `POST facilitadores/firma-foto` | `foto_carnet` (pedido de Jose) | insertar o actualizar en `/facilitadores` |
 
 **No publica endpoints**: cada módulo expone su propia ruta de firma, con sus permisos, y
 llama al paquete. **Sumar un módulo no toca `cloudinary.sql`** (Jose, 24/11/2026): se llama a
@@ -1281,6 +1297,21 @@ Cloudinary** (ORDS no carga con imágenes de varios MB), pero firmado por Oracle
 
 La firma vence en una hora (lo controla Cloudinary con el `timestamp`). La carpeta la elige
 cada módulo y pisa la del preset (que en el preset es `samples/ecommerce`).
+
+**Un campo de archivo en una ficha que se guarda entera** (la foto carnet de Facilitadores,
+25/11/2026). Lo que hay que copiar de `facilitadores.sql` y `lib/facilitadores.ts`:
+
+1. **El enlace viaja solo si cambió**, con el que había al abrir la ficha
+   (`foto_carnet_anterior`). Sin la clave, el backend no lo toca. Si la clave viene y la base ya
+   tiene otro, **409**: una ficha vieja (caché del navegador, otra pestaña) volvería a poner un
+   enlace ya borrado y borraría el bueno. La fila se lee con `FOR UPDATE`.
+2. **Un enlace nuevo**, solo de nuestro cloud (`es_url_propia`); el que no cambia se acepta.
+3. **Borrar después del `COMMIT`**, y **no si el enlace lo usa otra fila u otro módulo**
+   (facturas, postulaciones): `es_url_propia` mira el cloud, no la carpeta, y un enlace se
+   puede mandar a mano. Si Cloudinary falla, lo guardado queda y la respuesta trae `aviso`.
+4. **La ruta de firma** con los permisos de la página (insertar **o** actualizar, porque se
+   sube antes de guardar, también en un alta).
+5. **Lo subido y nunca guardado queda en Cloudinary** sin usar: aceptado en los tres módulos.
 
 **`CLOUDINARY_CONFIG` es privada**, como `IA_CONFIG`: `CLOUD_NAME` (`cayve9bx`) y
 `UPLOAD_PRESET` (`fc`) vienen cargados; `API_KEY` y `API_SECRET` se cargan **a mano en SQL
@@ -1808,6 +1839,11 @@ sitio*. Del lado de Oracle, lo que ya se aprendió:
 - **`INSERTING` / `UPDATING` no van dentro de un SQL:** son booleanos de PL/SQL. Un
   `CASE WHEN INSERTING THEN 'INS' …` dentro del `VALUES` no compila: se calcula antes en una
   variable (`v_operacion`).
+- **Ninguna variable `BOOLEAN` dentro de un SQL** (25/11/2026), por lo mismo: un
+  `CASE WHEN l_bandera THEN …` dentro de un `UPDATE` o un `SELECT` solo compila desde Oracle
+  23ai, y si no compila, queda INVALID **el paquete entero**, no solo esa ruta. Las banderas que
+  entran a un SQL van como `VARCHAR2(1)` `'S'`/`'N'` (`l_hay_foto` en `facilitadores.sql`,
+  `l_quitar` en `facturas_facilitadores.sql`). Lo encontró el code-reviewer antes de correrlo.
 - **Tabla nueva que pasa Jose** (13/10/2026): el script la crea **solo si no existe**, tal cual
   el DDL (identity, FKs, comentarios), y lo mismo su `_JN` (las columnas `JN_*` de
   `pr_crear_trigger_auditoria`) y `SEQ_AUDITORIA`. Si ya existe, `[SKIP]` y no se toca.
@@ -1889,3 +1925,9 @@ expiración por status **y** por mensaje; no quites esa red de seguridad.
 - **El período de postulación no frena nada en el sitio** (24/11/2026). `PERIODOS_POSTULACION`
   es solo configuración: si tiene que bloquear algo (cargar postulaciones fuera de fecha, por
   ejemplo) o eso lo controla solo la otra app, está por definir con Jose.
+- **`FACILITADORES` tiene dos triggers de bitácora** (visto en el DDL que pasó Jose el
+  25/11/2026): `AUDITORIA_FACILITADORES` y `FACILITADORES_JNTRG` insertan los dos en
+  `FACILITADORES_JN`, así que cada cambio queda **dos veces**. El primero no registra
+  `FOTO_CARNET`; el segundo graba `NVL(V('APP_USER'), USER)`, que desde ORDS es el esquema y no
+  quien usó el sitio (ver *Pasar una página de APEX: el backend* → el `_JNTRG` se reescribe).
+  Dejar uno solo es decisión de Jose: no se tocó.

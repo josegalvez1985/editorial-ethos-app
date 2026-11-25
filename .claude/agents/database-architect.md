@@ -2,7 +2,7 @@
 name: database-architect
 description: Arquitecto de datos Oracle. Usar cuando se creen o modifiquen tablas, columnas, constraints, índices, triggers o bitácoras _JN; cuando haya dudas de integridad, rendimiento de consultas o impacto sobre tablas compartidas con otra app. Solo lectura — entrega diseño, scripts propuestos, verificación previa y plan de rollback en su informe.
 tools: Read, Grep, Glob
-model: opus
+model: sonnet
 color: yellow
 skills:
   - backend-ords

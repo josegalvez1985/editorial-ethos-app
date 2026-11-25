@@ -8,6 +8,7 @@ import { BotonBorrar, Cargando, Fallo, SoloLectura } from "@/components/admin-ui
 import { AppShell } from "@/components/app-shell";
 import { Pastillas, Quitar, Seccion, Texto } from "@/components/ficha-ui";
 import { BloqueosFacilitador, BotonBloqueos } from "@/components/bloqueos-facilitador";
+import { FotoCarnetFacilitador } from "@/components/foto-carnet-facilitador";
 import { PickerModal } from "@/components/picker-modal";
 import { apiBarrios } from "@/lib/barrios";
 import { apiCiudades } from "@/lib/ciudades";
@@ -79,25 +80,30 @@ function FichaPage() {
     staleTime: 10 * 60 * 1000,
   });
 
-  const cargando = (!nuevo && ficha.isLoading) || opciones.isLoading;
+  // Se espera a TENER los datos, no a que `isLoading` dé false (25/11/2026):
+  // mientras se restaura la caché del navegador (PersistQueryClientProvider)
+  // la query está pendiente sin pedir, `isLoading` es false y `data` todavía
+  // no existe. Así el formulario se montaba con `opciones` undefined (reventaba)
+  // y con la ficha vacía en vez de la del facilitador, sin volver a montarse.
   const error = ficha.error ?? opciones.error;
+  const datosFicha = nuevo ? fichaVacia() : ficha.data;
 
   return (
     <AppShell nav={false}>
-      {cargando ? (
-        <Cargando />
-      ) : error ? (
+      {error ? (
         <div className="p-5">
           <Fallo error={error} texto="No se pudo cargar la ficha" />
         </div>
+      ) : !datosFicha || !opciones.data ? (
+        <Cargando />
       ) : (
         <Formulario
           // Remonta al cambiar de ficha (por ejemplo, después de un alta).
           key={id}
           idNum={idNum}
-          inicial={ficha.data ?? fichaVacia()}
+          inicial={datosFicha}
           usos={ficha.data?.usos ?? []}
-          opciones={opciones.data!}
+          opciones={opciones.data}
         />
       )}
     </AppShell>
@@ -119,6 +125,10 @@ function Formulario({
   const navigate = useNavigate();
   const { puedeRuta } = usePermisos();
   const [f, setF] = useState<Ficha>(inicial);
+  // La foto carnet que hay en la base según esta pantalla: la de cuando se
+  // abrió y, después de guardar, la guardada. `?? ""`: una ficha guardada en el
+  // navegador antes del 25/11/2026 no la trae. Ver `guardarFacilitador`.
+  const [fotoBase, setFotoBase] = useState(inicial.foto_carnet ?? "");
   const [confirmarBorrado, setConfirmarBorrado] = useState(false);
   const [verBloqueos, setVerBloqueos] = useState(false);
 
@@ -172,10 +182,13 @@ function Formulario({
   const invalidar = () => qc.invalidateQueries({ queryKey: keysFacilitadores.todo });
 
   const guardar = useMutation({
-    mutationFn: () => guardarFacilitador(idNum, f),
-    onSuccess: (nuevoId) => {
+    mutationFn: () => guardarFacilitador(idNum, f, fotoBase),
+    onSuccess: ({ id: nuevoId, aviso }) => {
+      setFotoBase(f.foto_carnet ?? "");
       invalidar();
       toast.success(nuevo ? "Facilitador creado" : "Cambios guardados");
+      // Guardó bien, pero la foto carnet anterior quedó en Cloudinary.
+      if (aviso) toast.warning(aviso);
       if (nuevo)
         navigate({ to: "/facilitadores/$id", params: { id: String(nuevoId) }, replace: true });
     },
@@ -184,9 +197,10 @@ function Formulario({
 
   const borrar = useMutation({
     mutationFn: () => eliminarFacilitador(idNum!),
-    onSuccess: () => {
+    onSuccess: (aviso) => {
       invalidar();
       toast.success("Facilitador eliminado");
+      if (aviso) toast.warning(aviso);
       navigate({ to: "/facilitadores", replace: true });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "No se pudo eliminar"),
@@ -246,6 +260,12 @@ function Formulario({
           className="grid grid-cols-1 gap-4 px-5 pt-4 pb-6 lg:grid-cols-2"
         >
           <Seccion titulo="Datos personales">
+            <FotoCarnetFacilitador
+              url={f.foto_carnet ?? ""}
+              original={fotoBase}
+              nombre={f.nombre_apellido}
+              onCambio={(v) => set("foto_carnet", v)}
+            />
             <Texto etiqueta="Nombre y apellido" req largo={500} {...txt("nombre_apellido")} />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Texto etiqueta="Nro. de CI" req largo={100} inputMode="numeric" {...txt("nro_ci")} />
@@ -478,7 +498,7 @@ function Formulario({
                 />
                 <p className="text-[11px] text-muted-foreground">
                   {confirmarBorrado
-                    ? "Se borra con sus referencias, estudios, trabajos y horarios bloqueados. Tocá de nuevo para confirmar."
+                    ? "Se borra con sus referencias, estudios, trabajos, horarios bloqueados y su foto carnet. Tocá de nuevo para confirmar."
                     : "Eliminar este facilitador."}
                 </p>
               </div>

@@ -48,6 +48,12 @@ Fuente de verdad: `README.md` (secciones citadas). Esta skill es el resumen oper
   sin permiso, sin conexión.
 - **Ubicación en cascada**: se elige el nivel más bajo; el resto lo deriva el backend.
 - Si cambia la forma de datos que React Query persiste → subir `CACHE_BUSTER`.
+- **Esperar `data`, no `isLoading`**: mientras se restaura la caché, `isLoading` es `false` sin
+  datos. `error ? Fallo : !data ? Cargando : <Form inicial={data}/>`; nunca `data!` ni
+  `data ?? vacio()` para un registro que existe (README → *Sesión y datos en el dispositivo*).
+- **Archivos en Cloudinary**: `subirACloudinary` de `lib/cloudinary.ts` con la ruta de firma del
+  módulo; en una ficha que se guarda entera, el enlace viaja solo si cambió, con el anterior
+  (patrón de la foto carnet: `backend/README.md` → *Cloudinary*).
 - Pantalla nueva: descripción en `PANTALLAS`; **el ícono de menú no se toca** (uno nuevo se
   propone y se agrega solo con el sí de Jose, como línea nueva al final).
 

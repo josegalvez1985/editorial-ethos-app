@@ -21,12 +21,15 @@
 --   GET     facilitadores/:id        la ficha completa, con sus 4 listas y en
 --                                    que tablas se usa
 --   POST    facilitadores            {datos}  -> {id_facilitador}
---   PUT     facilitadores/:id        {datos}
+--   PUT     facilitadores/:id        {datos}  (-> aviso, si Cloudinary fallo)
 --   DELETE  facilitadores/:id        solo si nada lo usa
+--   POST    facilitadores/firma-foto la firma para subir la foto carnet a
+--                                    Cloudinary (25/11/2026)
 --
--- CORRER DESPUES de auth.sql y roles_paginas.sql (permisos). La pantalla lee
--- tambien GET nacionalidades, ciudades y barrios: conviene tener corridos
--- nacionalidades.sql, ciudades.sql y barrios.sql.
+-- CORRER DESPUES de auth.sql, roles_paginas.sql (permisos) y cloudinary.sql
+-- (la foto carnet). La pantalla lee tambien GET nacionalidades, ciudades y
+-- barrios: conviene tener corridos nacionalidades.sql, ciudades.sql y
+-- barrios.sql.
 --
 --   SQL Workshop -> SQL Scripts -> Upload -> este archivo -> Run
 --
@@ -91,6 +94,35 @@
 --   - Nro de CI repetido: se rechaza en un alta, o al cambiarle la CI a uno.
 --
 --------------------------------------------------------------------------------
+-- LA FOTO CARNET (FOTO_CARNET, 25/11/2026)
+--------------------------------------------------------------------------------
+--
+-- La columna la creo Jose en la base (VARCHAR2(1000)) y FACILITADORES_JNTRG
+-- ya la registra: este script NO le hace DDL, solo la lee y la escribe. Es
+-- una foto aparte de la de perfil.
+--
+--   - Vive en Cloudinary, carpeta foto_carnet; la tabla guarda solo el
+--     enlace. El navegador la sube directo con la firma de
+--     facilitadores/firma-foto (insertar o actualizar en /facilitadores) y
+--     manda el secure_url dentro de `datos` (ver cloudinary.sql).
+--   - En `datos`: sin la clave foto_carnet, queda la que habia (un cliente
+--     viejo que no la conoce no la borra, y el sitio la manda SOLO si se
+--     cambio); con la clave vacia, se quita; con un enlace, se reemplaza. Un
+--     enlace NUEVO tiene que ser de nuestro cloud.
+--   - Con foto_carnet viaja foto_carnet_anterior, la que habia al abrir la
+--     ficha: si en la base ya es otra (otra pestania, la otra app), 409 y no
+--     se pisa. Si no, una ficha vieja volveria a poner un enlace ya borrado y
+--     borraria el bueno. La fila se lee con FOR UPDATE.
+--   - Reemplazar o quitar la foto, o eliminar al facilitador, borra el archivo
+--     anterior de Cloudinary DESPUES del COMMIT, salvo que otro facilitador,
+--     una factura o una postulacion tengan el mismo enlace. Si Cloudinary
+--     falla, lo guardado queda igual y la respuesta trae un "aviso". La
+--     bitacora conserva el enlace.
+--   - Lo subido que nunca se guarda (se abandona la ficha, se reemplaza dos
+--     veces antes de guardar) queda en Cloudinary sin usar, como en Facturas
+--     y Postulantes.
+--
+--------------------------------------------------------------------------------
 
 SET SERVEROUTPUT ON
 
@@ -102,7 +134,8 @@ DECLARE
   l_n PLS_INTEGER;
 BEGIN
   FOR o IN (SELECT 'PKG_AUTH_ETHOS' AS nombre, 'backend/auth.sql' AS script FROM dual
-            UNION ALL SELECT 'PKG_ROLES_PAGINAS_ETHOS', 'backend/roles_paginas.sql' FROM dual) LOOP
+            UNION ALL SELECT 'PKG_ROLES_PAGINAS_ETHOS', 'backend/roles_paginas.sql' FROM dual
+            UNION ALL SELECT 'PKG_CLOUDINARY_ETHOS', 'backend/cloudinary.sql' FROM dual) LOOP
     SELECT COUNT(*) INTO l_n FROM all_objects
      WHERE object_name = o.nombre AND object_type = 'PACKAGE BODY';
     IF l_n = 0 THEN
@@ -135,6 +168,19 @@ BEGIN
    WHERE table_name = 'FACILITADORES' AND column_name LIKE 'DENOMINACI%N';
   DBMS_OUTPUT.PUT_LINE(CASE WHEN l_n = 1 THEN '[OK]   Columna de denominacion encontrada.'
                             ELSE '[WARN] No encontre la columna DENOMINACION: se ignora.' END);
+
+  -- FOTO_CARNET (25/11/2026): la crea Jose, no este script. Sin ella el
+  -- paquete no compila.
+  SELECT COUNT(*) INTO l_n FROM user_tab_columns
+   WHERE table_name = 'FACILITADORES' AND column_name = 'FOTO_CARNET';
+  DBMS_OUTPUT.PUT_LINE(CASE WHEN l_n = 1 THEN '[OK]   Columna FOTO_CARNET encontrada.'
+                            ELSE '[ERROR] Falta la columna FACILITADORES.FOTO_CARNET: '
+                                 || 'el paquete va a quedar INVALID.' END);
+  SELECT COUNT(*) INTO l_n FROM user_tab_columns
+   WHERE table_name = 'FACILITADORES_JN' AND column_name = 'FOTO_CARNET';
+  IF l_n = 0 THEN
+    DBMS_OUTPUT.PUT_LINE('[INFO] FACILITADORES_JN no tiene FOTO_CARNET: la bitacora no la registra.');
+  END IF;
 EXCEPTION
   WHEN OTHERS THEN
     DBMS_OUTPUT.PUT_LINE('[ERROR] ' || SQLERRM);
@@ -158,6 +204,10 @@ CREATE OR REPLACE PACKAGE PKG_FACILITADORES_ETHOS AS
 
   PROCEDURE eliminar(p_token IN VARCHAR2, p_id IN VARCHAR2);
 
+  -- La firma para subir la foto carnet a Cloudinary (25/11/2026). Pide
+  -- insertar o actualizar en la pagina de /facilitadores.
+  PROCEDURE firma_foto(p_token IN VARCHAR2);
+
 END PKG_FACILITADORES_ETHOS;
 /
 
@@ -166,6 +216,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
   c_ruta      CONSTANT VARCHAR2(20) := '/facilitadores';
   c_app_id    CONSTANT NUMBER       := 40587;
   c_workspace CONSTANT VARCHAR2(64) := 'FUNDCARAC';
+  -- La foto carnet (25/11/2026): carpeta de Cloudinary y largo de la columna.
+  c_carpeta_foto CONSTANT VARCHAR2(30) := 'foto_carnet';
+  c_largo_foto   CONSTANT PLS_INTEGER  := 1000;
 
   TYPE t_cuentas IS TABLE OF PLS_INTEGER INDEX BY PLS_INTEGER;
   TYPE t_hija IS RECORD (tabla VARCHAR2(128), cuentas t_cuentas);
@@ -278,6 +331,45 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
     WHEN NO_DATA_FOUND THEN RETURN NULL;
   END col_denominacion;
 
+  -- Borra de Cloudinary una foto carnet que ya no usa ningun facilitador. NULL
+  -- si quedo borrada (o no habia nada que borrar); si no, el motivo. Va
+  -- DESPUES del COMMIT y nunca lanza: ver PKG_CLOUDINARY_ETHOS.borrar.
+  FUNCTION limpiar_foto(p_url IN VARCHAR2) RETURN VARCHAR2 IS
+    l_n PLS_INTEGER;
+
+    -- Cuantas filas de otra tabla usan el enlace. Dinamico: el paquete tiene
+    -- que compilar aunque esa tabla no exista; si no existe, 0.
+    FUNCTION usos_en(p_sql IN VARCHAR2) RETURN PLS_INTEGER IS
+      l_c PLS_INTEGER;
+    BEGIN
+      EXECUTE IMMEDIATE p_sql INTO l_c USING p_url;
+      RETURN l_c;
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE = -942 THEN RETURN 0; END IF;  -- ORA-00942: no existe
+        RAISE;
+    END usos_en;
+  BEGIN
+    IF p_url IS NULL THEN RETURN NULL; END IF;
+    -- Por las dudas: si otro facilitador tiene el mismo enlace, no se toca.
+    SELECT COUNT(*) INTO l_n FROM facilitadores WHERE foto_carnet = p_url;
+    IF l_n > 0 THEN RETURN NULL; END IF;
+    -- Ni si es un archivo de otro modulo (el enlace se puede mandar a mano):
+    -- una factura o un documento de una postulacion (tabla de la otra app).
+    IF usos_en('SELECT COUNT(*) FROM facturas_facilitadores WHERE foto_url = :u') > 0
+       OR usos_en('SELECT COUNT(*) FROM postulantes_facilitadores WHERE :u IN ('
+                  || 'foto_url, cedula_frente_url, cedula_dorso_url, secundario_doc_url, '
+                  || 'tecnico_doc_url, licenciatura_doc_url, posgrado_doc_url, cv_archivo, '
+                  || 'certificado_no_agresor_archivo, antecedente_judicial_archivo, '
+                  || 'antecedente_policial_archivo)') > 0 THEN
+      RETURN NULL;
+    END IF;
+    RETURN PKG_CLOUDINARY_ETHOS.borrar(p_url);
+  EXCEPTION
+    -- Ante la duda (una consulta que fallo), no se borra: solo se avisa.
+    WHEN OTHERS THEN RETURN SQLERRM;
+  END limpiar_foto;
+
   /* ---------------------------------------------------------------------- */
   /* EN USO                                                                 */
   /* ---------------------------------------------------------------------- */
@@ -371,7 +463,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
                           THEN TRUNC(MONTHS_BETWEEN(TRUNC(SYSDATE), TRUNC(f.fecha_nacimiento)) / 12)
                      END AS edad,
                      f.estado_civil, f.con_quien_vive, f.hijos, f.observacion,
-                     f.direccion, f.ubicacion
+                     f.direccion, f.ubicacion, f.foto_carnet
                 FROM facilitadores f
                 LEFT JOIN ciudades c       ON c.id_ciudad = f.id_ciudad
                 LEFT JOIN departamentos d  ON d.id_departamento = c.id_departamento
@@ -399,6 +491,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
       APEX_JSON.WRITE('observacion',     r.observacion);
       APEX_JSON.WRITE('direccion',       r.direccion);
       APEX_JSON.WRITE('ubicacion',       r.ubicacion);
+      APEX_JSON.WRITE('foto_carnet',     r.foto_carnet);
       escribir_usos(l_hijas, r.id_facilitador);
       APEX_JSON.CLOSE_OBJECT;
     END LOOP;
@@ -572,6 +665,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
       APEX_JSON.WRITE('tipo_factura',              r.tipo_factura);
       APEX_JSON.WRITE('credencial',                r.credencial);
       APEX_JSON.WRITE('ind_ubicacion_postulacion', r.ind_ubicacion_postulacion);
+      APEX_JSON.WRITE('foto_carnet',               r.foto_carnet);
       escribir_usos(l_hijas, l_id);
 
       APEX_JSON.OPEN_ARRAY('nominados');
@@ -845,6 +939,17 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
     l_titu   VARCHAR2(200);   l_citit   VARCHAR2(50);   l_tcta    VARCHAR2(100);
     l_cta    VARCHAR2(100);   l_emisor  VARCHAR2(200);  l_ruc     VARCHAR2(50);
     l_tfac   VARCHAR2(50);    l_cred    VARCHAR2(20);   l_indub   VARCHAR2(20);
+
+    -- La foto carnet (ver el encabezado). l_hay_foto = 'S' si vino la clave;
+    -- 'S'/'N' y no BOOLEAN: va dentro del UPDATE, y un BOOLEAN de PL/SQL en
+    -- SQL no compila antes de 23ai. l_foto_ant: la que el front tenia al abrir
+    -- la ficha (foto_carnet_anterior), para no pisar un cambio de otro.
+    l_hay_foto   VARCHAR2(1) := 'N';
+    l_hay_ant    VARCHAR2(1) := 'N';
+    l_foto       VARCHAR2(4000);
+    l_foto_ant   VARCHAR2(4000);
+    l_foto_vieja facilitadores.foto_carnet%TYPE;
+    l_aviso      VARCHAR2(4000);
   BEGIN
     IF NOT exigir(p_token, CASE WHEN p_id IS NULL THEN 'I' ELSE 'U' END) THEN RETURN; END IF;
     IF p_id IS NOT NULL AND l_id IS NULL THEN
@@ -898,6 +1003,20 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
     l_tfac    := txt(v, 'tipo_factura', 'El tipo de facturacion', 50);
     l_cred    := txt(v, 'credencial', 'Credencial', 20);
     l_indub   := txt(v, 'ind_ubicacion_postulacion', 'Solicita ubicacion', 20);
+    -- Sin la clave, la foto queda como esta; vacia, se quita.
+    BEGIN
+      IF APEX_JSON.DOES_EXIST(p_path => 'foto_carnet', p_values => v) THEN
+        l_hay_foto := 'S';
+        l_foto := TRIM(APEX_JSON.GET_VARCHAR2(p_path => 'foto_carnet', p_values => v));
+      END IF;
+      IF APEX_JSON.DOES_EXIST(p_path => 'foto_carnet_anterior', p_values => v) THEN
+        l_hay_ant := 'S';
+        l_foto_ant := TRIM(APEX_JSON.GET_VARCHAR2(p_path => 'foto_carnet_anterior', p_values => v));
+      END IF;
+    EXCEPTION
+      WHEN OTHERS THEN
+        g_msg := 'El enlace de la foto carnet no es valido'; RAISE e_dato;
+    END;
 
     IF l_nac IS NULL THEN
       p_error(400, 'Bad Request', 'La nacionalidad es obligatoria'); RETURN;
@@ -932,16 +1051,45 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
     -- CI repetida: en un alta, o si se la cambia.
     IF l_id IS NOT NULL THEN
       BEGIN
-        SELECT nro_ci INTO l_ci_ant FROM facilitadores WHERE id_facilitador = l_id;
+        -- FOR UPDATE: la foto que se va a reemplazar es la de este momento
+        -- (otra pestania o la otra app pudo cambiarla), como en facturas.
+        SELECT nro_ci, foto_carnet INTO l_ci_ant, l_foto_vieja
+          FROM facilitadores WHERE id_facilitador = l_id FOR UPDATE;
       EXCEPTION
         WHEN NO_DATA_FOUND THEN
           p_error(404, 'Not Found', 'El facilitador no existe'); RETURN;
       END;
+      -- Si alguien cambio la foto desde que se abrio la ficha, no se pisa: una
+      -- ficha vieja volveria a poner un enlace ya borrado de Cloudinary.
+      IF l_hay_foto = 'S' AND l_hay_ant = 'S'
+         AND NVL(l_foto_ant, '~') <> NVL(l_foto_vieja, '~') THEN
+        ROLLBACK;
+        p_error(409, 'Conflict', 'La foto carnet cambio mientras editabas la ficha: '
+                || 'recargala y volve a cargar los cambios');
+        RETURN;
+      END IF;
+    END IF;
+
+    -- La foto carnet: un enlace NUEVO tiene que ser de nuestro Cloudinary. El
+    -- que ya tenia se acepta como venga.
+    IF l_foto IS NOT NULL AND l_foto <> NVL(l_foto_vieja, '~') THEN
+      IF LENGTH(l_foto) > c_largo_foto THEN
+        ROLLBACK;  -- suelta el FOR UPDATE de arriba
+        p_error(400, 'Bad Request', 'El enlace de la foto carnet no puede pasar de '
+                || c_largo_foto || ' caracteres');
+        RETURN;
+      END IF;
+      IF NOT PKG_CLOUDINARY_ETHOS.es_url_propia(l_foto) THEN
+        ROLLBACK;
+        p_error(400, 'Bad Request', 'La foto carnet tiene que estar subida al Cloudinary del sistema');
+        RETURN;
+      END IF;
     END IF;
     IF l_id IS NULL OR NVL(l_ci_ant, '~') <> l_ci THEN
       FOR r IN (SELECT nombre_apellido FROM facilitadores
                  WHERE TRIM(nro_ci) = l_ci AND (l_id IS NULL OR id_facilitador <> l_id)
                    AND ROWNUM = 1) LOOP
+        ROLLBACK;
         p_error(409, 'Conflict', 'La CI ' || l_ci || ' ya es de ' || r.nombre_apellido); RETURN;
       END LOOP;
     END IF;
@@ -955,7 +1103,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
           internet, office, nombre_iglesia, nombre_pastor, nro_telefono_pastor, nombre_lider,
           nro_telefono_lider, bautizado_agua, area_servicio, nombre_banco, sucursal_banco,
           titular_banco, nro_ci_titular_banco, tipo_cuenta, nro_cuenta, nombre_emisor, ruc,
-          tipo_factura, credencial, ind_ubicacion_postulacion)
+          tipo_factura, credencial, ind_ubicacion_postulacion, foto_carnet)
         VALUES (
           l_usuario, l_nombre, l_ci, l_fnac, l_ecivil, l_vive, l_hijos,
           l_nac, l_pais, l_dep, l_ciudad, l_barrio, l_fing, l_tel,
@@ -963,7 +1111,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
           l_inet, l_office, l_igl, l_pastor, l_tpastor, l_lider,
           l_tlider, l_baut, l_area, l_banco, l_sucb,
           l_titu, l_citit, l_tcta, l_cta, l_emisor, l_ruc,
-          l_tfac, l_cred, l_indub)
+          l_tfac, l_cred, l_indub, l_foto)
         RETURNING id_facilitador INTO l_id;
       EXCEPTION
         WHEN OTHERS THEN
@@ -978,7 +1126,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
             internet, office, nombre_iglesia, nombre_pastor, nro_telefono_pastor, nombre_lider,
             nro_telefono_lider, bautizado_agua, area_servicio, nombre_banco, sucursal_banco,
             titular_banco, nro_ci_titular_banco, tipo_cuenta, nro_cuenta, nombre_emisor, ruc,
-            tipo_factura, credencial, ind_ubicacion_postulacion)
+            tipo_factura, credencial, ind_ubicacion_postulacion, foto_carnet)
           VALUES (
             l_id,
             l_usuario, l_nombre, l_ci, l_fnac, l_ecivil, l_vive, l_hijos,
@@ -987,7 +1135,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
             l_inet, l_office, l_igl, l_pastor, l_tpastor, l_lider,
             l_tlider, l_baut, l_area, l_banco, l_sucb,
             l_titu, l_citit, l_tcta, l_cta, l_emisor, l_ruc,
-            l_tfac, l_cred, l_indub);
+            l_tfac, l_cred, l_indub, l_foto);
       END;
     ELSE
       UPDATE facilitadores SET
@@ -1003,8 +1151,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
         area_servicio = l_area, nombre_banco = l_banco, sucursal_banco = l_sucb,
         titular_banco = l_titu, nro_ci_titular_banco = l_citit, tipo_cuenta = l_tcta,
         nro_cuenta = l_cta, nombre_emisor = l_emisor, ruc = l_ruc, tipo_factura = l_tfac,
-        credencial = l_cred, ind_ubicacion_postulacion = l_indub
-       WHERE id_facilitador = l_id;
+        credencial = l_cred, ind_ubicacion_postulacion = l_indub,
+        -- Sin la clave en `datos`, la foto queda la que estaba.
+        foto_carnet = CASE WHEN l_hay_foto = 'S' THEN l_foto ELSE foto_carnet END
+       WHERE id_facilitador = l_id
+      RETURNING foto_carnet INTO l_foto;
     END IF;
 
     -- La denominacion, aparte (columna con tilde: ver el encabezado).
@@ -1016,12 +1167,21 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
     guardar_listas(v, l_id);
     COMMIT;
 
+    -- Despues del COMMIT: la foto carnet reemplazada o quitada se borra de
+    -- Cloudinary. Si falla, el facilitador ya quedo bien y solo se avisa.
+    IF l_foto_vieja IS NOT NULL AND l_foto_vieja <> NVL(l_foto, '~') THEN
+      l_aviso := limpiar_foto(l_foto_vieja);
+    END IF;
+
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('id_facilitador', l_id);
     APEX_JSON.WRITE('message', CASE WHEN p_id IS NULL THEN 'Facilitador creado'
                                     ELSE 'Facilitador actualizado' END);
+    IF l_aviso IS NOT NULL THEN
+      APEX_JSON.WRITE('aviso', 'La foto carnet anterior no se pudo borrar de Cloudinary: ' || l_aviso);
+    END IF;
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION
     WHEN e_dato THEN
@@ -1041,6 +1201,8 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
     l_id    NUMBER := f_numero(p_id);
     l_hijas t_hijas;
     l_usos  VARCHAR2(4000);
+    l_foto  facilitadores.foto_carnet%TYPE;
+    l_aviso VARCHAR2(4000);
   BEGIN
     IF NOT exigir(p_token, 'D') THEN RETURN; END IF;
     IF l_id IS NULL THEN
@@ -1071,23 +1233,68 @@ CREATE OR REPLACE PACKAGE BODY PKG_FACILITADORES_ETHOS AS
       WHEN OTHERS THEN
         IF SQLCODE <> -942 THEN RAISE; END IF;  -- ORA-00942: la tabla no existe
     END;
-    DELETE FROM facilitadores                     WHERE id_facilitador = l_id;
+    DELETE FROM facilitadores                     WHERE id_facilitador = l_id
+    RETURNING foto_carnet INTO l_foto;
     IF SQL%ROWCOUNT = 0 THEN
       ROLLBACK;
       p_error(404, 'Not Found', 'El facilitador no existe'); RETURN;
     END IF;
     COMMIT;
 
+    -- Despues del COMMIT: su foto carnet se borra de Cloudinary. Si falla,
+    -- solo se avisa.
+    l_aviso := limpiar_foto(l_foto);
+
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('message', 'Facilitador eliminado');
+    IF l_aviso IS NOT NULL THEN
+      APEX_JSON.WRITE('aviso', 'La foto carnet no se pudo borrar de Cloudinary: ' || l_aviso);
+    END IF;
     APEX_JSON.CLOSE_OBJECT;
   EXCEPTION
     WHEN OTHERS THEN
       ROLLBACK;
       p_error_oracle;
   END eliminar;
+
+  /* ---------------------------------------------------------------------- */
+  /* FIRMA PARA SUBIR LA FOTO CARNET (25/11/2026)                           */
+  /* ---------------------------------------------------------------------- */
+
+  -- Insertar O actualizar en /facilitadores: la foto se sube antes de guardar,
+  -- tanto en un alta como al editar.
+  PROCEDURE firma_foto(p_token IN VARCHAR2) IS
+    l_usuario VARCHAR2(255) := f_usuario(p_token);
+    l_pagina  NUMBER;
+    l_falta   VARCHAR2(400);
+  BEGIN
+    IF l_usuario IS NULL THEN
+      p_error(401, 'Unauthorized', 'Token invalido o expirado'); RETURN;
+    END IF;
+    l_pagina := PKG_ROLES_PAGINAS_ETHOS.pagina_de_ruta(c_ruta);
+    IF l_pagina IS NULL
+       OR (PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, 'I') <> 'S'
+           AND PKG_ROLES_PAGINAS_ETHOS.puede(l_usuario, l_pagina, 'U') <> 'S') THEN
+      p_error(403, 'Forbidden', 'No tenes permiso para cargar la foto carnet de los facilitadores');
+      RETURN;
+    END IF;
+    l_falta := PKG_CLOUDINARY_ETHOS.falta;
+    IF l_falta IS NOT NULL THEN
+      p_error(503, 'Service Unavailable', l_falta || ': no se pueden subir fotos todavia');
+      RETURN;
+    END IF;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    PKG_CLOUDINARY_ETHOS.escribir_firma(c_carpeta_foto);
+    APEX_JSON.CLOSE_OBJECT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+  END firma_foto;
 
 END PKG_FACILITADORES_ETHOS;
 /
@@ -1135,6 +1342,7 @@ DECLARE
 BEGIN
   FOR r IN (SELECT 'facilitadores' AS p FROM dual
             UNION ALL SELECT 'facilitadores/opciones' FROM dual
+            UNION ALL SELECT 'facilitadores/firma-foto' FROM dual
             UNION ALL SELECT 'facilitadores/:id' FROM dual) LOOP
     FOR m IN (SELECT 'GET' AS v FROM dual UNION ALL SELECT 'POST' FROM dual
               UNION ALL SELECT 'PUT' FROM dual UNION ALL SELECT 'DELETE' FROM dual
@@ -1148,6 +1356,8 @@ BEGIN
                        p_priority => 0, p_etag_type => 'NONE');
   -- La literal antes que :id, como en roles_paginas.sql.
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'facilitadores/opciones',
+                       p_priority => 2, p_etag_type => 'NONE');
+  ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'facilitadores/firma-foto',
                        p_priority => 2, p_etag_type => 'NONE');
   ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => 'facilitadores/:id',
                        p_priority => 1, p_etag_type => 'NONE');
@@ -1169,6 +1379,10 @@ BEGIN
 
   handler('facilitadores/:id', 'DELETE', '
     PKG_FACILITADORES_ETHOS.ELIMINAR(p_token => l_token, p_id => :id);');
+
+  -- POST y no GET: cada firma es nueva y no se tiene que cachear.
+  handler('facilitadores/firma-foto', 'POST', '
+    PKG_FACILITADORES_ETHOS.FIRMA_FOTO(p_token => l_token);');
 
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Handlers de facilitadores publicados.');
@@ -1204,6 +1418,7 @@ END;
 BEGIN
   preflight('facilitadores');
   preflight('facilitadores/opciones');
+  preflight('facilitadores/firma-foto');
   preflight('facilitadores/:id');
   COMMIT;
   DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado.');
@@ -1232,6 +1447,7 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('       POST   facilitadores');
     DBMS_OUTPUT.PUT_LINE('       PUT    facilitadores/:id');
     DBMS_OUTPUT.PUT_LINE('       DELETE facilitadores/:id');
+    DBMS_OUTPUT.PUT_LINE('       POST   facilitadores/firma-foto');
   ELSE
     DBMS_OUTPUT.PUT_LINE('[ERROR] PKG_FACILITADORES_ETHOS quedo INVALID.');
     FOR e IN (SELECT line, text FROM user_errors
